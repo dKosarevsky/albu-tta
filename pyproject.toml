@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "albu-tta"
+version = "0.1.0"
+description = "Learned test-time augmentation selector experiments with AlbumentationsX."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "albu-tta contributors" },
+]
+dependencies = [
+  "albumentationsx[headless]>=2.0.14",
+  "numpy>=1.26",
+  "opencv-python-headless>=4.9",
+  "pandas>=2.2",
+  "pillow>=10.0",
+  "pyarrow>=15.0",
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "timm>=1.0",
+  "torch>=2.2",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+learned-tta = "learned_tta.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

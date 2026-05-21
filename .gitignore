@@ -1,0 +1,14 @@
+.venv/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+artifacts/*
+!artifacts/README.md
+
+reports/**/figures/
+reports/**/tables/*.parquet
+reports/**/tables/*.npy
+reports/**/tables/*.npz

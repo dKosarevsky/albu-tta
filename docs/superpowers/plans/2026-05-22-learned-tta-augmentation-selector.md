@@ -86,6 +86,8 @@ Candidate family allocation:
 
 The first implementation must materialize this as `configs/augmentations/imagenet100.yaml`. The config file is the source of truth and must be validated by tests before any expensive inference runs.
 
+Implementation note: AlbumentationsX 2.3 validates `PlanckianJitter` ranges by requiring the range to include its white temperature, `6000K`. The initial registry therefore represents the warm 5000K idea as a deterministic seeded candidate with `temperature_range: [5000, 6000]`, plus adjacent daylight/cool ranges, instead of an invalid point range `[5000, 5000]`.
+
 ### Augmentation Order
 
 For every image and every candidate:
