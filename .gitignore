@@ -1,6 +1,7 @@
 .venv/
 .ruff_cache/
 .pytest_cache/
+.coverage
 __pycache__/
 *.py[cod]
 *.egg-info/
