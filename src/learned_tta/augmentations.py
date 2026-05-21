@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import Any
 
 import albumentations as A
+import cv2
 import numpy as np
 import yaml
+
+cv2.setNumThreads(0)
+cv2.ocl.setUseOpenCL(False)
 
 
 @dataclass(frozen=True, slots=True)
