@@ -27,9 +27,15 @@ def ci_workflow() -> dict[str, Any]:
     "badge_fragment",
     [
         "actions/workflows/ci.yml/badge.svg",
+        "actions/workflows/ci.yml/badge.svg?branch=main&job=pytest",
+        "actions/workflows/ci.yml/badge.svg?branch=main&job=ruff",
+        "actions/workflows/ci.yml/badge.svg?branch=main&job=ty",
+        "actions/workflows/ci.yml/badge.svg?branch=main&job=coverage",
         "python-3.10%2B",
+        "tests-pytest",
         "lint-ruff",
         "types-ty",
+        "coverage",
         "license-MIT",
     ],
 )
@@ -41,22 +47,29 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
     assert "pypi" not in readme_text.lower()
 
 
-def test_ci_workflow_has_separate_test_and_quality_jobs(ci_workflow: dict[str, Any]) -> None:
+def test_ci_workflow_has_separate_pytest_ruff_ty_and_coverage_jobs(
+    ci_workflow: dict[str, Any],
+) -> None:
     jobs = ci_workflow["jobs"]
 
-    assert set(jobs) == {"tests", "quality"}
-    assert jobs["tests"]["name"] == "tests"
-    assert jobs["quality"]["name"] == "lint-and-types"
+    assert set(jobs) == {"pytest", "ruff", "ty", "coverage"}
+    assert jobs["pytest"]["name"] == "pytest"
+    assert jobs["ruff"]["name"] == "ruff"
+    assert jobs["ty"]["name"] == "ty"
+    assert jobs["coverage"]["name"] == "coverage"
 
 
 @pytest.mark.parametrize(
     ("job_name", "expected_command"),
     [
-        ("tests", "uv sync --frozen --extra dev"),
-        ("tests", "uv run --frozen pytest -q"),
-        ("quality", "uv sync --frozen --extra dev"),
-        ("quality", "uv run --frozen ruff check ."),
-        ("quality", "uv run --frozen ty check"),
+        ("pytest", "uv sync --frozen --extra dev"),
+        ("pytest", "uv run --frozen pytest -q"),
+        ("ruff", "uv sync --frozen --extra dev"),
+        ("ruff", "uv run --frozen ruff check ."),
+        ("ty", "uv sync --frozen --extra dev"),
+        ("ty", "uv run --frozen ty check"),
+        ("coverage", "uv sync --frozen --extra dev"),
+        ("coverage", "uv run --frozen pytest --cov=learned_tta --cov-report=term-missing"),
     ],
 )
 def test_ci_workflow_runs_expected_commands(
