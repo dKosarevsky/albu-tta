@@ -1,0 +1,139 @@
+"""Experiment configuration loading."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+from learned_tta.imagenet_split import SplitConfig
+
+
+@dataclass(frozen=True, slots=True)
+class TeacherConfig:
+    """Teacher model configuration."""
+
+    model_name: str
+    pretrained: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetConfig:
+    """ImageNet validation split shape configuration."""
+
+    name: str
+    images_per_class: int
+
+
+@dataclass(frozen=True, slots=True)
+class AugmentationsConfig:
+    """Augmentation registry configuration."""
+
+    registry_path: Path
+    candidate_count: int
+    identity_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class SelectorConfig:
+    """Selector training configuration."""
+
+    output_dim: int
+    max_parameters: int
+    top_k_grid: list[int]
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactsConfig:
+    """Generated artifact paths."""
+
+    root: Path
+    manifests_dir: Path
+    teacher_cache_dir: Path
+    selector_dir: Path
+    reports_dir: Path
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentConfig:
+    """Top-level experiment configuration."""
+
+    path: Path
+    project_root: Path
+    project_name: str
+    seed: int
+    teacher: TeacherConfig
+    dataset: DatasetConfig
+    split: SplitConfig
+    augmentations: AugmentationsConfig
+    selector: SelectorConfig
+    artifacts: ArtifactsConfig
+
+
+def load_experiment_config(path: Path) -> ExperimentConfig:
+    """Load an experiment YAML file and resolve project-relative paths."""
+
+    path = Path(path).resolve()
+    project_root = _find_project_root(path)
+    with path.open(encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle)
+
+    dataset = raw["dataset"]
+    augmentations = raw["augmentations"]
+    teacher = raw["teacher"]
+    selector = raw["selector"]
+    artifacts = raw["artifacts"]
+
+    return ExperimentConfig(
+        path=path,
+        project_root=project_root,
+        project_name=str(raw["project_name"]),
+        seed=int(raw["seed"]),
+        teacher=TeacherConfig(
+            model_name=str(teacher["model_name"]),
+            pretrained=bool(teacher["pretrained"]),
+        ),
+        dataset=DatasetConfig(
+            name=str(dataset["name"]),
+            images_per_class=int(dataset["images_per_class"]),
+        ),
+        split=SplitConfig(
+            seed=int(raw["seed"]),
+            public_per_class=int(dataset["public_per_class"]),
+            private_per_class=int(dataset["private_per_class"]),
+            public_train_per_class=int(dataset["public_train_per_class"]),
+            public_val_per_class=int(dataset["public_val_per_class"]),
+        ),
+        augmentations=AugmentationsConfig(
+            registry_path=_resolve_path(project_root, augmentations["registry_path"]),
+            candidate_count=int(augmentations["candidate_count"]),
+            identity_id=str(augmentations["identity_id"]),
+        ),
+        selector=SelectorConfig(
+            output_dim=int(selector["output_dim"]),
+            max_parameters=int(selector["max_parameters"]),
+            top_k_grid=[int(k) for k in selector["top_k_grid"]],
+        ),
+        artifacts=ArtifactsConfig(
+            root=_resolve_path(project_root, artifacts["root"]),
+            manifests_dir=_resolve_path(project_root, artifacts["manifests_dir"]),
+            teacher_cache_dir=_resolve_path(project_root, artifacts["teacher_cache_dir"]),
+            selector_dir=_resolve_path(project_root, artifacts["selector_dir"]),
+            reports_dir=_resolve_path(project_root, artifacts["reports_dir"]),
+        ),
+    )
+
+
+def _find_project_root(config_path: Path) -> Path:
+    for candidate in (config_path.parent, *config_path.parents):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    return config_path.parent
+
+
+def _resolve_path(project_root: Path, value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return project_root / path
