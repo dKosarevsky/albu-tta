@@ -1,0 +1,36 @@
+project_name: albu-tta
+seed: 20260522
+
+teacher:
+  model_name: resnet50.a1_in1k
+  pretrained: true
+
+dataset:
+  name: imagenet-val
+  images_per_class: 50
+  public_per_class: 25
+  private_per_class: 25
+  public_train_per_class: 20
+  public_val_per_class: 5
+
+augmentations:
+  registry_path: configs/augmentations/imagenet100.yaml
+  candidate_count: 100
+  identity_id: aug_000
+
+selector:
+  output_dim: 100
+  max_parameters: 1500000
+  top_k_grid:
+    - 1
+    - 2
+    - 4
+    - 8
+    - 16
+
+artifacts:
+  root: artifacts
+  manifests_dir: artifacts/manifests
+  teacher_cache_dir: artifacts/teacher_cache
+  selector_dir: artifacts/selector
+  reports_dir: reports/resnet50_a1_in1k
