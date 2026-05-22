@@ -61,6 +61,7 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
         "train-aggregator --method global-nonnegative",
         "train-aggregator --method class-nonnegative",
         "train-aggregator --method xgboost-multiclass",
+        "uv sync --extra stackers",
         "global_weighted_tta",
         "class_weighted_tta",
         "xgboost_multiclass",

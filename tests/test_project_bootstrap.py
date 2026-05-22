@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import tomli
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 
@@ -27,6 +29,17 @@ def test_project_bootstrap_files_and_config() -> None:
     assert "ImageNet" in artifacts_text
     assert "logits" in artifacts_text
     assert "checkpoints" in artifacts_text
+
+
+def test_project_declares_optional_stacker_dependencies() -> None:
+    pyproject = ROOT / "pyproject.toml"
+    with pyproject.open("rb") as handle:
+        metadata = tomli.load(handle)
+
+    optional_dependencies = metadata["project"]["optional-dependencies"]
+
+    assert "stackers" in optional_dependencies
+    assert "xgboost>=2.0" in optional_dependencies["stackers"]
 
 
 def test_package_imports() -> None:
