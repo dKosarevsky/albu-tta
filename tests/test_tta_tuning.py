@@ -10,8 +10,9 @@ import torch
 from PIL import Image
 
 from learned_tta.cache import TeacherShard, write_teacher_shard
+from learned_tta.data import load_manifest
 from learned_tta.selector_model import SelectorCNN
-from learned_tta.tta_tuning import tune_tta_from_artifacts
+from learned_tta.tta_tuning import predict_selector_scores, tune_tta_from_artifacts
 
 
 @pytest.fixture
@@ -99,6 +100,31 @@ def test_tune_tta_cli_writes_result_json(
     assert (output_dir / "public_val_tta_tuning.json").exists()
 
 
+def test_predict_selector_scores_returns_unstandardized_gain(tmp_path: Path) -> None:
+    manifest_path = _write_manifest(tmp_path, split="public_val", count=2)
+    checkpoint_path = _write_selector_checkpoint(
+        tmp_path / "selector_best.pt",
+        output_dim=2,
+        target_mean=np.array([0.25, -0.5], dtype=np.float32),
+        target_std=np.array([2.0, 4.0], dtype=np.float32),
+    )
+
+    scores = predict_selector_scores(
+        checkpoint_path=checkpoint_path,
+        records=load_manifest(manifest_path),
+        output_dim=2,
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        device="cpu",
+    )
+
+    np.testing.assert_allclose(
+        scores,
+        np.array([[0.25, -0.5], [0.25, -0.5]], dtype=np.float32),
+    )
+
+
 def _write_manifest(root: Path, split: str, count: int) -> Path:
     rows = []
     for index in range(count):
@@ -145,17 +171,27 @@ def _write_cache(cache_dir: Path) -> Path:
     return cache_dir
 
 
-def _write_selector_checkpoint(path: Path, output_dim: int) -> Path:
+def _write_selector_checkpoint(
+    path: Path,
+    output_dim: int,
+    target_mean: np.ndarray | None = None,
+    target_std: np.ndarray | None = None,
+) -> Path:
     model = SelectorCNN(output_dim=output_dim)
     for parameter in model.parameters():
         torch.nn.init.constant_(parameter, 0.0)
+    checkpoint: dict[str, object] = {
+        "epoch": 1,
+        "val_nll": 0.0,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": {},
+    }
+    if target_mean is not None and target_std is not None:
+        checkpoint["aug_ids"] = [f"aug_{index:03d}" for index in range(output_dim)]
+        checkpoint["target_mean"] = target_mean
+        checkpoint["target_std"] = target_std
     torch.save(
-        {
-            "epoch": 1,
-            "val_nll": 0.0,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": {},
-        },
+        checkpoint,
         path,
     )
     return path

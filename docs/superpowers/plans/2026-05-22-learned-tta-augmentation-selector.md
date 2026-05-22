@@ -203,7 +203,8 @@ Rationale:
 For each private image:
 
 1. Run the selector once on the clean image.
-2. Convert predicted standardized outputs back to predicted gain.
+2. Convert predicted standardized outputs back to predicted gain using the
+   public-train target mean and std stored in the selector checkpoint.
 3. Always include `aug_000` identity.
 4. Select top-k non-identity candidates by predicted gain.
 5. Run ResNet50 only on identity plus the selected candidates.

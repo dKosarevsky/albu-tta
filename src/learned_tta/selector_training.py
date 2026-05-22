@@ -146,6 +146,8 @@ def train_selector_from_artifacts(
             epoch=epoch,
             model=model,
             optimizer=optimizer,
+            aug_ids=train_targets.aug_ids,
+            target_stats=train_targets.stats,
         )
         history.append(
             {

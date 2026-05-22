@@ -158,7 +158,28 @@ def predict_selector_scores(
     predictions = []
     for images in dataloader:
         predictions.append(model(images.to(torch_device)).cpu().numpy().astype(np.float32))
-    return np.concatenate(predictions, axis=0)
+    target_z = np.concatenate(predictions, axis=0)
+    return _unstandardize_checkpoint_scores(target_z, checkpoint, output_dim)
+
+
+def _unstandardize_checkpoint_scores(
+    target_z: np.ndarray,
+    checkpoint: dict[str, object],
+    output_dim: int,
+) -> np.ndarray:
+    if "target_mean" not in checkpoint or "target_std" not in checkpoint:
+        return target_z
+
+    mean = np.asarray(checkpoint["target_mean"], dtype=np.float32)
+    std = np.asarray(checkpoint["target_std"], dtype=np.float32)
+    if mean.shape != (output_dim,) or std.shape != (output_dim,):
+        raise ValueError("checkpoint target stats must match selector output_dim")
+    checkpoint_aug_ids = checkpoint.get("aug_ids")
+    if checkpoint_aug_ids is not None and not isinstance(checkpoint_aug_ids, list):
+        raise ValueError("checkpoint aug_ids must be a list")
+    if checkpoint_aug_ids is not None and len(checkpoint_aug_ids) != output_dim:
+        raise ValueError("checkpoint aug_ids length must match selector output_dim")
+    return (target_z * std[None, :] + mean[None, :]).astype(np.float32)
 
 
 class _SelectorImageDataset(torch.utils.data.Dataset[torch.Tensor]):

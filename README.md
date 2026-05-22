@@ -29,6 +29,10 @@ This separation makes the article diagnostics cleaner: selection answers which
 AlbumentationsX transforms are useful, while aggregation answers how strongly to
 combine predictions once the TTA views are available.
 
+The selector is trained on standardized gain targets, but checkpoints persist
+the public-train target mean and std. Inference converts selector outputs back
+to the original gain scale before ranking augmentations for top-k TTA.
+
 `build-report` writes the aggregation diagnostics when the learned aggregator
 artifacts are present, and copies private clean-vs-TTA diagnostics when
 `evaluate-private` has produced them:
