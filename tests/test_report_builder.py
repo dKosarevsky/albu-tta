@@ -11,6 +11,7 @@ from PIL import Image
 
 from learned_tta.report_builder import build_report_from_artifacts
 from learned_tta.selector_model import SelectorCNN
+from learned_tta.stacking import AggregationArtifact
 from learned_tta.targets import TargetStats, save_selector_targets
 
 
@@ -63,12 +64,36 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
     manifest_path = _write_manifest(tmp_path, count=3)
     targets_path = _write_targets(tmp_path / "public_val_targets.npz")
     checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=3)
+    global_aggregator_path = tmp_path / "global_aggregator.json"
+    class_aggregator_path = tmp_path / "class_aggregator.json"
+    AggregationArtifact(
+        method="global-nonnegative",
+        aug_ids=["aug_000", "aug_001", "aug_002"],
+        weights=np.array([0.1, 0.7, 0.2], dtype=np.float32),
+        active_threshold=1e-6,
+        metrics={"nll": 0.1},
+    ).save(global_aggregator_path)
+    AggregationArtifact(
+        method="class-nonnegative",
+        aug_ids=["aug_000", "aug_001", "aug_002"],
+        weights=np.array(
+            [
+                [0.5, 0.4, 0.1],
+                [0.1, 0.3, 0.6],
+            ],
+            dtype=np.float32,
+        ),
+        active_threshold=1e-6,
+        metrics={"nll": 0.2},
+    ).save(class_aggregator_path)
     return {
         "private_metrics": private_metrics_csv,
         "tuning": tuning_json,
         "manifest": manifest_path,
         "targets": targets_path,
         "checkpoint": checkpoint_path,
+        "global_aggregator": global_aggregator_path,
+        "class_aggregator": class_aggregator_path,
     }
 
 
@@ -86,11 +111,18 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         image_size=16,
         batch_size=2,
         num_workers=0,
+        global_aggregator_path=report_artifacts["global_aggregator"],
+        class_aggregator_path=report_artifacts["class_aggregator"],
         device="cpu",
     )
 
     markdown = summary.results_md.read_text(encoding="utf-8")
     impact = pd.read_csv(summary.augmentation_impact_csv)
+    assert summary.aggregation_weights_csv is not None
+    assert summary.class_augmentation_weights_csv is not None
+    assert summary.aggregation_weights_svg is not None
+    aggregation_weights = pd.read_csv(summary.aggregation_weights_csv)
+    class_weights = pd.read_csv(summary.class_augmentation_weights_csv)
 
     assert summary.best_k == 1
     assert summary.public_metrics_csv.exists()
@@ -98,9 +130,16 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.compute_csv.exists()
     assert summary.gain_distribution_svg.exists()
     assert summary.oracle_overlap_svg.exists()
+    assert summary.aggregation_weights_csv.exists()
+    assert summary.class_augmentation_weights_csv.exists()
+    assert summary.aggregation_weights_svg.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
+    assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
+    assert set(class_weights.columns) == {"class_idx", "aug_id", "weight"}
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
+    assert "figures/aggregation_weights.svg" in markdown
+    assert "aggregation_weights.csv" in markdown
     assert "augmentation_impact.csv" in markdown
 
 
@@ -130,6 +169,10 @@ def test_build_report_cli_writes_final_results(
             str(report_artifacts["manifest"]),
             "--checkpoint",
             str(report_artifacts["checkpoint"]),
+            "--global-aggregator",
+            str(report_artifacts["global_aggregator"]),
+            "--class-aggregator",
+            str(report_artifacts["class_aggregator"]),
             "--image-size",
             "16",
             "--batch-size",
@@ -143,7 +186,9 @@ def test_build_report_cli_writes_final_results(
     assert "report: wrote" in captured.out
     assert (report_dir / "results.md").exists()
     assert (report_dir / "tables" / "augmentation_impact.csv").exists()
+    assert (report_dir / "tables" / "aggregation_weights.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
+    assert (report_dir / "figures" / "aggregation_weights.svg").exists()
 
 
 def _write_manifest(root: Path, count: int) -> Path:
