@@ -40,8 +40,10 @@ artifacts are present, and copies private clean-vs-TTA diagnostics when
 reports/resnet50_a1_in1k/tables/aggregation_weights.csv
 reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
 reports/resnet50_a1_in1k/tables/corrections.csv
+reports/resnet50_a1_in1k/tables/selector_history.csv
 reports/resnet50_a1_in1k/figures/aggregation_weights.svg
 reports/resnet50_a1_in1k/figures/corrections.svg
+reports/resnet50_a1_in1k/figures/selector_history.svg
 ```
 
 `aggregation_weights.csv` is the compact table for the article: global weight,

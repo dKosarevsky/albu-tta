@@ -36,10 +36,12 @@ class ReportBuildSummary:
     aggregation_weights_csv: Path | None
     class_augmentation_weights_csv: Path | None
     corrections_csv: Path | None
+    selector_history_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
     aggregation_weights_svg: Path | None
     corrections_svg: Path | None
+    selector_history_svg: Path | None
     best_k: int
 
 
@@ -62,6 +64,7 @@ def build_report_from_artifacts(
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
+    selector_history_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> ReportBuildSummary:
@@ -112,6 +115,9 @@ def build_report_from_artifacts(
         class_aggregator_path=class_aggregator_path,
     )
     corrections_table = _read_corrections_csv(corrections_path) if corrections_path else None
+    selector_history = (
+        _read_selector_history_csv(selector_history_path) if selector_history_path else None
+    )
 
     paths = ReportBuildSummary(
         results_md=report_dir / "results.md",
@@ -130,6 +136,9 @@ def build_report_from_artifacts(
             else None
         ),
         corrections_csv=tables_dir / "corrections.csv" if corrections_table is not None else None,
+        selector_history_csv=(
+            tables_dir / "selector_history.csv" if selector_history is not None else None
+        ),
         gain_distribution_svg=figures_dir / "gain_distribution.svg",
         oracle_overlap_svg=figures_dir / "oracle_overlap.svg",
         aggregation_weights_svg=(
@@ -138,6 +147,9 @@ def build_report_from_artifacts(
             else None
         ),
         corrections_svg=figures_dir / "corrections.svg" if corrections_table is not None else None,
+        selector_history_svg=(
+            figures_dir / "selector_history.svg" if selector_history is not None else None
+        ),
         best_k=best_k,
     )
 
@@ -157,6 +169,8 @@ def build_report_from_artifacts(
         )
     if paths.corrections_csv is not None and corrections_table is not None:
         corrections_table.to_csv(paths.corrections_csv, index=False)
+    if paths.selector_history_csv is not None and selector_history is not None:
+        selector_history.to_csv(paths.selector_history_csv, index=False)
     paths.gain_distribution_svg.write_text(
         _gain_distribution_svg(targets.gain),
         encoding="utf-8",
@@ -175,6 +189,11 @@ def build_report_from_artifacts(
             _corrections_svg(corrections_table),
             encoding="utf-8",
         )
+    if paths.selector_history_svg is not None and selector_history is not None:
+        paths.selector_history_svg.write_text(
+            _selector_history_svg(selector_history),
+            encoding="utf-8",
+        )
     paths.results_md.write_text(
         _results_markdown(
             public_metrics=public_metrics,
@@ -184,6 +203,7 @@ def build_report_from_artifacts(
             has_aggregation_weights=aggregation_tables.weights is not None,
             has_class_weights=aggregation_tables.class_weights is not None,
             has_corrections=corrections_table is not None,
+            has_selector_history=selector_history is not None,
         ),
         encoding="utf-8",
     )
@@ -201,6 +221,7 @@ def build_report_from_config(
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
+    selector_history_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -238,6 +259,8 @@ def build_report_from_config(
         ),
         corrections_path=corrections_path
         or _existing_path(resolved_report_dir / "tables" / "corrections.csv"),
+        selector_history_path=selector_history_path
+        or _existing_path(config.artifacts.selector_dir / "selector_history.csv"),
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -291,6 +314,39 @@ def _read_corrections_csv(path: Path) -> pd.DataFrame:
             "clean_right_tta_wrong",
             "both_wrong",
             "num_images",
+        ]
+    ].copy()
+
+
+def _read_selector_history_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "epoch",
+        "train_loss",
+        "val_loss",
+        "val_spearman",
+        "val_tta_best_k",
+        "val_tta_top1",
+        "val_tta_top5",
+        "val_tta_nll",
+        "val_tta_ece",
+        "val_tta_oracle_recall",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"selector history CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "epoch",
+            "train_loss",
+            "val_loss",
+            "val_spearman",
+            "val_tta_best_k",
+            "val_tta_top1",
+            "val_tta_top5",
+            "val_tta_nll",
+            "val_tta_ece",
+            "val_tta_oracle_recall",
         ]
     ].copy()
 
@@ -390,6 +446,7 @@ def _results_markdown(
     has_aggregation_weights: bool,
     has_class_weights: bool,
     has_corrections: bool,
+    has_selector_history: bool,
 ) -> str:
     public_table = build_metrics_table(public_metrics)
     private_table = build_metrics_table(private_metrics)
@@ -450,6 +507,17 @@ def _results_markdown(
                 "- Table: `tables/corrections.csv`",
                 "",
                 "![TTA corrections and corruptions](figures/corrections.svg)",
+                "",
+            ]
+        )
+    if has_selector_history:
+        lines.extend(
+            [
+                "## Selector Training Diagnostics",
+                "",
+                "- Table: `tables/selector_history.csv`",
+                "",
+                "![Selector training diagnostics](figures/selector_history.svg)",
                 "",
             ]
         )
@@ -517,6 +585,27 @@ def _corrections_svg(table: pd.DataFrame) -> str:
             ),
         ],
         y_label="images",
+    )
+
+
+def _selector_history_svg(table: pd.DataFrame) -> str:
+    labels = [str(int(epoch)) for epoch in table["epoch"].astype(float).tolist()]
+    return _grouped_bar_svg(
+        title="Selector Validation Diagnostics",
+        labels=labels,
+        series=[
+            (
+                "TTA NLL",
+                table["val_tta_nll"].astype(float).tolist(),
+                "#2f6f9f",
+            ),
+            (
+                "Oracle recall",
+                table["val_tta_oracle_recall"].astype(float).tolist(),
+                "#8a5a9f",
+            ),
+        ],
+        y_label="value",
     )
 
 

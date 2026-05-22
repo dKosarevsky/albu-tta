@@ -67,6 +67,36 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         ]
     ).to_csv(corrections_csv, index=False)
 
+    selector_history_csv = tmp_path / "selector_history.csv"
+    pd.DataFrame(
+        [
+            {
+                "epoch": 1.0,
+                "train_loss": 0.8,
+                "val_loss": 0.7,
+                "val_spearman": 0.1,
+                "val_tta_best_k": 1.0,
+                "val_tta_top1": 0.5,
+                "val_tta_top5": 1.0,
+                "val_tta_nll": 0.6,
+                "val_tta_ece": 0.2,
+                "val_tta_oracle_recall": 0.25,
+            },
+            {
+                "epoch": 2.0,
+                "train_loss": 0.4,
+                "val_loss": 0.5,
+                "val_spearman": 0.3,
+                "val_tta_best_k": 1.0,
+                "val_tta_top1": 1.0,
+                "val_tta_top5": 1.0,
+                "val_tta_nll": 0.3,
+                "val_tta_ece": 0.1,
+                "val_tta_oracle_recall": 0.75,
+            },
+        ]
+    ).to_csv(selector_history_csv, index=False)
+
     tuning_json = tmp_path / "public_val_tta_tuning.json"
     tuning_json.write_text(
         json.dumps(
@@ -115,6 +145,7 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
     return {
         "private_metrics": private_metrics_csv,
         "corrections": corrections_csv,
+        "selector_history": selector_history_csv,
         "tuning": tuning_json,
         "manifest": manifest_path,
         "targets": targets_path,
@@ -141,6 +172,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         global_aggregator_path=report_artifacts["global_aggregator"],
         class_aggregator_path=report_artifacts["class_aggregator"],
         corrections_path=report_artifacts["corrections"],
+        selector_history_path=report_artifacts["selector_history"],
         device="cpu",
     )
 
@@ -151,9 +183,12 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.aggregation_weights_svg is not None
     assert summary.corrections_csv is not None
     assert summary.corrections_svg is not None
+    assert summary.selector_history_csv is not None
+    assert summary.selector_history_svg is not None
     aggregation_weights = pd.read_csv(summary.aggregation_weights_csv)
     class_weights = pd.read_csv(summary.class_augmentation_weights_csv)
     corrections = pd.read_csv(summary.corrections_csv)
+    selector_history = pd.read_csv(summary.selector_history_csv)
 
     assert summary.best_k == 1
     assert summary.public_metrics_csv.exists()
@@ -166,17 +201,22 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.aggregation_weights_svg.exists()
     assert summary.corrections_csv.exists()
     assert summary.corrections_svg.exists()
+    assert summary.selector_history_csv.exists()
+    assert summary.selector_history_svg.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert set(class_weights.columns) == {"class_idx", "aug_id", "weight"}
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
+    assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
     assert "figures/aggregation_weights.svg" in markdown
     assert "figures/corrections.svg" in markdown
+    assert "figures/selector_history.svg" in markdown
     assert "aggregation_weights.csv" in markdown
     assert "corrections.csv" in markdown
+    assert "selector_history.csv" in markdown
     assert "augmentation_impact.csv" in markdown
 
 
@@ -200,6 +240,8 @@ def test_build_report_cli_writes_final_results(
             str(report_artifacts["private_metrics"]),
             "--corrections",
             str(report_artifacts["corrections"]),
+            "--selector-history",
+            str(report_artifacts["selector_history"]),
             "--tuning",
             str(report_artifacts["tuning"]),
             "--impact-targets",
@@ -227,9 +269,11 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "tables" / "augmentation_impact.csv").exists()
     assert (report_dir / "tables" / "aggregation_weights.csv").exists()
     assert (report_dir / "tables" / "corrections.csv").exists()
+    assert (report_dir / "tables" / "selector_history.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
     assert (report_dir / "figures" / "aggregation_weights.svg").exists()
     assert (report_dir / "figures" / "corrections.svg").exists()
+    assert (report_dir / "figures" / "selector_history.svg").exists()
 
 
 def _write_manifest(root: Path, count: int) -> Path:
