@@ -80,7 +80,7 @@ def train_global_nonnegative_weights(
     active_threshold: float,
     device: str | torch.device = "cpu",
 ) -> AggregationArtifact:
-    """Train one non-negative augmentation weight vector by public split NLL."""
+    """Train one sparse non-negative augmentation weight vector by public split NLL."""
 
     torch_device = torch.device(device)
     probabilities = _probability_tensor(logits_by_aug, aug_ids, torch_device)
@@ -98,11 +98,17 @@ def train_global_nonnegative_weights(
         weights = F.softplus(raw_weights)
         normalized = weights / weights.sum().clamp_min(1e-12)
         ensembled = torch.einsum("a,nac->nc", normalized, probabilities)
-        loss = _nll_loss(ensembled, labels) + l1_penalty * normalized.mean()
+        loss = _nll_loss(ensembled, labels) + _simplex_sparsity_penalty(
+            normalized,
+            strength=l1_penalty,
+        )
         loss.backward()
         optimizer.step()
 
-    weights_np = _normalized_numpy(F.softplus(raw_weights).detach().cpu().numpy())
+    weights_np = _prune_and_normalize_weights(
+        _normalized_numpy(F.softplus(raw_weights).detach().cpu().numpy()),
+        active_threshold=active_threshold,
+    )
     metrics = evaluate_global_weighted_tta(
         logits_by_aug=logits_by_aug,
         class_idxs=class_idxs,
@@ -129,7 +135,7 @@ def train_class_nonnegative_weights(
     active_threshold: float,
     device: str | torch.device = "cpu",
 ) -> AggregationArtifact:
-    """Train class-specific non-negative augmentation weights by public split NLL."""
+    """Train sparse class-specific non-negative augmentation weights by public split NLL."""
 
     torch_device = torch.device(device)
     probabilities = _probability_tensor(logits_by_aug, aug_ids, torch_device)
@@ -153,11 +159,17 @@ def train_class_nonnegative_weights(
         normalized = weights / weights.sum(dim=1, keepdim=True).clamp_min(1e-12)
         scores = torch.einsum("nac,ca->nc", probabilities, normalized)
         scores = scores / scores.sum(dim=1, keepdim=True).clamp_min(1e-12)
-        loss = _nll_loss(scores, labels) + l1_penalty * normalized.mean()
+        loss = _nll_loss(scores, labels) + _simplex_sparsity_penalty(
+            normalized,
+            strength=l1_penalty,
+        )
         loss.backward()
         optimizer.step()
 
-    weights_np = _row_normalized_numpy(F.softplus(raw_weights).detach().cpu().numpy())
+    weights_np = _prune_and_normalize_weights(
+        _row_normalized_numpy(F.softplus(raw_weights).detach().cpu().numpy()),
+        active_threshold=active_threshold,
+    )
     metrics = evaluate_class_weighted_tta(
         logits_by_aug=logits_by_aug,
         class_idxs=class_idxs,
@@ -293,6 +305,13 @@ def _nll_loss(probabilities: torch.Tensor, class_idxs: torch.Tensor) -> torch.Te
     return -torch.log(true_probabilities.clamp_min(1e-45)).mean()
 
 
+def _simplex_sparsity_penalty(weights: torch.Tensor, strength: float) -> torch.Tensor:
+    if strength <= 0.0:
+        return weights.new_tensor(0.0)
+    entropy = -(weights * torch.log(weights.clamp_min(1e-12))).sum(dim=-1).mean()
+    return float(strength) * entropy
+
+
 def _normalized_numpy(weights: np.ndarray) -> np.ndarray:
     weights = np.asarray(weights, dtype=np.float32)
     return weights / np.clip(weights.sum(), 1e-12, None)
@@ -301,6 +320,27 @@ def _normalized_numpy(weights: np.ndarray) -> np.ndarray:
 def _row_normalized_numpy(weights: np.ndarray) -> np.ndarray:
     weights = np.asarray(weights, dtype=np.float32)
     return weights / np.clip(weights.sum(axis=1, keepdims=True), 1e-12, None)
+
+
+def _prune_and_normalize_weights(weights: np.ndarray, active_threshold: float) -> np.ndarray:
+    weights = np.asarray(weights, dtype=np.float32)
+    if weights.ndim == 1:
+        return _normalized_numpy(_prune_weight_row(weights, active_threshold))
+    if weights.ndim == 2:
+        return _row_normalized_numpy(
+            np.stack(
+                [_prune_weight_row(row, active_threshold) for row in weights],
+                axis=0,
+            )
+        )
+    raise ValueError("weights must have shape [augmentations] or [classes, augmentations]")
+
+
+def _prune_weight_row(weights: np.ndarray, active_threshold: float) -> np.ndarray:
+    mask = weights > active_threshold
+    if not np.any(mask):
+        mask[int(np.argmax(weights))] = True
+    return np.where(mask, weights, 0.0).astype(np.float32)
 
 
 def _read_split_logits(
