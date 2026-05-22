@@ -13,3 +13,72 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 Learned test-time augmentation selector experiments with AlbumentationsX.
+
+## Smoke Run
+
+Use the synthetic smoke run before spending GPU time on ImageNet. It creates a tiny
+ImageNet-like directory, caches a fake teacher, trains the selector for one epoch,
+tunes TTA, evaluates private metrics, and writes `results.md`.
+
+```bash
+uv run python -m learned_tta.cli run-smoke \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --output-dir artifacts/smoke \
+  --candidate-count 2 \
+  --image-size 16 \
+  --batch-size 2 \
+  --num-workers 0 \
+  --epochs 1
+```
+
+Expected final artifact:
+
+```text
+artifacts/smoke/reports/results.md
+```
+
+## Full ImageNet Run
+
+Run the full experiment only after the smoke run passes. `--imagenet-val-dir`
+must point to an ImageNet validation directory laid out as
+`val/class_name/image.JPEG`.
+
+```bash
+uv run python -m learned_tta.cli validate-augmentations \
+  --config configs/experiment/resnet50_a1_in1k.yaml
+
+uv run python -m learned_tta.cli make-splits \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --imagenet-val-dir /path/to/imagenet/val
+
+uv run python -m learned_tta.cli cache-teacher --split public_train \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+
+uv run python -m learned_tta.cli cache-teacher --split public_val \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+
+uv run python -m learned_tta.cli build-targets \
+  --config configs/experiment/resnet50_a1_in1k.yaml
+
+uv run python -m learned_tta.cli train-selector \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+
+uv run python -m learned_tta.cli tune-tta --split public_val \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+
+uv run python -m learned_tta.cli cache-teacher --split private \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+
+uv run python -m learned_tta.cli evaluate-private \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+
+uv run python -m learned_tta.cli build-report \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+```

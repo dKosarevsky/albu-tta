@@ -16,6 +16,7 @@ from learned_tta.imagenet_split import (
 from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
 from learned_tta.selector_training import train_selector_from_config
+from learned_tta.smoke import run_smoke_e2e
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
 from learned_tta.tta_tuning import tune_tta_from_config
@@ -30,6 +31,17 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if command == "validate-augmentations":
         _cmd_validate_augmentations(config_path=Path(args.config))
+    elif command == "run-smoke":
+        _cmd_run_smoke(
+            config_path=Path(args.config),
+            output_dir=Path(args.output_dir),
+            candidate_count=int(args.candidate_count),
+            image_size=int(args.image_size),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            epochs=int(args.epochs),
+            device=str(args.device),
+        )
     elif command == "make-splits":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_make_splits(
@@ -140,6 +152,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Validate the configured AlbumentationsX candidate registry.",
     )
     validate.add_argument("--config", required=True, help="Path to experiment YAML config.")
+
+    run_smoke = subparsers.add_parser(
+        "run-smoke",
+        help="Run a tiny synthetic end-to-end pipeline without loading timm or ImageNet.",
+    )
+    run_smoke.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    run_smoke.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory for synthetic smoke artifacts.",
+    )
+    run_smoke.add_argument("--candidate-count", type=int, default=2)
+    run_smoke.add_argument("--image-size", type=int, default=16)
+    run_smoke.add_argument("--batch-size", type=int, default=2)
+    run_smoke.add_argument("--num-workers", type=int, default=0)
+    run_smoke.add_argument("--epochs", type=int, default=1)
+    run_smoke.add_argument("--device", default="cpu")
 
     make_splits = subparsers.add_parser(
         "make-splits",
@@ -280,6 +309,29 @@ def _cmd_validate_augmentations(config_path: Path) -> None:
         expected_count=config.augmentations.candidate_count,
     )
     print(f"validated {len(candidates)} augmentation candidates")
+
+
+def _cmd_run_smoke(
+    config_path: Path,
+    output_dir: Path,
+    candidate_count: int,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    epochs: int,
+    device: str,
+) -> None:
+    summary = run_smoke_e2e(
+        config_path=config_path,
+        output_dir=output_dir,
+        candidate_count=candidate_count,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        epochs=epochs,
+        device=device,
+    )
+    print(f"smoke run: wrote {summary.results_md}")
 
 
 def _cmd_make_splits(
