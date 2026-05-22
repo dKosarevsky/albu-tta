@@ -13,6 +13,7 @@ from learned_tta.imagenet_split import (
     discover_imagenet_val,
     write_split_manifests,
 )
+from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.selector_training import train_selector_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
@@ -88,6 +89,23 @@ def main(argv: Sequence[str] | None = None) -> None:
             output_dir=output_dir,
             candidate_ids=args.candidate_id,
             top_k_grid=args.top_k,
+            image_size=int(args.image_size),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            device=str(args.device),
+        )
+    elif command == "evaluate-private":
+        output_dir = Path(args.output_dir) if args.output_dir is not None else None
+        _cmd_evaluate_private(
+            config_path=Path(args.config),
+            split=str(args.split),
+            manifest_path=_optional_path(args.manifest),
+            cache_dir=_optional_path(args.cache_dir),
+            checkpoint_path=_optional_path(args.checkpoint),
+            tuning_path=_optional_path(args.tuning),
+            output_dir=output_dir,
+            candidate_ids=args.candidate_id,
+            random_seeds=args.random_seed,
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
             num_workers=int(args.num_workers),
@@ -201,6 +219,24 @@ def _build_parser() -> argparse.ArgumentParser:
     tune_tta.add_argument("--batch-size", type=int, default=64)
     tune_tta.add_argument("--num-workers", type=int, default=4)
     tune_tta.add_argument("--device", default="cpu")
+
+    evaluate_private = subparsers.add_parser(
+        "evaluate-private",
+        help="Evaluate frozen learned TTA and baselines on the private split.",
+    )
+    evaluate_private.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    evaluate_private.add_argument("--split", default="private")
+    evaluate_private.add_argument("--manifest")
+    evaluate_private.add_argument("--cache-dir")
+    evaluate_private.add_argument("--checkpoint")
+    evaluate_private.add_argument("--tuning")
+    evaluate_private.add_argument("--output-dir")
+    evaluate_private.add_argument("--candidate-id", action="append")
+    evaluate_private.add_argument("--random-seed", type=int, action="append")
+    evaluate_private.add_argument("--image-size", type=int, default=224)
+    evaluate_private.add_argument("--batch-size", type=int, default=64)
+    evaluate_private.add_argument("--num-workers", type=int, default=4)
+    evaluate_private.add_argument("--device", default="cpu")
     return parser
 
 
@@ -355,4 +391,40 @@ def _cmd_tune_tta(
     print(
         f"tta tuning {summary.split}: best k {summary.best_k}, "
         f"wrote {summary.result_path}"
+    )
+
+
+def _cmd_evaluate_private(
+    config_path: Path,
+    split: str,
+    manifest_path: Path | None,
+    cache_dir: Path | None,
+    checkpoint_path: Path | None,
+    tuning_path: Path | None,
+    output_dir: Path | None,
+    candidate_ids: list[str] | None,
+    random_seeds: list[int] | None,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    device: str,
+) -> None:
+    summary = evaluate_private_from_config(
+        config_path=config_path,
+        split=split,
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        checkpoint_path=checkpoint_path,
+        tuning_path=tuning_path,
+        output_dir=output_dir,
+        candidate_ids=candidate_ids,
+        random_seeds=random_seeds,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        device=device,
+    )
+    print(
+        f"private evaluation: best k {summary.best_k}, "
+        f"wrote {summary.private_metrics_csv}"
     )
