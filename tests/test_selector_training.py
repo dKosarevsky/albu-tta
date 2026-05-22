@@ -8,6 +8,7 @@ import pytest
 import torch
 from PIL import Image
 
+from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.selector_training import (
     SelectorTrainingSummary,
     make_selector_dataloader,
@@ -22,11 +23,13 @@ def selector_training_artifacts(tmp_path: Path) -> dict[str, Path]:
     val_manifest = _write_manifest(tmp_path, split="public_val", count=2)
     train_targets = _write_targets(tmp_path / "public_train_targets.npz", rows=4)
     val_targets = _write_targets(tmp_path / "public_val_targets.npz", rows=2)
+    cache_dir = _write_cache(tmp_path / "teacher_cache")
     return {
         "train_manifest": train_manifest,
         "val_manifest": val_manifest,
         "train_targets": train_targets,
         "val_targets": val_targets,
+        "cache_dir": cache_dir,
     }
 
 
@@ -66,6 +69,10 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
         epochs=1,
         learning_rate=1e-3,
         rank_weight=0.2,
+        val_cache_dir=selector_training_artifacts["cache_dir"],
+        val_split="public_val",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[1],
         device="cpu",
     )
 
@@ -79,7 +86,11 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
     assert checkpoint["aug_ids"] == ["aug_000", "aug_001"]
     assert checkpoint["target_mean"].tolist() == pytest.approx([0.0, 0.0])
     assert checkpoint["target_std"].tolist() == pytest.approx([1.0, 1.0])
-    assert checkpoint["val_nll"] == pytest.approx(summary.best_val_loss)
+    assert "val_tta_nll" in summary.history[0]
+    assert summary.history[0]["val_tta_best_k"] == 1
+    assert checkpoint["val_nll"] == pytest.approx(summary.history[0]["val_tta_nll"])
+    assert checkpoint["val_nll"] != pytest.approx(summary.history[0]["val_loss"])
+    assert summary.best_val_nll == pytest.approx(checkpoint["val_nll"])
 
 
 def test_train_selector_cli_writes_checkpoint(
@@ -104,8 +115,16 @@ def test_train_selector_cli_writes_checkpoint(
             str(selector_training_artifacts["train_targets"]),
             "--val-targets",
             str(selector_training_artifacts["val_targets"]),
+            "--cache-dir",
+            str(selector_training_artifacts["cache_dir"]),
             "--output-dir",
             str(output_dir),
+            "--candidate-id",
+            "aug_000",
+            "--candidate-id",
+            "aug_001",
+            "--top-k",
+            "1",
             "--epochs",
             "1",
             "--batch-size",
@@ -119,6 +138,7 @@ def test_train_selector_cli_writes_checkpoint(
     captured = capsys.readouterr()
 
     assert "selector training: best epoch 1" in captured.out
+    assert "best val nll" in captured.out
     assert (output_dir / "selector_best.pt").exists()
 
 
@@ -162,3 +182,29 @@ def _write_targets(path: Path, rows: int) -> Path:
         stats=stats,
     )
     return path
+
+
+def _write_cache(cache_dir: Path) -> Path:
+    image_ids = ["public_val-0", "public_val-1"]
+    class_idxs = np.array([0, 1], dtype=np.int64)
+    write_teacher_shard(
+        cache_dir,
+        TeacherShard(
+            split="public_val",
+            aug_id="aug_000",
+            image_ids=image_ids,
+            class_idxs=class_idxs,
+            logits=np.array([[3.0, 0.0], [0.0, 3.0]], dtype=np.float32),
+        ),
+    )
+    write_teacher_shard(
+        cache_dir,
+        TeacherShard(
+            split="public_val",
+            aug_id="aug_001",
+            image_ids=image_ids,
+            class_idxs=class_idxs,
+            logits=np.array([[4.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        ),
+    )
+    return cache_dir

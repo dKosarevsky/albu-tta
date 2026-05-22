@@ -127,6 +127,11 @@ def run_smoke_e2e(
         epochs=epochs,
         learning_rate=1e-3,
         rank_weight=0.2,
+        val_cache_dir=teacher_cache_dir,
+        val_split="public_val",
+        aug_ids=candidate_ids,
+        top_k_grid=list(range(candidate_count)),
+        identity_aug_id=config.augmentations.identity_id,
         device=device,
     )
     tuning_summary = tune_tta_from_artifacts(
