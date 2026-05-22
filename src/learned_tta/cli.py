@@ -14,6 +14,7 @@ from learned_tta.imagenet_split import (
     write_split_manifests,
 )
 from learned_tta.private_eval import evaluate_private_from_config
+from learned_tta.report_builder import build_report_from_config
 from learned_tta.selector_training import train_selector_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
@@ -106,6 +107,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             output_dir=output_dir,
             candidate_ids=args.candidate_id,
             random_seeds=args.random_seed,
+            image_size=int(args.image_size),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            device=str(args.device),
+        )
+    elif command == "build-report":
+        report_dir = Path(args.report_dir) if args.report_dir is not None else None
+        _cmd_build_report(
+            config_path=Path(args.config),
+            report_dir=report_dir,
+            private_metrics_path=_optional_path(args.private_metrics),
+            tuning_path=_optional_path(args.tuning),
+            impact_targets_path=_optional_path(args.impact_targets),
+            impact_manifest_path=_optional_path(args.impact_manifest),
+            checkpoint_path=_optional_path(args.checkpoint),
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
             num_workers=int(args.num_workers),
@@ -237,6 +253,22 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_private.add_argument("--batch-size", type=int, default=64)
     evaluate_private.add_argument("--num-workers", type=int, default=4)
     evaluate_private.add_argument("--device", default="cpu")
+
+    build_report = subparsers.add_parser(
+        "build-report",
+        help="Build final markdown, tables, and SVG figures from experiment artifacts.",
+    )
+    build_report.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    build_report.add_argument("--report-dir")
+    build_report.add_argument("--private-metrics")
+    build_report.add_argument("--tuning")
+    build_report.add_argument("--impact-targets")
+    build_report.add_argument("--impact-manifest")
+    build_report.add_argument("--checkpoint")
+    build_report.add_argument("--image-size", type=int, default=224)
+    build_report.add_argument("--batch-size", type=int, default=64)
+    build_report.add_argument("--num-workers", type=int, default=4)
+    build_report.add_argument("--device", default="cpu")
     return parser
 
 
@@ -428,3 +460,32 @@ def _cmd_evaluate_private(
         f"private evaluation: best k {summary.best_k}, "
         f"wrote {summary.private_metrics_csv}"
     )
+
+
+def _cmd_build_report(
+    config_path: Path,
+    report_dir: Path | None,
+    private_metrics_path: Path | None,
+    tuning_path: Path | None,
+    impact_targets_path: Path | None,
+    impact_manifest_path: Path | None,
+    checkpoint_path: Path | None,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    device: str,
+) -> None:
+    summary = build_report_from_config(
+        config_path=config_path,
+        report_dir=report_dir,
+        private_metrics_path=private_metrics_path,
+        tuning_path=tuning_path,
+        impact_targets_path=impact_targets_path,
+        impact_manifest_path=impact_manifest_path,
+        checkpoint_path=checkpoint_path,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        device=device,
+    )
+    print(f"report: wrote {summary.results_md}")
