@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
+from learned_tta.targets import TargetStats
 from learned_tta.train_selector import (
     CheckpointState,
     evaluate_regression,
@@ -67,6 +69,10 @@ def test_save_checkpoint_if_best_only_updates_on_improvement(tmp_path: Path) -> 
     model = torch.nn.Linear(2, 1)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     state = CheckpointState(best_val_nll=1.0, path=tmp_path / "selector.pt")
+    stats = TargetStats(
+        mean=np.array([0.25], dtype=np.float32),
+        std=np.array([2.0], dtype=np.float32),
+    )
 
     improved = save_checkpoint_if_best(
         state=state,
@@ -74,6 +80,8 @@ def test_save_checkpoint_if_best_only_updates_on_improvement(tmp_path: Path) -> 
         epoch=3,
         model=model,
         optimizer=optimizer,
+        aug_ids=["aug_000"],
+        target_stats=stats,
     )
     not_improved = save_checkpoint_if_best(
         state=improved,
@@ -81,11 +89,17 @@ def test_save_checkpoint_if_best_only_updates_on_improvement(tmp_path: Path) -> 
         epoch=4,
         model=model,
         optimizer=optimizer,
+        aug_ids=["aug_000"],
+        target_stats=stats,
     )
+    checkpoint = torch.load(improved.path, weights_only=False)
 
     assert improved.best_val_nll == pytest.approx(0.9)
     assert improved.best_epoch == 3
     assert improved.path.exists()
+    assert checkpoint["aug_ids"] == ["aug_000"]
+    assert checkpoint["target_mean"].tolist() == pytest.approx([0.25])
+    assert checkpoint["target_std"].tolist() == pytest.approx([2.0])
     assert not_improved == improved
 
 

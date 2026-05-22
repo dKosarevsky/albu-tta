@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from torch import nn
 from torch.optim import Optimizer
 
+from learned_tta.targets import TargetStats
+
 
 @dataclass(frozen=True, slots=True)
 class CheckpointState:
@@ -75,6 +77,8 @@ def save_checkpoint_if_best(
     epoch: int,
     model: nn.Module,
     optimizer: Optimizer,
+    aug_ids: list[str] | None = None,
+    target_stats: TargetStats | None = None,
 ) -> CheckpointState:
     """Save model checkpoint when validation NLL improves."""
 
@@ -82,15 +86,18 @@ def save_checkpoint_if_best(
         return state
 
     state.path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "epoch": epoch,
-            "val_nll": val_nll,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-        },
-        state.path,
-    )
+    checkpoint: dict[str, object] = {
+        "epoch": epoch,
+        "val_nll": val_nll,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+    }
+    if aug_ids is not None:
+        checkpoint["aug_ids"] = list(aug_ids)
+    if target_stats is not None:
+        checkpoint["target_mean"] = target_stats.mean
+        checkpoint["target_std"] = target_stats.std
+    torch.save(checkpoint, state.path)
     return CheckpointState(best_val_nll=val_nll, best_epoch=epoch, path=state.path)
 
 
