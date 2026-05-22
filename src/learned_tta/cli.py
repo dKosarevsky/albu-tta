@@ -16,6 +16,7 @@ from learned_tta.imagenet_split import (
 from learned_tta.selector_training import train_selector_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
+from learned_tta.tta_tuning import tune_tta_from_config
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -74,6 +75,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             epochs=int(args.epochs),
             learning_rate=float(args.learning_rate),
             rank_weight=float(args.rank_weight),
+            device=str(args.device),
+        )
+    elif command == "tune-tta":
+        output_dir = Path(args.output_dir) if args.output_dir is not None else None
+        _cmd_tune_tta(
+            config_path=Path(args.config),
+            split=str(args.split),
+            manifest_path=_optional_path(args.manifest),
+            cache_dir=_optional_path(args.cache_dir),
+            checkpoint_path=_optional_path(args.checkpoint),
+            output_dir=output_dir,
+            candidate_ids=args.candidate_id,
+            top_k_grid=args.top_k,
+            image_size=int(args.image_size),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
             device=str(args.device),
         )
     else:
@@ -167,6 +184,23 @@ def _build_parser() -> argparse.ArgumentParser:
     train_selector.add_argument("--learning-rate", type=float, default=1e-3)
     train_selector.add_argument("--rank-weight", type=float, default=0.2)
     train_selector.add_argument("--device", default="cpu")
+
+    tune_tta = subparsers.add_parser(
+        "tune-tta",
+        help="Tune learned TTA top-k on a validation split.",
+    )
+    tune_tta.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    tune_tta.add_argument("--split", default="public_val")
+    tune_tta.add_argument("--manifest")
+    tune_tta.add_argument("--cache-dir")
+    tune_tta.add_argument("--checkpoint")
+    tune_tta.add_argument("--output-dir")
+    tune_tta.add_argument("--candidate-id", action="append")
+    tune_tta.add_argument("--top-k", type=int, action="append")
+    tune_tta.add_argument("--image-size", type=int, default=224)
+    tune_tta.add_argument("--batch-size", type=int, default=64)
+    tune_tta.add_argument("--num-workers", type=int, default=4)
+    tune_tta.add_argument("--device", default="cpu")
     return parser
 
 
@@ -288,3 +322,37 @@ def _optional_path(value: str | None) -> Path | None:
     if value is None:
         return None
     return Path(value)
+
+
+def _cmd_tune_tta(
+    config_path: Path,
+    split: str,
+    manifest_path: Path | None,
+    cache_dir: Path | None,
+    checkpoint_path: Path | None,
+    output_dir: Path | None,
+    candidate_ids: list[str] | None,
+    top_k_grid: list[int] | None,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    device: str,
+) -> None:
+    summary = tune_tta_from_config(
+        config_path=config_path,
+        split=split,
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        checkpoint_path=checkpoint_path,
+        output_dir=output_dir,
+        candidate_ids=candidate_ids,
+        top_k_grid=top_k_grid,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        device=device,
+    )
+    print(
+        f"tta tuning {summary.split}: best k {summary.best_k}, "
+        f"wrote {summary.result_path}"
+    )
