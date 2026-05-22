@@ -220,6 +220,83 @@ def evaluate_all_100_uniform(
     return evaluate_selected_tta(logits_by_aug, selected_aug_ids, class_idxs)
 
 
+def global_weighted_probabilities(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    weights: np.ndarray,
+) -> np.ndarray:
+    """Average augmentation probabilities with one non-negative weight per augmentation."""
+
+    weights = _normalize_nonnegative_weights(np.asarray(weights, dtype=np.float32), "weights")
+    if weights.shape != (len(aug_ids),):
+        raise ValueError("weights must have shape [augmentations]")
+
+    probabilities = np.stack([_softmax(logits_by_aug[aug_id]) for aug_id in aug_ids], axis=0)
+    return np.tensordot(weights, probabilities, axes=(0, 0)).astype(np.float32)
+
+
+def class_weighted_probabilities(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    class_weights: np.ndarray,
+) -> np.ndarray:
+    """Average probabilities with separate non-negative augmentation weights per class."""
+
+    class_weights = np.asarray(class_weights, dtype=np.float32)
+    if class_weights.ndim != 2 or class_weights.shape[1] != len(aug_ids):
+        raise ValueError("class_weights must have shape [classes, augmentations]")
+    if np.any(class_weights < 0.0):
+        raise ValueError("class_weights must be non-negative")
+    row_sums = class_weights.sum(axis=1, keepdims=True)
+    if np.any(row_sums <= 0.0):
+        raise ValueError("each class must have at least one positive augmentation weight")
+
+    probabilities = np.stack([_softmax(logits_by_aug[aug_id]) for aug_id in aug_ids], axis=0)
+    if probabilities.shape[2] != class_weights.shape[0]:
+        raise ValueError("class_weights class count must match logits class count")
+
+    normalized = class_weights / row_sums
+    scores = np.einsum("anc,ca->nc", probabilities, normalized, optimize=True)
+    scores_sum = scores.sum(axis=1, keepdims=True)
+    return (scores / np.clip(scores_sum, 1e-45, None)).astype(np.float32)
+
+
+def evaluate_global_weighted_tta(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    weights: np.ndarray,
+    active_threshold: float = 1e-6,
+) -> dict[str, float]:
+    """Evaluate learned global non-negative TTA aggregation weights."""
+
+    probabilities = global_weighted_probabilities(logits_by_aug, aug_ids, weights)
+    metrics = classification_metrics(probabilities, class_idxs, topk=(1, 5))
+    metrics["ece"] = expected_calibration_error(probabilities, class_idxs)
+    metrics["forwards_per_image"] = float(_active_weight_count(weights, active_threshold))
+    metrics["relative_compute_vs_all"] = metrics["forwards_per_image"] / len(aug_ids)
+    return metrics
+
+
+def evaluate_class_weighted_tta(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    class_weights: np.ndarray,
+    active_threshold: float = 1e-6,
+) -> dict[str, float]:
+    """Evaluate learned class-specific non-negative TTA aggregation weights."""
+
+    probabilities = class_weighted_probabilities(logits_by_aug, aug_ids, class_weights)
+    metrics = classification_metrics(probabilities, class_idxs, topk=(1, 5))
+    metrics["ece"] = expected_calibration_error(probabilities, class_idxs)
+    metrics["forwards_per_image"] = float(
+        _active_weight_count_per_any_class(class_weights, active_threshold)
+    )
+    metrics["relative_compute_vs_all"] = metrics["forwards_per_image"] / len(aug_ids)
+    return metrics
+
+
 def evaluate_learned_topk_uniform(
     logits_by_aug: dict[str, np.ndarray],
     class_idxs: np.ndarray,
@@ -356,3 +433,25 @@ def _softmax_vector(scores: np.ndarray) -> np.ndarray:
     shifted = scores - scores.max()
     exp = np.exp(shifted)
     return exp / exp.sum()
+
+
+def _normalize_nonnegative_weights(weights: np.ndarray, name: str) -> np.ndarray:
+    if np.any(weights < 0.0):
+        raise ValueError(f"{name} must be non-negative")
+    weight_sum = weights.sum()
+    if weight_sum <= 0.0:
+        raise ValueError(f"{name} must contain at least one positive value")
+    return weights / weight_sum
+
+
+def _active_weight_count(weights: np.ndarray, active_threshold: float) -> int:
+    return int(np.count_nonzero(np.asarray(weights, dtype=np.float32) > active_threshold))
+
+
+def _active_weight_count_per_any_class(
+    class_weights: np.ndarray,
+    active_threshold: float,
+) -> int:
+    return int(
+        np.count_nonzero(np.asarray(class_weights, dtype=np.float32).max(axis=0) > active_threshold)
+    )

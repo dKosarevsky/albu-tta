@@ -17,6 +17,7 @@ from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
 from learned_tta.selector_training import train_selector_from_config
 from learned_tta.smoke import run_smoke_e2e
+from learned_tta.stacking import train_aggregator_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
 from learned_tta.tta_tuning import tune_tta_from_config
@@ -107,6 +108,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             num_workers=int(args.num_workers),
             device=str(args.device),
         )
+    elif command == "train-aggregator":
+        output_dir = Path(args.output_dir) if args.output_dir is not None else None
+        _cmd_train_aggregator(
+            config_path=Path(args.config),
+            split=str(args.split),
+            cache_dir=_optional_path(args.cache_dir),
+            output_dir=output_dir,
+            output_path=_optional_path(args.output_path),
+            candidate_ids=args.candidate_id,
+            method=str(args.method),
+            epochs=int(args.epochs),
+            learning_rate=float(args.learning_rate),
+            l1_penalty=float(args.l1_penalty),
+            active_threshold=float(args.active_threshold),
+            device=str(args.device),
+        )
     elif command == "evaluate-private":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_evaluate_private(
@@ -118,6 +135,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             tuning_path=_optional_path(args.tuning),
             output_dir=output_dir,
             candidate_ids=args.candidate_id,
+            global_aggregator_path=_optional_path(args.global_aggregator),
+            class_aggregator_path=_optional_path(args.class_aggregator),
             random_seeds=args.random_seed,
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
@@ -265,6 +284,27 @@ def _build_parser() -> argparse.ArgumentParser:
     tune_tta.add_argument("--num-workers", type=int, default=4)
     tune_tta.add_argument("--device", default="cpu")
 
+    train_aggregator = subparsers.add_parser(
+        "train-aggregator",
+        help="Train learned non-negative TTA aggregation weights from cached logits.",
+    )
+    train_aggregator.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    train_aggregator.add_argument("--split", default="public_val")
+    train_aggregator.add_argument("--cache-dir")
+    train_aggregator.add_argument("--output-dir")
+    train_aggregator.add_argument("--output-path")
+    train_aggregator.add_argument("--candidate-id", action="append")
+    train_aggregator.add_argument(
+        "--method",
+        choices=["global-nonnegative", "class-nonnegative"],
+        default="global-nonnegative",
+    )
+    train_aggregator.add_argument("--epochs", type=int, default=200)
+    train_aggregator.add_argument("--learning-rate", type=float, default=0.05)
+    train_aggregator.add_argument("--l1-penalty", type=float, default=0.0)
+    train_aggregator.add_argument("--active-threshold", type=float, default=1e-6)
+    train_aggregator.add_argument("--device", default="cpu")
+
     evaluate_private = subparsers.add_parser(
         "evaluate-private",
         help="Evaluate frozen learned TTA and baselines on the private split.",
@@ -275,6 +315,8 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_private.add_argument("--cache-dir")
     evaluate_private.add_argument("--checkpoint")
     evaluate_private.add_argument("--tuning")
+    evaluate_private.add_argument("--global-aggregator")
+    evaluate_private.add_argument("--class-aggregator")
     evaluate_private.add_argument("--output-dir")
     evaluate_private.add_argument("--candidate-id", action="append")
     evaluate_private.add_argument("--random-seed", type=int, action="append")
@@ -478,6 +520,37 @@ def _cmd_tune_tta(
     )
 
 
+def _cmd_train_aggregator(
+    config_path: Path,
+    split: str,
+    cache_dir: Path | None,
+    output_dir: Path | None,
+    output_path: Path | None,
+    candidate_ids: list[str] | None,
+    method: str,
+    epochs: int,
+    learning_rate: float,
+    l1_penalty: float,
+    active_threshold: float,
+    device: str,
+) -> None:
+    summary = train_aggregator_from_config(
+        config_path=config_path,
+        split=split,
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        output_path=output_path,
+        candidate_ids=candidate_ids,
+        method=method,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        l1_penalty=l1_penalty,
+        active_threshold=active_threshold,
+        device=device,
+    )
+    print(f"aggregator {summary.method}: wrote {summary.path}")
+
+
 def _cmd_evaluate_private(
     config_path: Path,
     split: str,
@@ -487,6 +560,8 @@ def _cmd_evaluate_private(
     tuning_path: Path | None,
     output_dir: Path | None,
     candidate_ids: list[str] | None,
+    global_aggregator_path: Path | None,
+    class_aggregator_path: Path | None,
     random_seeds: list[int] | None,
     image_size: int,
     batch_size: int,
@@ -502,6 +577,8 @@ def _cmd_evaluate_private(
         tuning_path=tuning_path,
         output_dir=output_dir,
         candidate_ids=candidate_ids,
+        global_aggregator_path=global_aggregator_path,
+        class_aggregator_path=class_aggregator_path,
         random_seeds=random_seeds,
         image_size=image_size,
         batch_size=batch_size,

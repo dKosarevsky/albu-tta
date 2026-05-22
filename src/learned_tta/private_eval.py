@@ -15,10 +15,13 @@ from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import load_manifest
 from learned_tta.reporting import build_compute_table, build_metrics_table
+from learned_tta.stacking import default_aggregator_path, load_aggregation_artifact
 from learned_tta.tta_eval import (
     evaluate_all_100_uniform,
+    evaluate_class_weighted_tta,
     evaluate_clean,
     evaluate_fixed_light_tta,
+    evaluate_global_weighted_tta,
     evaluate_learned_topk_softmax_weighted,
     evaluate_learned_topk_uniform,
     evaluate_oracle_topk_uniform,
@@ -49,6 +52,8 @@ def evaluate_private_from_artifacts(
     batch_size: int,
     num_workers: int,
     random_seeds: list[int],
+    global_aggregator_path: Path | None = None,
+    class_aggregator_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> PrivateEvaluationSummary:
@@ -74,6 +79,8 @@ def evaluate_private_from_artifacts(
         identity_aug_id=identity_aug_id,
         best_k=best_k,
         random_seeds=random_seeds,
+        global_aggregator_path=global_aggregator_path,
+        class_aggregator_path=class_aggregator_path,
     )
 
     tables_dir = Path(output_dir) / "tables"
@@ -99,6 +106,8 @@ def evaluate_private_from_config(
     tuning_path: Path | None = None,
     output_dir: Path | None = None,
     candidate_ids: list[str] | None = None,
+    global_aggregator_path: Path | None = None,
+    class_aggregator_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -115,6 +124,13 @@ def evaluate_private_from_config(
         ]
     if random_seeds is None:
         random_seeds = [config.seed + offset for offset in range(5)]
+    selector_dir = config.artifacts.selector_dir
+    resolved_global_aggregator_path = global_aggregator_path or _existing_path(
+        default_aggregator_path(selector_dir, split="public_val", method="global-nonnegative")
+    )
+    resolved_class_aggregator_path = class_aggregator_path or _existing_path(
+        default_aggregator_path(selector_dir, split="public_val", method="class-nonnegative")
+    )
     return evaluate_private_from_artifacts(
         split=split,
         manifest_path=manifest_path or config.artifacts.manifests_dir / f"{split}.csv",
@@ -127,6 +143,8 @@ def evaluate_private_from_config(
         batch_size=batch_size,
         num_workers=num_workers,
         random_seeds=random_seeds,
+        global_aggregator_path=resolved_global_aggregator_path,
+        class_aggregator_path=resolved_class_aggregator_path,
         device=device,
         identity_aug_id=config.augmentations.identity_id,
     )
@@ -140,6 +158,8 @@ def _evaluate_private_strategies(
     identity_aug_id: str,
     best_k: int,
     random_seeds: list[int],
+    global_aggregator_path: Path | None,
+    class_aggregator_path: Path | None,
 ) -> dict[str, dict[str, float]]:
     random_metrics = [
         evaluate_random_topk(
@@ -152,7 +172,7 @@ def _evaluate_private_strategies(
         )
         for seed in random_seeds
     ]
-    return {
+    metrics = {
         "clean": evaluate_clean(logits_by_aug, class_idxs, identity_aug_id=identity_aug_id),
         "fixed_light_tta": evaluate_fixed_light_tta(
             logits_by_aug,
@@ -186,6 +206,25 @@ def _evaluate_private_strategies(
             k=best_k,
         ),
     }
+    if global_aggregator_path is not None:
+        artifact = load_aggregation_artifact(global_aggregator_path)
+        metrics["global_weighted_tta"] = evaluate_global_weighted_tta(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            aug_ids=artifact.aug_ids,
+            weights=artifact.weights,
+            active_threshold=artifact.active_threshold,
+        )
+    if class_aggregator_path is not None:
+        artifact = load_aggregation_artifact(class_aggregator_path)
+        metrics["class_weighted_tta"] = evaluate_class_weighted_tta(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            aug_ids=artifact.aug_ids,
+            class_weights=artifact.weights,
+            active_threshold=artifact.active_threshold,
+        )
+    return metrics
 
 
 def _read_split_logits(
@@ -213,6 +252,12 @@ def _load_best_k(tuning_path: Path) -> int:
     with Path(tuning_path).open(encoding="utf-8") as handle:
         data = json.load(handle)
     return int(data["best_k"])
+
+
+def _existing_path(path: Path) -> Path | None:
+    if path.exists():
+        return path
+    return None
 
 
 def _mean_metrics(metrics: list[dict[str, float]]) -> dict[str, float]:
