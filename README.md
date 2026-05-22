@@ -29,7 +29,8 @@ the public-train target mean and std. Inference converts selector outputs back
 to the original gain scale before ranking augmentations for top-k TTA. During
 training, the best checkpoint is selected by public-validation
 `learned_topk_uniform` TTA NLL when the validation teacher cache is available;
-regression loss and Spearman correlation are kept as diagnostics.
+regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
+written to `selector/selector_history.csv`.
 
 `build-report` writes the aggregation diagnostics when the learned aggregator
 artifacts are present, and copies private clean-vs-TTA diagnostics when
