@@ -47,6 +47,7 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
         model_path=xgboost_model_path,
         num_classes=2,
         feature_count=4,
+        feature_importance=np.array([0.4, 0.6], dtype=np.float32),
         metrics={"nll": 0.0},
     ).save(xgboost_aggregator_path)
     tuning_path = tmp_path / "public_val_tta_tuning.json"

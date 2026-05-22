@@ -58,6 +58,7 @@ class XGBoostAggregationArtifact:
     model_path: Path
     num_classes: int
     feature_count: int
+    feature_importance: np.ndarray
     metrics: dict[str, float]
 
     def save(self, path: Path) -> None:
@@ -71,6 +72,7 @@ class XGBoostAggregationArtifact:
                     "model_path": str(self.model_path),
                     "num_classes": self.num_classes,
                     "feature_count": self.feature_count,
+                    "feature_importance": self.feature_importance.astype(float).tolist(),
                     "metrics": self.metrics,
                 },
                 indent=2,
@@ -112,12 +114,20 @@ def load_xgboost_aggregation_artifact(path: Path) -> XGBoostAggregationArtifact:
     model_path = Path(str(raw["model_path"]))
     if not model_path.is_absolute():
         model_path = path.parent / model_path
+    aug_ids = [str(aug_id) for aug_id in raw["aug_ids"]]
+    raw_feature_importance = raw.get("feature_importance")
+    feature_importance = (
+        np.zeros(len(aug_ids), dtype=np.float32)
+        if raw_feature_importance is None
+        else np.asarray(raw_feature_importance, dtype=np.float32)
+    )
     return XGBoostAggregationArtifact(
         method=str(raw["method"]),
-        aug_ids=[str(aug_id) for aug_id in raw["aug_ids"]],
+        aug_ids=aug_ids,
         model_path=model_path,
         num_classes=int(raw["num_classes"]),
         feature_count=int(raw["feature_count"]),
+        feature_importance=feature_importance,
         metrics={str(key): float(value) for key, value in raw["metrics"].items()},
     )
 
@@ -282,6 +292,11 @@ def train_xgboost_multiclass_stacker(
         model_path=model_path,
         num_classes=num_classes,
         feature_count=features.shape[1],
+        feature_importance=_xgboost_feature_importance(
+            classifier=classifier,
+            aug_count=len(aug_ids),
+            num_classes=num_classes,
+        ),
         metrics=metrics,
     )
 
@@ -479,6 +494,27 @@ def _probability_metrics(
     metrics["forwards_per_image"] = float(forwards_per_image)
     metrics["relative_compute_vs_all"] = float(forwards_per_image / total_augments)
     return metrics
+
+
+def _xgboost_feature_importance(
+    classifier: Any,
+    aug_count: int,
+    num_classes: int,
+) -> np.ndarray:
+    raw_importance = getattr(classifier, "feature_importances_", None)
+    if raw_importance is None:
+        return np.zeros(aug_count, dtype=np.float32)
+
+    feature_importance = np.asarray(raw_importance, dtype=np.float32)
+    expected_features = aug_count * num_classes
+    if feature_importance.shape != (expected_features,):
+        raise ValueError("xgboost feature importance length must match feature count")
+
+    per_aug = feature_importance.reshape(aug_count, num_classes).sum(axis=1)
+    total = float(per_aug.sum())
+    if total > 0.0:
+        per_aug = per_aug / total
+    return per_aug.astype(np.float32)
 
 
 def _require_xgboost() -> Any:

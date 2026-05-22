@@ -156,6 +156,7 @@ def test_train_aggregator_from_artifacts_writes_xgboost_stacker(
     assert loaded.aug_ids == ["aug_000", "aug_001"]
     assert loaded.num_classes == 2
     assert loaded.feature_count == 4
+    assert loaded.feature_importance.tolist() == pytest.approx([0.3, 0.7])
     assert loaded.model_path.exists()
     assert summary.metrics["forwards_per_image"] == pytest.approx(2.0)
 
@@ -269,6 +270,7 @@ def _install_fake_xgboost(monkeypatch: pytest.MonkeyPatch) -> None:
             assert features.shape == (2, 4)
             assert self.kwargs["n_estimators"] == 3
             self.num_classes = int(np.max(class_idxs)) + 1
+            self.feature_importances_ = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
             return self
 
         def predict_proba(self, features: np.ndarray) -> np.ndarray:

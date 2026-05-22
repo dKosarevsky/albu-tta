@@ -64,6 +64,8 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
         "global_weighted_tta",
         "class_weighted_tta",
         "xgboost_multiclass",
+        "xgboost_feature_importance.csv",
+        "xgboost_feature_importance.svg",
         "active_threshold",
         "gain_distribution.svg",
         "oracle_overlap.svg",
