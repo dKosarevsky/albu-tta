@@ -61,7 +61,8 @@ Aggregator training uses the historical `--l1-penalty` CLI option as a sparsity
 regularizer and then prunes weights at or below `active_threshold`; this makes
 zero-weight TTA candidates explicit in the saved artifact and report tables.
 The optional XGBoost stacker is deliberately not a default dependency; install
-`xgboost` in the experiment environment before running `--method xgboost-multiclass`.
+the stacker extra with `uv sync --extra stackers` before running
+`--method xgboost-multiclass`.
 When the XGBoost artifact is present, `build-report` writes
 `xgboost_feature_importance.csv` and `xgboost_feature_importance.svg` to show
 which augmentation candidates the stacker uses most.
@@ -136,6 +137,8 @@ uv run python -m learned_tta.cli train-aggregator --method class-nonnegative \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --split public_val \
   --device cuda
+
+uv sync --extra stackers
 
 uv run python -m learned_tta.cli train-aggregator --method xgboost-multiclass \
   --config configs/experiment/resnet50_a1_in1k.yaml \
