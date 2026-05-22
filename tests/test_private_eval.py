@@ -12,6 +12,7 @@ from PIL import Image
 from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.private_eval import evaluate_private_from_artifacts
 from learned_tta.selector_model import SelectorCNN
+from learned_tta.stacking import AggregationArtifact
 
 
 @pytest.fixture
@@ -19,12 +20,30 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
     manifest_path = _write_manifest(tmp_path, split="private", count=2)
     cache_dir = _write_cache(tmp_path / "teacher_cache")
     checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=2)
+    global_aggregator_path = tmp_path / "global_aggregator.json"
+    class_aggregator_path = tmp_path / "class_aggregator.json"
+    AggregationArtifact(
+        method="global-nonnegative",
+        aug_ids=["aug_000", "aug_001"],
+        weights=np.array([0.0, 1.0], dtype=np.float32),
+        active_threshold=1e-6,
+        metrics={"nll": 0.0},
+    ).save(global_aggregator_path)
+    AggregationArtifact(
+        method="class-nonnegative",
+        aug_ids=["aug_000", "aug_001"],
+        weights=np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        active_threshold=1e-6,
+        metrics={"nll": 0.0},
+    ).save(class_aggregator_path)
     tuning_path = tmp_path / "public_val_tta_tuning.json"
     tuning_path.write_text(json.dumps({"best_k": 1}), encoding="utf-8")
     return {
         "manifest": manifest_path,
         "cache_dir": cache_dir,
         "checkpoint": checkpoint_path,
+        "global_aggregator": global_aggregator_path,
+        "class_aggregator": class_aggregator_path,
         "tuning": tuning_path,
     }
 
@@ -45,6 +64,8 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
         batch_size=2,
         num_workers=0,
         random_seeds=[1, 2],
+        global_aggregator_path=private_eval_artifacts["global_aggregator"],
+        class_aggregator_path=private_eval_artifacts["class_aggregator"],
         device="cpu",
     )
 
@@ -60,6 +81,8 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
         "all_100_uniform",
         "learned_topk_uniform",
         "learned_topk_softmax_weighted",
+        "global_weighted_tta",
+        "class_weighted_tta",
         "oracle_topk_uniform",
     }
 

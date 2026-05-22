@@ -245,10 +245,30 @@ p_final = mean(softmax(logits_aug), over selected augmentations)
 
 Metrics are computed from `p_final`.
 
+Paper-style learned aggregation is a separate second-level layer over cached TTA
+predictions:
+
+```text
+global_weighted_tta:
+  p_final = sum_a nonnegative_weight(a) * softmax(logits_a)
+
+class_weighted_tta:
+  score(c) = sum_a nonnegative_weight(c, a) * softmax(logits_a)[c]
+  p_final = normalize(score)
+```
+
+These weights are trained on public validation cached predictions only. They are
+not image-conditioned; they answer a different question from the selector CNN:
+"with which weights should available TTA predictions be aggregated?"
+
 Rationale:
 
 - Probability averaging is the standard, stable ensemble baseline for classification TTA.
 - Logit averaging can over-sharpen distributions and hurt log loss, which is one of the target metrics.
+- Non-negative learned aggregation follows the Better Aggregation in TTA framing and
+  gives interpretable zero-or-near-zero augmentation weights.
+- Keeping learned aggregation separate from image-conditioned selection lets the
+  article report selection quality and aggregation quality independently.
 
 ### Metrics
 
@@ -280,6 +300,8 @@ Final private table must include:
 - `fixed_light_tta`: identity plus a small fixed hand-picked set, using the same final `k`.
 - `random_topk`: identity plus random non-identity candidates, averaged over 5 seeds.
 - `all_100_uniform`: all candidates, upper compute bound.
+- `global_weighted_tta`: all candidates with one learned non-negative weight per augmentation.
+- `class_weighted_tta`: all candidates with learned non-negative weights per class and augmentation.
 - `learned_topk_uniform`: main method.
 - `learned_topk_softmax_weighted`: ablation.
 - `oracle_topk_uniform`: private diagnostic only, not a deployable method.
@@ -290,6 +312,8 @@ Rationale:
 - `fixed_light_tta` is the normal "picked from the air" TTA baseline.
 - `random_topk` checks whether gains come from selection or just more views.
 - `all_100_uniform` shows the expensive upper bound.
+- `global_weighted_tta` tests whether dataset-level learned weights improve over simple averaging.
+- `class_weighted_tta` tests whether each class benefits from a different augmentation profile.
 - `oracle_topk_uniform` estimates headroom but must not be described as a valid deployable method.
 
 ## Target File Structure
@@ -449,8 +473,9 @@ Files:
 Steps:
 
 - [ ] Implement probability averaging from cached logits.
-- [ ] Implement `clean`, `fixed_light_tta`, `random_topk`, `all_100_uniform`, `learned_topk_uniform`, `learned_topk_softmax_weighted`, and `oracle_topk_uniform`.
+- [ ] Implement `clean`, `fixed_light_tta`, `random_topk`, `all_100_uniform`, `global_weighted_tta`, `class_weighted_tta`, `learned_topk_uniform`, `learned_topk_softmax_weighted`, and `oracle_topk_uniform`.
 - [ ] Tune `k` on public-val and freeze the winning value.
+- [ ] Train global and class-specific non-negative aggregation weights on public-val cached predictions.
 - [ ] Evaluate the frozen method on private.
 - [ ] Test that aggregation returns correct top-1, top-5, and NLL on a small synthetic logits cache.
 
@@ -483,6 +508,8 @@ python -m learned_tta.cli cache-teacher --split public_val --config configs/expe
 python -m learned_tta.cli build-targets --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli train-selector --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli tune-tta --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
+python -m learned_tta.cli train-aggregator --method global-nonnegative --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
+python -m learned_tta.cli train-aggregator --method class-nonnegative --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli cache-teacher --split private --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli evaluate-private --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli build-report --config configs/experiment/resnet50_a1_in1k.yaml

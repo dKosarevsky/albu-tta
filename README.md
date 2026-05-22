@@ -14,11 +14,27 @@
 
 Learned test-time augmentation selector experiments with AlbumentationsX.
 
+## Methods
+
+The project now keeps two TTA learning layers separate.
+
+- `learned_topk_uniform` and `learned_topk_softmax_weighted`: an image-conditioned
+  selector CNN predicts which augmentations are worth running for each image.
+- `global_weighted_tta`: a paper-style second-level aggregator learns one
+  non-negative weight per augmentation from cached public-val predictions.
+- `class_weighted_tta`: the same learned aggregation idea, but with separate
+  non-negative augmentation weights per output class.
+
+This separation makes the article diagnostics cleaner: selection answers which
+AlbumentationsX transforms are useful, while aggregation answers how strongly to
+combine predictions once the TTA views are available.
+
 ## Smoke Run
 
 Use the synthetic smoke run before spending GPU time on ImageNet. It creates a tiny
 ImageNet-like directory, caches a fake teacher, trains the selector for one epoch,
-tunes TTA, evaluates private metrics, and writes `results.md`.
+tunes TTA, trains global and class-specific non-negative aggregators, evaluates
+private metrics, and writes `results.md`.
 
 ```bash
 uv run python -m learned_tta.cli run-smoke \
@@ -68,6 +84,16 @@ uv run python -m learned_tta.cli train-selector \
 
 uv run python -m learned_tta.cli tune-tta --split public_val \
   --config configs/experiment/resnet50_a1_in1k.yaml \
+  --device cuda
+
+uv run python -m learned_tta.cli train-aggregator --method global-nonnegative \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --split public_val \
+  --device cuda
+
+uv run python -m learned_tta.cli train-aggregator --method class-nonnegative \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --split public_val \
   --device cuda
 
 uv run python -m learned_tta.cli cache-teacher --split private \

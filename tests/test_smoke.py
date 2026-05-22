@@ -29,11 +29,14 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert summary.tuning_json.exists()
     assert summary.private_metrics_csv.exists()
     assert summary.candidate_ids == ["aug_000", "aug_001"]
+    assert {"global_weighted_tta", "class_weighted_tta"} <= set(private_metrics["strategy"])
     assert set(private_metrics["strategy"]) == {
         "clean",
         "fixed_light_tta",
         "random_topk",
         "all_100_uniform",
+        "global_weighted_tta",
+        "class_weighted_tta",
         "learned_topk_uniform",
         "learned_topk_softmax_weighted",
         "oracle_topk_uniform",

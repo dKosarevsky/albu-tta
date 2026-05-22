@@ -6,8 +6,10 @@ import pytest
 from learned_tta.tta_eval import (
     average_probabilities,
     evaluate_all_100_uniform,
+    evaluate_class_weighted_tta,
     evaluate_clean,
     evaluate_fixed_light_tta,
+    evaluate_global_weighted_tta,
     evaluate_learned_topk_softmax_weighted,
     evaluate_learned_topk_uniform,
     evaluate_oracle_topk_uniform,
@@ -222,6 +224,52 @@ def test_learned_weighted_tta_uses_selector_scores(
 
     assert weighted["forwards_per_image"] == pytest.approx(uniform["forwards_per_image"])
     assert weighted["nll"] != pytest.approx(uniform["nll"])
+
+
+def test_global_weighted_tta_uses_nonzero_weights_as_compute(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+) -> None:
+    class_idxs = np.array([0, 2], dtype=np.int64)
+
+    metrics = evaluate_global_weighted_tta(
+        logits_by_aug,
+        class_idxs,
+        aug_ids=aug_ids,
+        weights=np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32),
+        active_threshold=1e-6,
+    )
+
+    assert metrics["top1"] == pytest.approx(0.5)
+    assert metrics["forwards_per_image"] == pytest.approx(1.0)
+    assert metrics["relative_compute_vs_all"] == pytest.approx(0.25)
+
+
+def test_class_weighted_tta_supports_per_class_augmentation_weights(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+) -> None:
+    class_idxs = np.array([0, 2], dtype=np.int64)
+    class_weights = np.array(
+        [
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+
+    metrics = evaluate_class_weighted_tta(
+        logits_by_aug,
+        class_idxs,
+        aug_ids=aug_ids,
+        class_weights=class_weights,
+        active_threshold=1e-6,
+    )
+
+    assert metrics["top1"] == pytest.approx(1.0)
+    assert metrics["forwards_per_image"] == pytest.approx(3.0)
+    assert metrics["relative_compute_vs_all"] == pytest.approx(0.75)
 
 
 @pytest.mark.parametrize(

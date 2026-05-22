@@ -21,6 +21,7 @@ from learned_tta.imagenet_split import (
 from learned_tta.private_eval import evaluate_private_from_artifacts
 from learned_tta.report_builder import build_report_from_artifacts
 from learned_tta.selector_training import train_selector_from_artifacts
+from learned_tta.stacking import default_aggregator_path, train_aggregator_from_artifacts
 from learned_tta.target_builder import build_selector_targets_from_cache
 from learned_tta.teacher import TeacherBundle
 from learned_tta.teacher_cache import run_teacher_cache
@@ -142,6 +143,32 @@ def run_smoke_e2e(
         device=device,
         identity_aug_id=config.augmentations.identity_id,
     )
+    global_aggregator_path = default_aggregator_path(
+        selector_dir,
+        split="public_val",
+        method="global-nonnegative",
+    )
+    class_aggregator_path = default_aggregator_path(
+        selector_dir,
+        split="public_val",
+        method="class-nonnegative",
+    )
+    for method, output_path in (
+        ("global-nonnegative", global_aggregator_path),
+        ("class-nonnegative", class_aggregator_path),
+    ):
+        train_aggregator_from_artifacts(
+            split="public_val",
+            cache_dir=teacher_cache_dir,
+            output_path=output_path,
+            aug_ids=candidate_ids,
+            method=method,
+            epochs=max(epochs, 20),
+            learning_rate=0.1,
+            l1_penalty=0.0,
+            active_threshold=1e-6,
+            device=device,
+        )
     private_summary = evaluate_private_from_artifacts(
         split="private",
         manifest_path=manifests["private"],
@@ -154,6 +181,8 @@ def run_smoke_e2e(
         batch_size=batch_size,
         num_workers=num_workers,
         random_seeds=[1, 2, 3],
+        global_aggregator_path=global_aggregator_path,
+        class_aggregator_path=class_aggregator_path,
         device=device,
         identity_aug_id=config.augmentations.identity_id,
     )
