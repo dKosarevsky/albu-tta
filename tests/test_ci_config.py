@@ -26,21 +26,25 @@ def ci_workflow() -> dict[str, Any]:
 @pytest.mark.parametrize(
     "badge_fragment",
     [
-        "actions/workflows/ci.yml/badge.svg",
-        "actions/workflows/ci.yml/badge.svg?branch=main&job=pytest",
-        "actions/workflows/ci.yml/badge.svg?branch=main&job=ruff",
-        "actions/workflows/ci.yml/badge.svg?branch=main&job=ty",
-        "actions/workflows/ci.yml/badge.svg?branch=main&job=coverage",
+        "github/check-runs/dKosarevsky/albu-tta/main?nameFilter=pytest",
+        "github/check-runs/dKosarevsky/albu-tta/main?nameFilter=ruff",
+        "github/check-runs/dKosarevsky/albu-tta/main?nameFilter=ty",
+        "github/check-runs/dKosarevsky/albu-tta/main?nameFilter=coverage",
         "python-3.10%2B",
-        "tests-pytest",
-        "lint-ruff",
-        "types-ty",
-        "coverage",
         "license-MIT",
     ],
 )
 def test_readme_has_project_status_badges(readme_text: str, badge_fragment: str) -> None:
     assert badge_fragment in readme_text
+
+
+def test_readme_badges_do_not_duplicate_ci_workflow_status(readme_text: str) -> None:
+    assert "actions/workflows/ci.yml/badge.svg?branch=main&job=" not in readme_text
+    assert readme_text.count("github/check-runs/dKosarevsky/albu-tta/main") == 4
+    assert "tests-pytest" not in readme_text
+    assert "lint-ruff" not in readme_text
+    assert "types-ty" not in readme_text
+    assert "coverage-ci" not in readme_text
 
 
 def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
