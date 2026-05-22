@@ -149,6 +149,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             config_path=Path(args.config),
             report_dir=report_dir,
             private_metrics_path=_optional_path(args.private_metrics),
+            corrections_path=_optional_path(args.corrections),
             tuning_path=_optional_path(args.tuning),
             impact_targets_path=_optional_path(args.impact_targets),
             impact_manifest_path=_optional_path(args.impact_manifest),
@@ -334,6 +335,7 @@ def _build_parser() -> argparse.ArgumentParser:
     build_report.add_argument("--config", required=True, help="Path to experiment YAML config.")
     build_report.add_argument("--report-dir")
     build_report.add_argument("--private-metrics")
+    build_report.add_argument("--corrections")
     build_report.add_argument("--tuning")
     build_report.add_argument("--impact-targets")
     build_report.add_argument("--impact-manifest")
@@ -599,6 +601,7 @@ def _cmd_build_report(
     config_path: Path,
     report_dir: Path | None,
     private_metrics_path: Path | None,
+    corrections_path: Path | None,
     tuning_path: Path | None,
     impact_targets_path: Path | None,
     impact_manifest_path: Path | None,
@@ -614,6 +617,7 @@ def _cmd_build_report(
         config_path=config_path,
         report_dir=report_dir,
         private_metrics_path=private_metrics_path,
+        corrections_path=corrections_path,
         tuning_path=tuning_path,
         impact_targets_path=impact_targets_path,
         impact_manifest_path=impact_manifest_path,

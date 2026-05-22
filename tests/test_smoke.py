@@ -28,6 +28,10 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert summary.selector_checkpoint.exists()
     assert summary.tuning_json.exists()
     assert summary.private_metrics_csv.exists()
+    assert (summary.reports_dir / "tables" / "corrections.csv").exists()
+    assert (summary.reports_dir / "tables" / "aggregation_weights.csv").exists()
+    assert (summary.reports_dir / "figures" / "corrections.svg").exists()
+    assert "corrections.csv" in summary.results_md.read_text(encoding="utf-8")
     assert summary.candidate_ids == ["aug_000", "aug_001"]
     assert {"global_weighted_tta", "class_weighted_tta"} <= set(private_metrics["strategy"])
     assert set(private_metrics["strategy"]) == {

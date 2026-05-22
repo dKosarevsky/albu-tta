@@ -30,18 +30,25 @@ AlbumentationsX transforms are useful, while aggregation answers how strongly to
 combine predictions once the TTA views are available.
 
 `build-report` writes the aggregation diagnostics when the learned aggregator
-artifacts are present:
+artifacts are present, and copies private clean-vs-TTA diagnostics when
+`evaluate-private` has produced them:
 
 ```text
 reports/resnet50_a1_in1k/tables/aggregation_weights.csv
 reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
+reports/resnet50_a1_in1k/tables/corrections.csv
 reports/resnet50_a1_in1k/figures/aggregation_weights.svg
+reports/resnet50_a1_in1k/figures/corrections.svg
 ```
 
 `aggregation_weights.csv` is the compact table for the article: global weight,
 active flag, mean class weight, max class weight, and class activation frequency
 per augmentation. The class-level long table is kept for deeper diagnosis of
 which ImageNet classes benefit from which AlbumentationsX transforms.
+`corrections.csv` counts where a strategy fixes a clean ResNet50 mistake and
+where it breaks an originally correct clean prediction. This follows the TTA
+diagnostic framing from "Better Aggregation in Test-Time Augmentation": average
+dataset gain is not enough, because TTA can help and hurt different images.
 
 ## Smoke Run
 
@@ -122,3 +129,6 @@ uv run python -m learned_tta.cli build-report \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --device cuda
 ```
+
+When private evaluation artifacts live outside the report directory, pass
+`--corrections /path/to/corrections.csv` to `build-report`.

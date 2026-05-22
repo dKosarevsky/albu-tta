@@ -477,6 +477,7 @@ Steps:
 - [ ] Tune `k` on public-val and freeze the winning value.
 - [ ] Train global and class-specific non-negative aggregation weights on public-val cached predictions.
 - [ ] Evaluate the frozen method on private.
+- [ ] Write private clean-vs-TTA correction diagnostics: fixed clean mistakes, newly broken clean predictions, both-right, and both-wrong counts per strategy.
 - [ ] Test that aggregation returns correct top-1, top-5, and NLL on a small synthetic logits cache.
 
 ### Task 8: Results and Article Artifacts
@@ -488,6 +489,7 @@ Files:
 - Create `reports/resnet50_a1_in1k/tables/augmentation_impact.csv`
 - Create `reports/resnet50_a1_in1k/tables/aggregation_weights.csv`
 - Create `reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv`
+- Create `reports/resnet50_a1_in1k/tables/corrections.csv`
 
 Steps:
 
@@ -496,8 +498,10 @@ Steps:
 - [ ] Generate augmentation impact table with mean gain, selection frequency, and oracle frequency.
 - [ ] Generate learned aggregation weight table with global weight, class mean weight, class max weight, and class activation frequency.
 - [ ] Generate class-specific long table with one row per `(class_idx, aug_id)` weight.
+- [ ] Generate correction/corruption table showing where each TTA strategy fixes or breaks clean predictions.
 - [ ] Generate plots for gain distribution and learned versus oracle top-k overlap.
 - [ ] Generate plot for global learned aggregation weights.
+- [ ] Generate plot for TTA corrections and corruptions.
 - [ ] Write a short result summary that avoids claiming SOTA until additional architectures are run.
 
 ## Full Run Order

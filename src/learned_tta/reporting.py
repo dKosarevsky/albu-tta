@@ -67,6 +67,56 @@ def build_compute_table(
     ].copy()
 
 
+def build_correction_table(
+    clean_correct: np.ndarray,
+    predictions_by_strategy: Mapping[str, np.ndarray],
+    class_idxs: np.ndarray,
+) -> pd.DataFrame:
+    """Build clean-vs-strategy correction/corruption counts."""
+
+    clean_correct = np.asarray(clean_correct, dtype=bool)
+    class_idxs = np.asarray(class_idxs, dtype=np.int64)
+    if clean_correct.shape != class_idxs.shape:
+        raise ValueError("clean_correct and class_idxs must have matching shape")
+
+    rows: list[dict[str, int | str]] = []
+    for strategy, predictions in predictions_by_strategy.items():
+        predictions = np.asarray(predictions, dtype=np.int64)
+        if predictions.shape != class_idxs.shape:
+            raise ValueError(f"predictions for {strategy} must match class_idxs shape")
+        tta_correct = predictions == class_idxs
+        rows.append(
+            {
+                "strategy": strategy,
+                "clean_correct": int(clean_correct.sum()),
+                "tta_correct": int(tta_correct.sum()),
+                "both_right": int(np.logical_and(clean_correct, tta_correct).sum()),
+                "clean_wrong_tta_right": int(
+                    np.logical_and(~clean_correct, tta_correct).sum()
+                ),
+                "clean_right_tta_wrong": int(
+                    np.logical_and(clean_correct, ~tta_correct).sum()
+                ),
+                "both_wrong": int(np.logical_and(~clean_correct, ~tta_correct).sum()),
+                "num_images": int(class_idxs.size),
+            }
+        )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "strategy",
+            "clean_correct",
+            "tta_correct",
+            "both_right",
+            "clean_wrong_tta_right",
+            "clean_right_tta_wrong",
+            "both_wrong",
+            "num_images",
+        ],
+    )
+
+
 def build_augmentation_impact_table(
     aug_ids: list[str],
     gain: np.ndarray,

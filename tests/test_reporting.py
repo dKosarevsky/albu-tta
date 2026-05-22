@@ -9,6 +9,7 @@ import pytest
 from learned_tta.reporting import (
     build_augmentation_impact_table,
     build_compute_table,
+    build_correction_table,
     build_metrics_table,
     build_results_markdown,
     write_report_artifacts,
@@ -57,6 +58,27 @@ def test_build_compute_table_keeps_only_compute_columns(
         "relative_compute_vs_all",
     ]
     assert table["relative_compute_vs_all"].tolist() == pytest.approx([0.01, 0.05])
+
+
+def test_build_correction_table_counts_clean_tta_transitions() -> None:
+    table = build_correction_table(
+        clean_correct=np.array([True, True, False, False]),
+        predictions_by_strategy={
+            "clean": np.array([0, 1, 0, 1]),
+            "tta": np.array([0, 0, 1, 1]),
+        },
+        class_idxs=np.array([0, 1, 1, 0]),
+    )
+
+    clean_row = table[table["strategy"] == "clean"].iloc[0]
+    tta_row = table[table["strategy"] == "tta"].iloc[0]
+
+    assert clean_row["clean_wrong_tta_right"] == 0
+    assert clean_row["clean_right_tta_wrong"] == 0
+    assert tta_row["clean_wrong_tta_right"] == 1
+    assert tta_row["clean_right_tta_wrong"] == 1
+    assert tta_row["both_right"] == 1
+    assert tta_row["both_wrong"] == 1
 
 
 @pytest.mark.parametrize(
