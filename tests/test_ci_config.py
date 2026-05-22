@@ -47,6 +47,24 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
     assert "pypi" not in readme_text.lower()
 
 
+@pytest.mark.parametrize(
+    "runbook_fragment",
+    [
+        "run-smoke",
+        "--imagenet-val-dir",
+        "cache-teacher --split public_train",
+        "cache-teacher --split public_val",
+        "cache-teacher --split private",
+        "build-report",
+    ],
+)
+def test_readme_documents_smoke_and_full_run_order(
+    readme_text: str,
+    runbook_fragment: str,
+) -> None:
+    assert runbook_fragment in readme_text
+
+
 def test_ci_workflow_has_separate_pytest_ruff_ty_and_coverage_jobs(
     ci_workflow: dict[str, Any],
 ) -> None:

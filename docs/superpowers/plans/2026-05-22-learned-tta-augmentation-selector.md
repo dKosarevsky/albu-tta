@@ -475,9 +475,11 @@ Steps:
 After implementation, run in this order:
 
 ```bash
-python -m learned_tta.cli make-splits --config configs/experiment/resnet50_a1_in1k.yaml
+python -m learned_tta.cli run-smoke --config configs/experiment/resnet50_a1_in1k.yaml --output-dir artifacts/smoke
 python -m learned_tta.cli validate-augmentations --config configs/experiment/resnet50_a1_in1k.yaml
-python -m learned_tta.cli cache-teacher --split public --config configs/experiment/resnet50_a1_in1k.yaml
+python -m learned_tta.cli make-splits --config configs/experiment/resnet50_a1_in1k.yaml --imagenet-val-dir /path/to/imagenet/val
+python -m learned_tta.cli cache-teacher --split public_train --config configs/experiment/resnet50_a1_in1k.yaml
+python -m learned_tta.cli cache-teacher --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli build-targets --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli train-selector --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli tune-tta --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
