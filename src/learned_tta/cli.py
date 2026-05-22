@@ -313,8 +313,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     train_aggregator.add_argument("--epochs", type=int, default=200)
     train_aggregator.add_argument("--learning-rate", type=float, default=0.05)
-    train_aggregator.add_argument("--l1-penalty", type=float, default=0.0)
-    train_aggregator.add_argument("--active-threshold", type=float, default=1e-6)
+    train_aggregator.add_argument(
+        "--l1-penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "Sparsity regularization strength for normalized non-negative weights. "
+            "Kept under the original name for CLI compatibility."
+        ),
+    )
+    train_aggregator.add_argument(
+        "--active-threshold",
+        type=float,
+        default=1e-6,
+        help="Weights at or below this threshold are pruned after aggregation training.",
+    )
     train_aggregator.add_argument("--device", default="cpu")
 
     evaluate_private = subparsers.add_parser(

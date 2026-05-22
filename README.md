@@ -15,10 +15,10 @@ The project now keeps two TTA learning layers separate.
 
 - `learned_topk_uniform` and `learned_topk_softmax_weighted`: an image-conditioned
   selector CNN predicts which augmentations are worth running for each image.
-- `global_weighted_tta`: a paper-style second-level aggregator learns one
+- `global_weighted_tta`: a paper-style second-level aggregator learns one sparse
   non-negative weight per augmentation from cached public-val predictions.
 - `class_weighted_tta`: the same learned aggregation idea, but with separate
-  non-negative augmentation weights per output class.
+  sparse non-negative augmentation weights per output class.
 
 This separation makes the article diagnostics cleaner: selection answers which
 AlbumentationsX transforms are useful, while aggregation answers how strongly to
@@ -41,6 +41,8 @@ reports/resnet50_a1_in1k/tables/aggregation_weights.csv
 reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
 reports/resnet50_a1_in1k/tables/corrections.csv
 reports/resnet50_a1_in1k/tables/selector_history.csv
+reports/resnet50_a1_in1k/figures/gain_distribution.svg
+reports/resnet50_a1_in1k/figures/oracle_overlap.svg
 reports/resnet50_a1_in1k/figures/aggregation_weights.svg
 reports/resnet50_a1_in1k/figures/corrections.svg
 reports/resnet50_a1_in1k/figures/selector_history.svg
@@ -50,6 +52,9 @@ reports/resnet50_a1_in1k/figures/selector_history.svg
 active flag, mean class weight, max class weight, and class activation frequency
 per augmentation. The class-level long table is kept for deeper diagnosis of
 which ImageNet classes benefit from which AlbumentationsX transforms.
+Aggregator training uses the historical `--l1-penalty` CLI option as a sparsity
+regularizer and then prunes weights at or below `active_threshold`; this makes
+zero-weight TTA candidates explicit in the saved artifact and report tables.
 `corrections.csv` counts where a strategy fixes a clean ResNet50 mistake and
 where it breaks an originally correct clean prediction. This follows the TTA
 diagnostic framing from "Better Aggregation in Test-Time Augmentation": average

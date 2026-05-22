@@ -40,6 +40,42 @@ def test_train_global_nonnegative_weights_prefers_helpful_augmentation() -> None
     assert artifact.metrics["nll"] < 0.1
 
 
+def test_train_global_nonnegative_weights_sparsity_penalty_prunes_weak_views() -> None:
+    logits_by_aug = {
+        "aug_000": np.array(
+            [[3.0, 0.0], [0.0, 3.0], [3.0, 0.0], [0.0, 3.0]],
+            dtype=np.float32,
+        ),
+        "aug_001": np.array(
+            [[4.0, 0.0], [0.0, 4.0], [4.0, 0.0], [0.0, 4.0]],
+            dtype=np.float32,
+        ),
+        "aug_002": np.array(
+            [[4.0, 0.0], [0.0, 4.0], [0.0, 4.0], [4.0, 0.0]],
+            dtype=np.float32,
+        ),
+        "aug_003": np.array(
+            [[0.0, 4.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]],
+            dtype=np.float32,
+        ),
+    }
+
+    artifact = train_global_nonnegative_weights(
+        logits_by_aug=logits_by_aug,
+        class_idxs=np.array([0, 1, 0, 1], dtype=np.int64),
+        aug_ids=["aug_000", "aug_001", "aug_002", "aug_003"],
+        epochs=100,
+        learning_rate=0.1,
+        l1_penalty=1.0,
+        active_threshold=0.2,
+        device="cpu",
+    )
+
+    assert artifact.aug_ids[int(np.argmax(artifact.weights))] == "aug_001"
+    assert np.count_nonzero(artifact.weights > artifact.active_threshold) == 1
+    assert artifact.metrics["forwards_per_image"] == pytest.approx(1.0)
+
+
 def test_train_class_nonnegative_weights_learns_per_class_profiles() -> None:
     logits_by_aug = {
         "aug_000": np.array([[5.0, 0.0], [0.0, 1.0]], dtype=np.float32),
