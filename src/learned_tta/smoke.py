@@ -201,6 +201,7 @@ def run_smoke_e2e(
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
         corrections_path=private_summary.corrections_csv,
+        selector_history_path=train_summary.history_csv,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
