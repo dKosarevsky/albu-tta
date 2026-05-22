@@ -35,9 +35,11 @@ class ReportBuildSummary:
     augmentation_impact_csv: Path
     aggregation_weights_csv: Path | None
     class_augmentation_weights_csv: Path | None
+    corrections_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
     aggregation_weights_svg: Path | None
+    corrections_svg: Path | None
     best_k: int
 
 
@@ -59,6 +61,7 @@ def build_report_from_artifacts(
     num_workers: int,
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
+    corrections_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> ReportBuildSummary:
@@ -108,6 +111,7 @@ def build_report_from_artifacts(
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
     )
+    corrections_table = _read_corrections_csv(corrections_path) if corrections_path else None
 
     paths = ReportBuildSummary(
         results_md=report_dir / "results.md",
@@ -125,6 +129,7 @@ def build_report_from_artifacts(
             if aggregation_tables.class_weights is not None
             else None
         ),
+        corrections_csv=tables_dir / "corrections.csv" if corrections_table is not None else None,
         gain_distribution_svg=figures_dir / "gain_distribution.svg",
         oracle_overlap_svg=figures_dir / "oracle_overlap.svg",
         aggregation_weights_svg=(
@@ -132,6 +137,7 @@ def build_report_from_artifacts(
             if aggregation_tables.weights is not None
             else None
         ),
+        corrections_svg=figures_dir / "corrections.svg" if corrections_table is not None else None,
         best_k=best_k,
     )
 
@@ -149,6 +155,8 @@ def build_report_from_artifacts(
             paths.class_augmentation_weights_csv,
             index=False,
         )
+    if paths.corrections_csv is not None and corrections_table is not None:
+        corrections_table.to_csv(paths.corrections_csv, index=False)
     paths.gain_distribution_svg.write_text(
         _gain_distribution_svg(targets.gain),
         encoding="utf-8",
@@ -162,6 +170,11 @@ def build_report_from_artifacts(
             _aggregation_weights_svg(aggregation_tables.weights),
             encoding="utf-8",
         )
+    if paths.corrections_svg is not None and corrections_table is not None:
+        paths.corrections_svg.write_text(
+            _corrections_svg(corrections_table),
+            encoding="utf-8",
+        )
     paths.results_md.write_text(
         _results_markdown(
             public_metrics=public_metrics,
@@ -170,6 +183,7 @@ def build_report_from_artifacts(
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
             has_aggregation_weights=aggregation_tables.weights is not None,
             has_class_weights=aggregation_tables.class_weights is not None,
+            has_corrections=corrections_table is not None,
         ),
         encoding="utf-8",
     )
@@ -186,6 +200,7 @@ def build_report_from_config(
     checkpoint_path: Path | None = None,
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
+    corrections_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -221,6 +236,8 @@ def build_report_from_config(
                 method="class-nonnegative",
             )
         ),
+        corrections_path=corrections_path
+        or _existing_path(resolved_report_dir / "tables" / "corrections.csv"),
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -247,6 +264,35 @@ def _read_metrics_csv(path: Path) -> dict[str, dict[str, float]]:
         strategy = str(row.pop("strategy"))
         metrics[strategy] = {str(key): float(value) for key, value in row.items()}
     return metrics
+
+
+def _read_corrections_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "strategy",
+        "clean_correct",
+        "tta_correct",
+        "both_right",
+        "clean_wrong_tta_right",
+        "clean_right_tta_wrong",
+        "both_wrong",
+        "num_images",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"corrections CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "strategy",
+            "clean_correct",
+            "tta_correct",
+            "both_right",
+            "clean_wrong_tta_right",
+            "clean_right_tta_wrong",
+            "both_wrong",
+            "num_images",
+        ]
+    ].copy()
 
 
 def _build_aggregation_tables(
@@ -343,6 +389,7 @@ def _results_markdown(
     recall: float,
     has_aggregation_weights: bool,
     has_class_weights: bool,
+    has_corrections: bool,
 ) -> str:
     public_table = build_metrics_table(public_metrics)
     private_table = build_metrics_table(private_metrics)
@@ -395,6 +442,17 @@ def _results_markdown(
                     "",
                 ]
             )
+    if has_corrections:
+        lines.extend(
+            [
+                "## Corrections and Corruptions",
+                "",
+                "- Table: `tables/corrections.csv`",
+                "",
+                "![TTA corrections and corruptions](figures/corrections.svg)",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -439,6 +497,27 @@ def _aggregation_weights_svg(table: pd.DataFrame) -> str:
         values = []
         title = "Aggregation Weights"
     return _bar_svg(title=title, labels=labels, values=values, y_label="weight")
+
+
+def _corrections_svg(table: pd.DataFrame) -> str:
+    labels = table["strategy"].astype(str).tolist()
+    return _grouped_bar_svg(
+        title="TTA Corrections and Corruptions",
+        labels=labels,
+        series=[
+            (
+                "clean wrong -> TTA right",
+                table["clean_wrong_tta_right"].astype(float).tolist(),
+                "#247a4d",
+            ),
+            (
+                "clean right -> TTA wrong",
+                table["clean_right_tta_wrong"].astype(float).tolist(),
+                "#b24a3b",
+            ),
+        ],
+        y_label="images",
+    )
 
 
 def _single_recall(selected: list[str], oracle: list[str], identity_aug_id: str) -> float:
@@ -492,6 +571,81 @@ def _bar_svg(title: str, labels: list[str], values: list[float], y_label: str) -
                 'font-family="Arial" font-size="10">'
                 f"{value:.0f}</text>",
             ]
+        )
+    elements.append("</svg>")
+    return "\n".join(elements)
+
+
+def _grouped_bar_svg(
+    title: str,
+    labels: list[str],
+    series: list[tuple[str, list[float], str]],
+    y_label: str,
+) -> str:
+    width = 760
+    height = 390
+    margin_left = 64
+    margin_bottom = 74
+    plot_width = width - margin_left - 28
+    plot_height = height - 98 - margin_bottom
+    max_value = max((max(values) for _, values, _ in series if values), default=1.0)
+    if max_value <= 0.0:
+        max_value = 1.0
+    group_gap = 12
+    bar_gap = 3
+    group_width = max(
+        1.0,
+        (plot_width - group_gap * max(0, len(labels) - 1)) / max(1, len(labels)),
+    )
+    bar_width = max(1.0, (group_width - bar_gap * max(0, len(series) - 1)) / len(series))
+    baseline_y = height - margin_bottom
+    elements = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        f'<text x="{width / 2:.0f}" y="28" text-anchor="middle" '
+        'font-family="Arial" font-size="18" font-weight="700">'
+        f"{_escape_xml(title)}</text>",
+        f'<text x="18" y="{height / 2:.0f}" transform="rotate(-90 18 {height / 2:.0f})" '
+        'text-anchor="middle" font-family="Arial" font-size="12">'
+        f"{_escape_xml(y_label)}</text>",
+        f'<line x1="{margin_left}" y1="{baseline_y}" '
+        f'x2="{width - 28}" y2="{baseline_y}" stroke="#222"/>',
+        f'<line x1="{margin_left}" y1="70" '
+        f'x2="{margin_left}" y2="{baseline_y}" stroke="#222"/>',
+    ]
+    legend_x = margin_left
+    for legend_index, (name, _, color) in enumerate(series):
+        x = legend_x + legend_index * 190
+        elements.extend(
+            [
+                f'<rect x="{x}" y="46" width="12" height="12" fill="{color}"/>',
+                f'<text x="{x + 18}" y="56" font-family="Arial" font-size="11">'
+                f"{_escape_xml(name)}</text>",
+            ]
+        )
+    for label_index, label in enumerate(labels):
+        group_x = margin_left + label_index * (group_width + group_gap)
+        for series_index, (_, values, color) in enumerate(series):
+            value = values[label_index]
+            x = group_x + series_index * (bar_width + bar_gap)
+            bar_height = plot_height * (value / max_value)
+            y = baseline_y - bar_height
+            label_x = x + bar_width / 2
+            elements.extend(
+                [
+                    f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_width:.2f}" '
+                    f'height="{bar_height:.2f}" fill="{color}"/>',
+                    f'<text x="{label_x:.2f}" y="{y - 4:.2f}" text-anchor="middle" '
+                    'font-family="Arial" font-size="9">'
+                    f"{value:.0f}</text>",
+                ]
+            )
+        elements.append(
+            f'<text x="{group_x + group_width / 2:.2f}" y="{baseline_y + 16}" '
+            'text-anchor="end" font-family="Arial" font-size="10" '
+            f'transform="rotate(-30 {group_x + group_width / 2:.2f} {baseline_y + 16})">'
+            f"{_escape_xml(label)}</text>"
         )
     elements.append("</svg>")
     return "\n".join(elements)

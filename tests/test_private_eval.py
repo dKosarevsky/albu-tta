@@ -74,6 +74,7 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
     assert summary.best_k == 1
     assert summary.private_metrics_csv.exists()
     assert summary.compute_csv.exists()
+    assert summary.corrections_csv.exists()
     assert set(table["strategy"]) == {
         "clean",
         "fixed_light_tta",
@@ -85,6 +86,18 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
         "class_weighted_tta",
         "oracle_topk_uniform",
     }
+    corrections = pd.read_csv(summary.corrections_csv)
+    assert set(corrections.columns) == {
+        "strategy",
+        "clean_correct",
+        "tta_correct",
+        "both_right",
+        "clean_wrong_tta_right",
+        "clean_right_tta_wrong",
+        "both_wrong",
+        "num_images",
+    }
+    assert (set(table["strategy"]) - {"random_topk"}) <= set(corrections["strategy"])
 
 
 def test_evaluate_private_cli_writes_private_metrics(
@@ -127,6 +140,7 @@ def test_evaluate_private_cli_writes_private_metrics(
 
     assert "private evaluation: best k 1" in captured.out
     assert (output_dir / "tables" / "private_metrics.csv").exists()
+    assert (output_dir / "tables" / "corrections.csv").exists()
 
 
 def _write_manifest(root: Path, split: str, count: int) -> Path:

@@ -41,6 +41,32 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         ]
     ).to_csv(private_metrics_csv, index=False)
 
+    corrections_csv = tmp_path / "corrections.csv"
+    pd.DataFrame(
+        [
+            {
+                "strategy": "clean",
+                "clean_correct": 1,
+                "tta_correct": 1,
+                "both_right": 1,
+                "clean_wrong_tta_right": 0,
+                "clean_right_tta_wrong": 0,
+                "both_wrong": 1,
+                "num_images": 2,
+            },
+            {
+                "strategy": "learned_topk_uniform",
+                "clean_correct": 1,
+                "tta_correct": 2,
+                "both_right": 1,
+                "clean_wrong_tta_right": 1,
+                "clean_right_tta_wrong": 0,
+                "both_wrong": 0,
+                "num_images": 2,
+            },
+        ]
+    ).to_csv(corrections_csv, index=False)
+
     tuning_json = tmp_path / "public_val_tta_tuning.json"
     tuning_json.write_text(
         json.dumps(
@@ -88,6 +114,7 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
     ).save(class_aggregator_path)
     return {
         "private_metrics": private_metrics_csv,
+        "corrections": corrections_csv,
         "tuning": tuning_json,
         "manifest": manifest_path,
         "targets": targets_path,
@@ -113,6 +140,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         num_workers=0,
         global_aggregator_path=report_artifacts["global_aggregator"],
         class_aggregator_path=report_artifacts["class_aggregator"],
+        corrections_path=report_artifacts["corrections"],
         device="cpu",
     )
 
@@ -121,8 +149,11 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.aggregation_weights_csv is not None
     assert summary.class_augmentation_weights_csv is not None
     assert summary.aggregation_weights_svg is not None
+    assert summary.corrections_csv is not None
+    assert summary.corrections_svg is not None
     aggregation_weights = pd.read_csv(summary.aggregation_weights_csv)
     class_weights = pd.read_csv(summary.class_augmentation_weights_csv)
+    corrections = pd.read_csv(summary.corrections_csv)
 
     assert summary.best_k == 1
     assert summary.public_metrics_csv.exists()
@@ -133,13 +164,19 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.aggregation_weights_csv.exists()
     assert summary.class_augmentation_weights_csv.exists()
     assert summary.aggregation_weights_svg.exists()
+    assert summary.corrections_csv.exists()
+    assert summary.corrections_svg.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert set(class_weights.columns) == {"class_idx", "aug_id", "weight"}
+    assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
+    assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
     assert "figures/aggregation_weights.svg" in markdown
+    assert "figures/corrections.svg" in markdown
     assert "aggregation_weights.csv" in markdown
+    assert "corrections.csv" in markdown
     assert "augmentation_impact.csv" in markdown
 
 
@@ -161,6 +198,8 @@ def test_build_report_cli_writes_final_results(
             str(report_dir),
             "--private-metrics",
             str(report_artifacts["private_metrics"]),
+            "--corrections",
+            str(report_artifacts["corrections"]),
             "--tuning",
             str(report_artifacts["tuning"]),
             "--impact-targets",
@@ -187,8 +226,10 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "results.md").exists()
     assert (report_dir / "tables" / "augmentation_impact.csv").exists()
     assert (report_dir / "tables" / "aggregation_weights.csv").exists()
+    assert (report_dir / "tables" / "corrections.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
     assert (report_dir / "figures" / "aggregation_weights.svg").exists()
+    assert (report_dir / "figures" / "corrections.svg").exists()
 
 
 def _write_manifest(root: Path, count: int) -> Path:

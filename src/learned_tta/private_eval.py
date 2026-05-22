@@ -14,9 +14,11 @@ from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import load_manifest
-from learned_tta.reporting import build_compute_table, build_metrics_table
+from learned_tta.reporting import build_compute_table, build_correction_table, build_metrics_table
 from learned_tta.stacking import default_aggregator_path, load_aggregation_artifact
 from learned_tta.tta_eval import (
+    average_probabilities,
+    class_weighted_probabilities,
     evaluate_all_100_uniform,
     evaluate_class_weighted_tta,
     evaluate_clean,
@@ -26,6 +28,11 @@ from learned_tta.tta_eval import (
     evaluate_learned_topk_uniform,
     evaluate_oracle_topk_uniform,
     evaluate_random_topk,
+    fixed_light_tta_selection,
+    global_weighted_probabilities,
+    learned_topk_selection,
+    oracle_topk_selection,
+    weighted_average_probabilities,
 )
 from learned_tta.tta_tuning import predict_selector_scores
 
@@ -37,6 +44,7 @@ class PrivateEvaluationSummary:
     best_k: int
     private_metrics_csv: Path
     compute_csv: Path
+    corrections_csv: Path
     metrics_by_strategy: dict[str, dict[str, float]]
 
 
@@ -87,12 +95,24 @@ def evaluate_private_from_artifacts(
     tables_dir.mkdir(parents=True, exist_ok=True)
     private_metrics_csv = tables_dir / "private_metrics.csv"
     compute_csv = tables_dir / "compute.csv"
+    corrections_csv = tables_dir / "corrections.csv"
     build_metrics_table(metrics_by_strategy).to_csv(private_metrics_csv, index=False)
     build_compute_table(metrics_by_strategy).to_csv(compute_csv, index=False)
+    _build_private_corrections(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id=identity_aug_id,
+        best_k=best_k,
+        global_aggregator_path=global_aggregator_path,
+        class_aggregator_path=class_aggregator_path,
+    ).to_csv(corrections_csv, index=False)
     return PrivateEvaluationSummary(
         best_k=best_k,
         private_metrics_csv=private_metrics_csv,
         compute_csv=compute_csv,
+        corrections_csv=corrections_csv,
         metrics_by_strategy=metrics_by_strategy,
     )
 
@@ -246,6 +266,120 @@ def _read_split_logits(
     if reference_class_idxs is None:
         raise ValueError("aug_ids must not be empty")
     return logits_by_aug, reference_class_idxs
+
+
+def _build_private_corrections(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    identity_aug_id: str,
+    best_k: int,
+    global_aggregator_path: Path | None,
+    class_aggregator_path: Path | None,
+) -> pd.DataFrame:
+    probabilities_by_strategy = _private_probabilities_by_strategy(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id=identity_aug_id,
+        best_k=best_k,
+        global_aggregator_path=global_aggregator_path,
+        class_aggregator_path=class_aggregator_path,
+    )
+    predictions_by_strategy = {
+        strategy: probabilities.argmax(axis=1)
+        for strategy, probabilities in probabilities_by_strategy.items()
+    }
+    clean_predictions = predictions_by_strategy["clean"]
+    return build_correction_table(
+        clean_correct=clean_predictions == class_idxs,
+        predictions_by_strategy=predictions_by_strategy,
+        class_idxs=class_idxs,
+    )
+
+
+def _private_probabilities_by_strategy(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    identity_aug_id: str,
+    best_k: int,
+    global_aggregator_path: Path | None,
+    class_aggregator_path: Path | None,
+) -> dict[str, np.ndarray]:
+    probabilities = {
+        "clean": average_probabilities(logits_by_aug, [identity_aug_id]),
+        "fixed_light_tta": average_probabilities(
+            logits_by_aug,
+            fixed_light_tta_selection(
+                aug_ids=aug_ids,
+                identity_aug_id=identity_aug_id,
+                k=best_k,
+            ),
+        ),
+        "all_100_uniform": average_probabilities(logits_by_aug, aug_ids),
+    }
+    selected_aug_ids = learned_topk_selection(
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id=identity_aug_id,
+        k=best_k,
+    )
+    probabilities["learned_topk_uniform"] = _average_per_image_probabilities(
+        logits_by_aug,
+        selected_aug_ids,
+    )
+    probabilities["learned_topk_softmax_weighted"] = weighted_average_probabilities(
+        logits_by_aug=logits_by_aug,
+        selected_aug_ids=selected_aug_ids,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+    )
+    probabilities["oracle_topk_uniform"] = _average_per_image_probabilities(
+        logits_by_aug,
+        oracle_topk_selection(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            identity_aug_id=identity_aug_id,
+            k=best_k,
+        ),
+    )
+    if global_aggregator_path is not None:
+        artifact = load_aggregation_artifact(global_aggregator_path)
+        probabilities["global_weighted_tta"] = global_weighted_probabilities(
+            logits_by_aug,
+            aug_ids=artifact.aug_ids,
+            weights=artifact.weights,
+        )
+    if class_aggregator_path is not None:
+        artifact = load_aggregation_artifact(class_aggregator_path)
+        probabilities["class_weighted_tta"] = class_weighted_probabilities(
+            logits_by_aug,
+            aug_ids=artifact.aug_ids,
+            class_weights=artifact.weights,
+        )
+    return probabilities
+
+
+def _average_per_image_probabilities(
+    logits_by_aug: dict[str, np.ndarray],
+    selected_aug_ids: list[list[str]],
+) -> np.ndarray:
+    rows = []
+    for image_index, image_aug_ids in enumerate(selected_aug_ids):
+        rows.append(
+            average_probabilities(
+                {
+                    aug_id: logits_by_aug[aug_id][image_index : image_index + 1]
+                    for aug_id in image_aug_ids
+                },
+                selected_aug_ids=image_aug_ids,
+            )[0]
+        )
+    return np.asarray(rows, dtype=np.float32)
 
 
 def _load_best_k(tuning_path: Path) -> int:
