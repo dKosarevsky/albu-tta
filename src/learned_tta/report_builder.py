@@ -18,6 +18,7 @@ from learned_tta.reporting import (
     build_compute_table,
     build_metrics_table,
 )
+from learned_tta.stacking import default_aggregator_path, load_aggregation_artifact
 from learned_tta.targets import load_selector_targets
 from learned_tta.tta_eval import learned_topk_selection, oracle_selection_recall
 from learned_tta.tta_tuning import predict_selector_scores
@@ -32,9 +33,18 @@ class ReportBuildSummary:
     private_metrics_csv: Path
     compute_csv: Path
     augmentation_impact_csv: Path
+    aggregation_weights_csv: Path | None
+    class_augmentation_weights_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
+    aggregation_weights_svg: Path | None
     best_k: int
+
+
+@dataclass(frozen=True, slots=True)
+class _AggregationTables:
+    weights: pd.DataFrame | None
+    class_weights: pd.DataFrame | None
 
 
 def build_report_from_artifacts(
@@ -47,6 +57,8 @@ def build_report_from_artifacts(
     image_size: int,
     batch_size: int,
     num_workers: int,
+    global_aggregator_path: Path | None = None,
+    class_aggregator_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> ReportBuildSummary:
@@ -91,6 +103,11 @@ def build_report_from_artifacts(
         selected_aug_ids=selected_aug_ids,
         oracle_aug_ids=oracle_aug_ids,
     )
+    aggregation_tables = _build_aggregation_tables(
+        aug_ids=targets.aug_ids,
+        global_aggregator_path=global_aggregator_path,
+        class_aggregator_path=class_aggregator_path,
+    )
 
     paths = ReportBuildSummary(
         results_md=report_dir / "results.md",
@@ -98,8 +115,23 @@ def build_report_from_artifacts(
         private_metrics_csv=tables_dir / "private_metrics.csv",
         compute_csv=tables_dir / "compute.csv",
         augmentation_impact_csv=tables_dir / "augmentation_impact.csv",
+        aggregation_weights_csv=(
+            tables_dir / "aggregation_weights.csv"
+            if aggregation_tables.weights is not None
+            else None
+        ),
+        class_augmentation_weights_csv=(
+            tables_dir / "class_augmentation_weights.csv"
+            if aggregation_tables.class_weights is not None
+            else None
+        ),
         gain_distribution_svg=figures_dir / "gain_distribution.svg",
         oracle_overlap_svg=figures_dir / "oracle_overlap.svg",
+        aggregation_weights_svg=(
+            figures_dir / "aggregation_weights.svg"
+            if aggregation_tables.weights is not None
+            else None
+        ),
         best_k=best_k,
     )
 
@@ -107,6 +139,16 @@ def build_report_from_artifacts(
     build_metrics_table(private_metrics).to_csv(paths.private_metrics_csv, index=False)
     build_compute_table(private_metrics).to_csv(paths.compute_csv, index=False)
     impact_table.to_csv(paths.augmentation_impact_csv, index=False)
+    if paths.aggregation_weights_csv is not None and aggregation_tables.weights is not None:
+        aggregation_tables.weights.to_csv(paths.aggregation_weights_csv, index=False)
+    if (
+        paths.class_augmentation_weights_csv is not None
+        and aggregation_tables.class_weights is not None
+    ):
+        aggregation_tables.class_weights.to_csv(
+            paths.class_augmentation_weights_csv,
+            index=False,
+        )
     paths.gain_distribution_svg.write_text(
         _gain_distribution_svg(targets.gain),
         encoding="utf-8",
@@ -115,12 +157,19 @@ def build_report_from_artifacts(
         _oracle_overlap_svg(selected_aug_ids, oracle_aug_ids, identity_aug_id),
         encoding="utf-8",
     )
+    if paths.aggregation_weights_svg is not None and aggregation_tables.weights is not None:
+        paths.aggregation_weights_svg.write_text(
+            _aggregation_weights_svg(aggregation_tables.weights),
+            encoding="utf-8",
+        )
     paths.results_md.write_text(
         _results_markdown(
             public_metrics=public_metrics,
             private_metrics=private_metrics,
             best_k=best_k,
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
+            has_aggregation_weights=aggregation_tables.weights is not None,
+            has_class_weights=aggregation_tables.class_weights is not None,
         ),
         encoding="utf-8",
     )
@@ -135,6 +184,8 @@ def build_report_from_config(
     impact_targets_path: Path | None = None,
     impact_manifest_path: Path | None = None,
     checkpoint_path: Path | None = None,
+    global_aggregator_path: Path | None = None,
+    class_aggregator_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -154,6 +205,22 @@ def build_report_from_config(
         impact_manifest_path=impact_manifest_path
         or config.artifacts.manifests_dir / "public_val.csv",
         checkpoint_path=checkpoint_path or config.artifacts.selector_dir / "selector_best.pt",
+        global_aggregator_path=global_aggregator_path
+        or _existing_path(
+            default_aggregator_path(
+                config.artifacts.selector_dir,
+                split="public_val",
+                method="global-nonnegative",
+            )
+        ),
+        class_aggregator_path=class_aggregator_path
+        or _existing_path(
+            default_aggregator_path(
+                config.artifacts.selector_dir,
+                split="public_val",
+                method="class-nonnegative",
+            )
+        ),
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -180,6 +247,70 @@ def _read_metrics_csv(path: Path) -> dict[str, dict[str, float]]:
         strategy = str(row.pop("strategy"))
         metrics[strategy] = {str(key): float(value) for key, value in row.items()}
     return metrics
+
+
+def _build_aggregation_tables(
+    aug_ids: list[str],
+    global_aggregator_path: Path | None,
+    class_aggregator_path: Path | None,
+) -> _AggregationTables:
+    if global_aggregator_path is None and class_aggregator_path is None:
+        return _AggregationTables(weights=None, class_weights=None)
+
+    global_weights: np.ndarray | None = None
+    global_active: np.ndarray | None = None
+    class_weights: np.ndarray | None = None
+    class_active_threshold: float | None = None
+
+    if global_aggregator_path is not None:
+        artifact = load_aggregation_artifact(global_aggregator_path)
+        _validate_aggregator_aug_ids(artifact.aug_ids, aug_ids, global_aggregator_path)
+        global_weights = np.asarray(artifact.weights, dtype=np.float32)
+        global_active = global_weights > artifact.active_threshold
+
+    if class_aggregator_path is not None:
+        artifact = load_aggregation_artifact(class_aggregator_path)
+        _validate_aggregator_aug_ids(artifact.aug_ids, aug_ids, class_aggregator_path)
+        class_weights = np.asarray(artifact.weights, dtype=np.float32)
+        if class_weights.ndim != 2 or class_weights.shape[1] != len(aug_ids):
+            raise ValueError("class aggregation weights must have shape [classes, augmentations]")
+        class_active_threshold = artifact.active_threshold
+
+    weights_table = pd.DataFrame({"aug_id": aug_ids})
+    if global_weights is not None and global_active is not None:
+        weights_table["global_weight"] = global_weights
+        weights_table["global_active"] = global_active
+    if class_weights is not None and class_active_threshold is not None:
+        weights_table["class_mean_weight"] = class_weights.mean(axis=0)
+        weights_table["class_max_weight"] = class_weights.max(axis=0)
+        weights_table["class_active_frequency"] = (
+            class_weights > class_active_threshold
+        ).mean(axis=0)
+
+    class_table = None
+    if class_weights is not None:
+        class_table = pd.DataFrame(
+            [
+                {
+                    "class_idx": class_idx,
+                    "aug_id": aug_id,
+                    "weight": float(class_weights[class_idx, aug_index]),
+                }
+                for class_idx in range(class_weights.shape[0])
+                for aug_index, aug_id in enumerate(aug_ids)
+            ]
+        )
+
+    return _AggregationTables(weights=weights_table, class_weights=class_table)
+
+
+def _validate_aggregator_aug_ids(
+    aggregator_aug_ids: list[str],
+    expected_aug_ids: list[str],
+    path: Path,
+) -> None:
+    if aggregator_aug_ids != expected_aug_ids:
+        raise ValueError(f"aggregator aug_ids in {path} must match selector target aug_ids")
 
 
 def _public_metrics_from_tuning(tuning: Mapping[str, Any]) -> dict[str, dict[str, float]]:
@@ -210,42 +341,61 @@ def _results_markdown(
     private_metrics: dict[str, dict[str, float]],
     best_k: int,
     recall: float,
+    has_aggregation_weights: bool,
+    has_class_weights: bool,
 ) -> str:
     public_table = build_metrics_table(public_metrics)
     private_table = build_metrics_table(private_metrics)
     compute_table = build_compute_table(private_metrics)
-    return "\n".join(
-        [
-            "# albu-tta ResNet50 Case Study",
-            "",
-            f"Tuned k: {best_k}",
-            f"Public-val oracle top-k recall: {recall:.6g}",
-            "",
-            "This report is a single-architecture ImageNet validation case study. "
-            "Run additional architectures before making broad leaderboard claims.",
-            "",
-            "## Public Validation Metrics",
-            "",
-            _markdown_table(public_table),
-            "",
-            "## Private Metrics",
-            "",
-            _markdown_table(private_table),
-            "",
-            "## Compute",
-            "",
-            _markdown_table(compute_table),
-            "",
-            "## Augmentation Impact",
-            "",
-            "- Table: `tables/augmentation_impact.csv`",
-            "",
-            "![Gain distribution](figures/gain_distribution.svg)",
-            "",
-            "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
-            "",
-        ]
-    )
+    lines = [
+        "# albu-tta ResNet50 Case Study",
+        "",
+        f"Tuned k: {best_k}",
+        f"Public-val oracle top-k recall: {recall:.6g}",
+        "",
+        "This report is a single-architecture ImageNet validation case study. "
+        "Run additional architectures before making broad leaderboard claims.",
+        "",
+        "## Public Validation Metrics",
+        "",
+        _markdown_table(public_table),
+        "",
+        "## Private Metrics",
+        "",
+        _markdown_table(private_table),
+        "",
+        "## Compute",
+        "",
+        _markdown_table(compute_table),
+        "",
+        "## Augmentation Impact",
+        "",
+        "- Table: `tables/augmentation_impact.csv`",
+        "",
+        "![Gain distribution](figures/gain_distribution.svg)",
+        "",
+        "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
+        "",
+    ]
+    if has_aggregation_weights:
+        lines.extend(
+            [
+                "## Learned Aggregation Weights",
+                "",
+                "- Table: `tables/aggregation_weights.csv`",
+                "",
+                "![Aggregation weights](figures/aggregation_weights.svg)",
+                "",
+            ]
+        )
+        if has_class_weights:
+            lines.extend(
+                [
+                    "- Class-specific table: `tables/class_augmentation_weights.csv`",
+                    "",
+                ]
+            )
+    return "\n".join(lines)
 
 
 def _gain_distribution_svg(gain: np.ndarray) -> str:
@@ -275,6 +425,20 @@ def _oracle_overlap_svg(
         values=counts.astype(float).tolist(),
         y_label="images",
     )
+
+
+def _aggregation_weights_svg(table: pd.DataFrame) -> str:
+    labels = table["aug_id"].astype(str).tolist()
+    if "global_weight" in table.columns:
+        values = table["global_weight"].astype(float).tolist()
+        title = "Global Aggregation Weights"
+    elif "class_mean_weight" in table.columns:
+        values = table["class_mean_weight"].astype(float).tolist()
+        title = "Mean Class Aggregation Weights"
+    else:
+        values = []
+        title = "Aggregation Weights"
+    return _bar_svg(title=title, labels=labels, values=values, y_label="weight")
 
 
 def _single_recall(selected: list[str], oracle: list[str], identity_aug_id: str) -> float:
@@ -358,3 +522,9 @@ def _escape_xml(value: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def _existing_path(path: Path) -> Path | None:
+    if path.exists():
+        return path
+    return None

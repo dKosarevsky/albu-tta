@@ -29,6 +29,20 @@ This separation makes the article diagnostics cleaner: selection answers which
 AlbumentationsX transforms are useful, while aggregation answers how strongly to
 combine predictions once the TTA views are available.
 
+`build-report` writes the aggregation diagnostics when the learned aggregator
+artifacts are present:
+
+```text
+reports/resnet50_a1_in1k/tables/aggregation_weights.csv
+reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
+reports/resnet50_a1_in1k/figures/aggregation_weights.svg
+```
+
+`aggregation_weights.csv` is the compact table for the article: global weight,
+active flag, mean class weight, max class weight, and class activation frequency
+per augmentation. The class-level long table is kept for deeper diagnosis of
+which ImageNet classes benefit from which AlbumentationsX transforms.
+
 ## Smoke Run
 
 Use the synthetic smoke run before spending GPU time on ImageNet. It creates a tiny

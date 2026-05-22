@@ -486,13 +486,18 @@ Files:
 - Create `reports/resnet50_a1_in1k/results.md`
 - Create `reports/resnet50_a1_in1k/tables/private_metrics.csv`
 - Create `reports/resnet50_a1_in1k/tables/augmentation_impact.csv`
+- Create `reports/resnet50_a1_in1k/tables/aggregation_weights.csv`
+- Create `reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv`
 
 Steps:
 
 - [ ] Generate public-val and private metric tables.
 - [ ] Generate compute table with average ResNet50 forwards per image.
 - [ ] Generate augmentation impact table with mean gain, selection frequency, and oracle frequency.
+- [ ] Generate learned aggregation weight table with global weight, class mean weight, class max weight, and class activation frequency.
+- [ ] Generate class-specific long table with one row per `(class_idx, aug_id)` weight.
 - [ ] Generate plots for gain distribution and learned versus oracle top-k overlap.
+- [ ] Generate plot for global learned aggregation weights.
 - [ ] Write a short result summary that avoids claiming SOTA until additional architectures are run.
 
 ## Full Run Order
