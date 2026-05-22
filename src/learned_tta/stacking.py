@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -14,9 +15,10 @@ import torch.nn.functional as F
 from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
+from learned_tta.metrics import classification_metrics, expected_calibration_error
 from learned_tta.tta_eval import evaluate_class_weighted_tta, evaluate_global_weighted_tta
 
-AggregatorMethod = Literal["global-nonnegative", "class-nonnegative"]
+AggregatorMethod = Literal["global-nonnegative", "class-nonnegative", "xgboost-multiclass"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,37 @@ class AggregationArtifact:
 
 
 @dataclass(frozen=True, slots=True)
+class XGBoostAggregationArtifact:
+    """Saved optional XGBoost stacker metadata."""
+
+    method: str
+    aug_ids: list[str]
+    model_path: Path
+    num_classes: int
+    feature_count: int
+    metrics: dict[str, float]
+
+    def save(self, path: Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "method": self.method,
+                    "aug_ids": self.aug_ids,
+                    "model_path": str(self.model_path),
+                    "num_classes": self.num_classes,
+                    "feature_count": self.feature_count,
+                    "metrics": self.metrics,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AggregationTrainingSummary:
     """Summary of one learned aggregation training run."""
 
@@ -66,6 +99,25 @@ def load_aggregation_artifact(path: Path) -> AggregationArtifact:
         aug_ids=[str(aug_id) for aug_id in raw["aug_ids"]],
         weights=np.asarray(raw["weights"], dtype=np.float32),
         active_threshold=float(raw["active_threshold"]),
+        metrics={str(key): float(value) for key, value in raw["metrics"].items()},
+    )
+
+
+def load_xgboost_aggregation_artifact(path: Path) -> XGBoostAggregationArtifact:
+    """Load saved optional XGBoost stacker metadata."""
+
+    path = Path(path)
+    with path.open(encoding="utf-8") as handle:
+        raw = json.load(handle)
+    model_path = Path(str(raw["model_path"]))
+    if not model_path.is_absolute():
+        model_path = path.parent / model_path
+    return XGBoostAggregationArtifact(
+        method=str(raw["method"]),
+        aug_ids=[str(aug_id) for aug_id in raw["aug_ids"]],
+        model_path=model_path,
+        num_classes=int(raw["num_classes"]),
+        feature_count=int(raw["feature_count"]),
         metrics={str(key): float(value) for key, value in raw["metrics"].items()},
     )
 
@@ -186,6 +238,91 @@ def train_class_nonnegative_weights(
     )
 
 
+def train_xgboost_multiclass_stacker(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    output_path: Path,
+    n_estimators: int,
+    learning_rate: float,
+) -> XGBoostAggregationArtifact:
+    """Train an optional XGBoost second-level stacker over flattened TTA probabilities."""
+
+    xgboost = _require_xgboost()
+    labels = np.asarray(class_idxs, dtype=np.int64)
+    features = _stacker_feature_matrix(logits_by_aug=logits_by_aug, aug_ids=aug_ids)
+    num_classes = _num_classes_from_logits(logits_by_aug=logits_by_aug, aug_ids=aug_ids)
+    if np.any(labels < 0) or np.any(labels >= num_classes):
+        raise ValueError("class_idxs must be valid for logits class count")
+    classifier = xgboost.XGBClassifier(
+        objective="multi:softprob",
+        num_class=num_classes,
+        n_estimators=max(1, int(n_estimators)),
+        learning_rate=float(learning_rate),
+        max_depth=3,
+        eval_metric="mlogloss",
+        tree_method="hist",
+        random_state=20260522,
+        n_jobs=1,
+    )
+    classifier.fit(features, labels)
+    probabilities = np.asarray(classifier.predict_proba(features), dtype=np.float32)
+    model_path = Path(output_path).with_suffix(".model.json")
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    classifier.save_model(model_path)
+    metrics = _probability_metrics(
+        probabilities=probabilities,
+        class_idxs=labels,
+        forwards_per_image=len(aug_ids),
+        total_augments=len(aug_ids),
+    )
+    return XGBoostAggregationArtifact(
+        method="xgboost-multiclass",
+        aug_ids=aug_ids,
+        model_path=model_path,
+        num_classes=num_classes,
+        feature_count=features.shape[1],
+        metrics=metrics,
+    )
+
+
+def xgboost_multiclass_probabilities(
+    artifact_path: Path,
+    logits_by_aug: dict[str, np.ndarray],
+) -> np.ndarray:
+    """Predict stacked probabilities with a saved optional XGBoost artifact."""
+
+    artifact = load_xgboost_aggregation_artifact(artifact_path)
+    xgboost = _require_xgboost()
+    features = _stacker_feature_matrix(logits_by_aug=logits_by_aug, aug_ids=artifact.aug_ids)
+    if features.shape[1] != artifact.feature_count:
+        raise ValueError("xgboost feature count does not match saved artifact")
+    classifier = xgboost.XGBClassifier()
+    classifier.load_model(artifact.model_path)
+    probabilities = np.asarray(classifier.predict_proba(features), dtype=np.float32)
+    if probabilities.ndim != 2 or probabilities.shape[1] != artifact.num_classes:
+        raise ValueError("xgboost probabilities do not match saved artifact class count")
+    return probabilities
+
+
+def evaluate_xgboost_multiclass_stacker(
+    artifact_path: Path,
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    total_augments: int,
+) -> dict[str, float]:
+    """Evaluate a saved optional XGBoost stacker on cached TTA predictions."""
+
+    artifact = load_xgboost_aggregation_artifact(artifact_path)
+    probabilities = xgboost_multiclass_probabilities(artifact_path, logits_by_aug)
+    return _probability_metrics(
+        probabilities=probabilities,
+        class_idxs=class_idxs,
+        forwards_per_image=len(artifact.aug_ids),
+        total_augments=total_augments,
+    )
+
+
 def train_aggregator_from_artifacts(
     split: str,
     cache_dir: Path,
@@ -200,7 +337,7 @@ def train_aggregator_from_artifacts(
 ) -> AggregationTrainingSummary:
     """Train and save learned aggregation weights from cached split logits."""
 
-    if method not in {"global-nonnegative", "class-nonnegative"}:
+    if method not in {"global-nonnegative", "class-nonnegative", "xgboost-multiclass"}:
         raise ValueError(f"unknown aggregator method {method!r}")
 
     logits_by_aug, class_idxs = _read_split_logits(cache_dir, split=split, aug_ids=aug_ids)
@@ -225,6 +362,15 @@ def train_aggregator_from_artifacts(
             l1_penalty=l1_penalty,
             active_threshold=active_threshold,
             device=device,
+        )
+    elif method == "xgboost-multiclass":
+        artifact = train_xgboost_multiclass_stacker(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            aug_ids=aug_ids,
+            output_path=output_path,
+            n_estimators=epochs,
+            learning_rate=learning_rate,
         )
     else:
         raise AssertionError("validated aggregator method became unreachable")
@@ -295,6 +441,53 @@ def _probability_tensor(
         logits = torch.as_tensor(logits_by_aug[aug_id], dtype=torch.float32, device=device)
         probabilities.append(torch.softmax(logits, dim=1))
     return torch.stack(probabilities, dim=1)
+
+
+def _stacker_feature_matrix(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+) -> np.ndarray:
+    probabilities = [_softmax_numpy(logits_by_aug[aug_id]) for aug_id in aug_ids]
+    return np.concatenate(probabilities, axis=1).astype(np.float32)
+
+
+def _num_classes_from_logits(logits_by_aug: dict[str, np.ndarray], aug_ids: list[str]) -> int:
+    if not aug_ids:
+        raise ValueError("aug_ids must not be empty")
+    num_classes = int(np.asarray(logits_by_aug[aug_ids[0]]).shape[1])
+    for aug_id in aug_ids[1:]:
+        if int(np.asarray(logits_by_aug[aug_id]).shape[1]) != num_classes:
+            raise ValueError("all augmentation logits must have the same class count")
+    return num_classes
+
+
+def _softmax_numpy(logits: np.ndarray) -> np.ndarray:
+    logits = np.asarray(logits, dtype=np.float32)
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    exp = np.exp(shifted)
+    return exp / exp.sum(axis=1, keepdims=True)
+
+
+def _probability_metrics(
+    probabilities: np.ndarray,
+    class_idxs: np.ndarray,
+    forwards_per_image: int,
+    total_augments: int,
+) -> dict[str, float]:
+    metrics = classification_metrics(probabilities, class_idxs, topk=(1, 5))
+    metrics["ece"] = expected_calibration_error(probabilities, class_idxs)
+    metrics["forwards_per_image"] = float(forwards_per_image)
+    metrics["relative_compute_vs_all"] = float(forwards_per_image / total_augments)
+    return metrics
+
+
+def _require_xgboost() -> Any:
+    try:
+        return importlib.import_module("xgboost")
+    except ImportError as error:
+        raise RuntimeError(
+            "xgboost-multiclass requires the optional 'xgboost' package to be installed"
+        ) from error
 
 
 def _nll_loss(probabilities: torch.Tensor, class_idxs: torch.Tensor) -> torch.Tensor:

@@ -256,6 +256,10 @@ global_weighted_tta:
 class_weighted_tta:
   score(c) = sum_a nonnegative_weight(c, a) * softmax(logits_a)[c]
   p_final = normalize(score)
+
+xgboost_multiclass:
+  features = concat_a softmax(logits_a)
+  p_final = XGBoost multiclass stacker(features)
 ```
 
 These weights are trained on public validation cached predictions only. They are
@@ -303,6 +307,7 @@ Final private table must include:
 - `all_100_uniform`: all candidates, upper compute bound.
 - `global_weighted_tta`: all candidates with one learned non-negative weight per augmentation.
 - `class_weighted_tta`: all candidates with learned non-negative weights per class and augmentation.
+- `xgboost_multiclass`: optional all-candidate tabular stacker trained on public-val cached predictions.
 - `learned_topk_uniform`: main method.
 - `learned_topk_softmax_weighted`: ablation.
 - `oracle_topk_uniform`: private diagnostic only, not a deployable method.
@@ -315,6 +320,7 @@ Rationale:
 - `all_100_uniform` shows the expensive upper bound.
 - `global_weighted_tta` tests whether dataset-level learned weights improve over simple averaging.
 - `class_weighted_tta` tests whether each class benefits from a different augmentation profile.
+- `xgboost_multiclass` tests the stronger Kaggle-style second-level model proposed for the article.
 - `oracle_topk_uniform` estimates headroom but must not be described as a valid deployable method.
 
 ## Target File Structure
@@ -520,6 +526,7 @@ python -m learned_tta.cli train-selector --config configs/experiment/resnet50_a1
 python -m learned_tta.cli tune-tta --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli train-aggregator --method global-nonnegative --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli train-aggregator --method class-nonnegative --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
+python -m learned_tta.cli train-aggregator --method xgboost-multiclass --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli cache-teacher --split private --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli evaluate-private --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli build-report --config configs/experiment/resnet50_a1_in1k.yaml

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -12,7 +14,7 @@ from PIL import Image
 from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.private_eval import evaluate_private_from_artifacts
 from learned_tta.selector_model import SelectorCNN
-from learned_tta.stacking import AggregationArtifact
+from learned_tta.stacking import AggregationArtifact, XGBoostAggregationArtifact
 
 
 @pytest.fixture
@@ -22,6 +24,7 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
     checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=2)
     global_aggregator_path = tmp_path / "global_aggregator.json"
     class_aggregator_path = tmp_path / "class_aggregator.json"
+    xgboost_aggregator_path = tmp_path / "xgboost_aggregator.json"
     AggregationArtifact(
         method="global-nonnegative",
         aug_ids=["aug_000", "aug_001"],
@@ -36,6 +39,16 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
         active_threshold=1e-6,
         metrics={"nll": 0.0},
     ).save(class_aggregator_path)
+    xgboost_model_path = tmp_path / "xgboost.model.json"
+    xgboost_model_path.write_text("fake xgboost model", encoding="utf-8")
+    XGBoostAggregationArtifact(
+        method="xgboost-multiclass",
+        aug_ids=["aug_000", "aug_001"],
+        model_path=xgboost_model_path,
+        num_classes=2,
+        feature_count=4,
+        metrics={"nll": 0.0},
+    ).save(xgboost_aggregator_path)
     tuning_path = tmp_path / "public_val_tta_tuning.json"
     tuning_path.write_text(json.dumps({"best_k": 1}), encoding="utf-8")
     return {
@@ -44,6 +57,7 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
         "checkpoint": checkpoint_path,
         "global_aggregator": global_aggregator_path,
         "class_aggregator": class_aggregator_path,
+        "xgboost_aggregator": xgboost_aggregator_path,
         "tuning": tuning_path,
     }
 
@@ -51,7 +65,9 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
 def test_evaluate_private_from_artifacts_writes_metric_tables(
     tmp_path: Path,
     private_eval_artifacts: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _install_fake_xgboost(monkeypatch)
     summary = evaluate_private_from_artifacts(
         split="private",
         manifest_path=private_eval_artifacts["manifest"],
@@ -66,6 +82,7 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
         random_seeds=[1, 2],
         global_aggregator_path=private_eval_artifacts["global_aggregator"],
         class_aggregator_path=private_eval_artifacts["class_aggregator"],
+        xgboost_aggregator_path=private_eval_artifacts["xgboost_aggregator"],
         device="cpu",
     )
 
@@ -84,6 +101,7 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
         "learned_topk_softmax_weighted",
         "global_weighted_tta",
         "class_weighted_tta",
+        "xgboost_multiclass",
         "oracle_topk_uniform",
     }
     corrections = pd.read_csv(summary.corrections_csv)
@@ -203,3 +221,19 @@ def _write_selector_checkpoint(path: Path, output_dim: int) -> Path:
         path,
     )
     return path
+
+
+def _install_fake_xgboost(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeXGBClassifier:
+        def load_model(self, path: str | Path) -> None:
+            assert Path(path).exists()
+
+        def predict_proba(self, features: np.ndarray) -> np.ndarray:
+            assert features.shape == (2, 4)
+            return np.array([[0.9, 0.1], [0.1, 0.9]], dtype=np.float32)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "xgboost",
+        SimpleNamespace(XGBClassifier=FakeXGBClassifier),
+    )
