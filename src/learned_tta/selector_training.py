@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from PIL import Image
 
@@ -21,7 +22,13 @@ from learned_tta.train_selector import (
     save_checkpoint_if_best,
     train_one_epoch,
 )
-from learned_tta.tta_eval import evaluate_learned_topk_uniform, select_best_k
+from learned_tta.tta_eval import (
+    evaluate_learned_topk_uniform,
+    learned_topk_selection,
+    oracle_selection_recall,
+    oracle_topk_selection,
+    select_best_k,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +36,7 @@ class SelectorTrainingSummary:
     """Summary of selector training."""
 
     checkpoint_path: Path
+    history_csv: Path
     best_epoch: int
     best_val_loss: float
     best_val_nll: float
@@ -137,6 +145,7 @@ def train_selector_from_artifacts(
     )
 
     checkpoint_path = output_dir / "selector_best.pt"
+    history_csv = output_dir / "selector_history.csv"
     checkpoint_state = CheckpointState(best_val_nll=float("inf"), path=checkpoint_path)
     val_logits_by_aug: dict[str, np.ndarray] | None = None
     val_class_idxs: np.ndarray | None = None
@@ -197,8 +206,10 @@ def train_selector_from_artifacts(
 
     best_epoch = checkpoint_state.best_epoch or 0
     best_row = next((row for row in history if int(row["epoch"]) == best_epoch), None)
+    pd.DataFrame(history).to_csv(history_csv, index=False)
     return SelectorTrainingSummary(
         checkpoint_path=checkpoint_path,
+        history_csv=history_csv,
         best_epoch=best_epoch,
         best_val_loss=float(best_row["val_loss"]) if best_row is not None else 0.0,
         best_val_nll=checkpoint_state.best_val_nll,
@@ -287,12 +298,29 @@ def _evaluate_validation_tta(
     }
     best_k = select_best_k(results_by_k, metric="nll", higher_is_better=False)
     best_metrics = results_by_k[best_k]
+    selected_aug_ids = learned_topk_selection(
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id=identity_aug_id,
+        k=best_k,
+    )
+    oracle_aug_ids = oracle_topk_selection(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        identity_aug_id=identity_aug_id,
+        k=best_k,
+    )
     return {
         "val_tta_best_k": float(best_k),
         "val_tta_top1": best_metrics["top1"],
         "val_tta_top5": best_metrics["top5"],
         "val_tta_nll": best_metrics["nll"],
         "val_tta_ece": best_metrics["ece"],
+        "val_tta_oracle_recall": oracle_selection_recall(
+            selected_aug_ids,
+            oracle_aug_ids,
+            identity_aug_id=identity_aug_id,
+        ),
     }
 
 

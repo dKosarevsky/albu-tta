@@ -77,9 +77,11 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
     )
 
     checkpoint = torch.load(summary.checkpoint_path, weights_only=False)
+    history = pd.read_csv(summary.history_csv)
 
     assert isinstance(summary, SelectorTrainingSummary)
     assert summary.checkpoint_path.exists()
+    assert summary.history_csv.exists()
     assert summary.best_epoch == 1
     assert summary.history[0]["epoch"] == 1
     assert "model_state_dict" in checkpoint
@@ -88,6 +90,11 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
     assert checkpoint["target_std"].tolist() == pytest.approx([1.0, 1.0])
     assert "val_tta_nll" in summary.history[0]
     assert summary.history[0]["val_tta_best_k"] == 1
+    assert "val_tta_oracle_recall" in summary.history[0]
+    assert 0.0 <= summary.history[0]["val_tta_oracle_recall"] <= 1.0
+    assert history["val_tta_oracle_recall"].iloc[0] == pytest.approx(
+        summary.history[0]["val_tta_oracle_recall"]
+    )
     assert checkpoint["val_nll"] == pytest.approx(summary.history[0]["val_tta_nll"])
     assert checkpoint["val_nll"] != pytest.approx(summary.history[0]["val_loss"])
     assert summary.best_val_nll == pytest.approx(checkpoint["val_nll"])
@@ -140,6 +147,7 @@ def test_train_selector_cli_writes_checkpoint(
     assert "selector training: best epoch 1" in captured.out
     assert "best val nll" in captured.out
     assert (output_dir / "selector_best.pt").exists()
+    assert (output_dir / "selector_history.csv").exists()
 
 
 def _write_manifest(root: Path, split: str, count: int) -> Path:

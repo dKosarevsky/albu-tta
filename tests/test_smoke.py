@@ -28,6 +28,7 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert summary.selector_checkpoint.exists()
     assert summary.tuning_json.exists()
     assert summary.private_metrics_csv.exists()
+    assert (summary.selector_dir / "selector_history.csv").exists()
     assert (summary.reports_dir / "tables" / "corrections.csv").exists()
     assert (summary.reports_dir / "tables" / "aggregation_weights.csv").exists()
     assert (summary.reports_dir / "figures" / "corrections.svg").exists()
