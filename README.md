@@ -31,7 +31,10 @@ combine predictions once the TTA views are available.
 
 The selector is trained on standardized gain targets, but checkpoints persist
 the public-train target mean and std. Inference converts selector outputs back
-to the original gain scale before ranking augmentations for top-k TTA.
+to the original gain scale before ranking augmentations for top-k TTA. During
+training, the best checkpoint is selected by public-validation
+`learned_topk_uniform` TTA NLL when the validation teacher cache is available;
+regression loss and Spearman correlation are kept as diagnostics.
 
 `build-report` writes the aggregation diagnostics when the learned aggregator
 artifacts are present, and copies private clean-vs-TTA diagnostics when

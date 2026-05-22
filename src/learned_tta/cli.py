@@ -83,7 +83,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             val_manifest_path=_optional_path(args.val_manifest),
             train_targets_path=_optional_path(args.train_targets),
             val_targets_path=_optional_path(args.val_targets),
+            cache_dir=_optional_path(args.cache_dir),
             output_dir=output_dir,
+            val_split=str(args.val_split),
+            candidate_ids=args.candidate_id,
+            top_k_grid=args.top_k,
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
             num_workers=int(args.num_workers),
@@ -261,7 +265,11 @@ def _build_parser() -> argparse.ArgumentParser:
     train_selector.add_argument("--val-manifest")
     train_selector.add_argument("--train-targets")
     train_selector.add_argument("--val-targets")
+    train_selector.add_argument("--cache-dir")
     train_selector.add_argument("--output-dir")
+    train_selector.add_argument("--val-split", default="public_val")
+    train_selector.add_argument("--candidate-id", action="append")
+    train_selector.add_argument("--top-k", type=int, action="append")
     train_selector.add_argument("--image-size", type=int, default=224)
     train_selector.add_argument("--batch-size", type=int, default=64)
     train_selector.add_argument("--num-workers", type=int, default=4)
@@ -456,7 +464,11 @@ def _cmd_train_selector(
     val_manifest_path: Path | None,
     train_targets_path: Path | None,
     val_targets_path: Path | None,
+    cache_dir: Path | None,
     output_dir: Path | None,
+    val_split: str,
+    candidate_ids: list[str] | None,
+    top_k_grid: list[int] | None,
     image_size: int,
     batch_size: int,
     num_workers: int,
@@ -471,7 +483,11 @@ def _cmd_train_selector(
         val_manifest_path=val_manifest_path,
         train_targets_path=train_targets_path,
         val_targets_path=val_targets_path,
+        cache_dir=cache_dir,
         output_dir=output_dir,
+        val_split=val_split,
+        candidate_ids=candidate_ids,
+        top_k_grid=top_k_grid,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -482,6 +498,7 @@ def _cmd_train_selector(
     )
     print(
         f"selector training: best epoch {summary.best_epoch}, "
+        f"best val nll {summary.best_val_nll:.6g}, "
         f"best val loss {summary.best_val_loss:.6g}, checkpoint {summary.checkpoint_path}"
     )
 
