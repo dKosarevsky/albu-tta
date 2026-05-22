@@ -15,7 +15,12 @@ from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import load_manifest
 from learned_tta.reporting import build_compute_table, build_correction_table, build_metrics_table
-from learned_tta.stacking import default_aggregator_path, load_aggregation_artifact
+from learned_tta.stacking import (
+    default_aggregator_path,
+    evaluate_xgboost_multiclass_stacker,
+    load_aggregation_artifact,
+    xgboost_multiclass_probabilities,
+)
 from learned_tta.tta_eval import (
     average_probabilities,
     class_weighted_probabilities,
@@ -62,6 +67,7 @@ def evaluate_private_from_artifacts(
     random_seeds: list[int],
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
+    xgboost_aggregator_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> PrivateEvaluationSummary:
@@ -89,6 +95,7 @@ def evaluate_private_from_artifacts(
         random_seeds=random_seeds,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
+        xgboost_aggregator_path=xgboost_aggregator_path,
     )
 
     tables_dir = Path(output_dir) / "tables"
@@ -107,6 +114,7 @@ def evaluate_private_from_artifacts(
         best_k=best_k,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
+        xgboost_aggregator_path=xgboost_aggregator_path,
     ).to_csv(corrections_csv, index=False)
     return PrivateEvaluationSummary(
         best_k=best_k,
@@ -128,6 +136,7 @@ def evaluate_private_from_config(
     candidate_ids: list[str] | None = None,
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
+    xgboost_aggregator_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -151,6 +160,9 @@ def evaluate_private_from_config(
     resolved_class_aggregator_path = class_aggregator_path or _existing_path(
         default_aggregator_path(selector_dir, split="public_val", method="class-nonnegative")
     )
+    resolved_xgboost_aggregator_path = xgboost_aggregator_path or _existing_path(
+        default_aggregator_path(selector_dir, split="public_val", method="xgboost-multiclass")
+    )
     return evaluate_private_from_artifacts(
         split=split,
         manifest_path=manifest_path or config.artifacts.manifests_dir / f"{split}.csv",
@@ -165,6 +177,7 @@ def evaluate_private_from_config(
         random_seeds=random_seeds,
         global_aggregator_path=resolved_global_aggregator_path,
         class_aggregator_path=resolved_class_aggregator_path,
+        xgboost_aggregator_path=resolved_xgboost_aggregator_path,
         device=device,
         identity_aug_id=config.augmentations.identity_id,
     )
@@ -180,6 +193,7 @@ def _evaluate_private_strategies(
     random_seeds: list[int],
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
+    xgboost_aggregator_path: Path | None,
 ) -> dict[str, dict[str, float]]:
     random_metrics = [
         evaluate_random_topk(
@@ -244,6 +258,13 @@ def _evaluate_private_strategies(
             class_weights=artifact.weights,
             active_threshold=artifact.active_threshold,
         )
+    if xgboost_aggregator_path is not None:
+        metrics["xgboost_multiclass"] = evaluate_xgboost_multiclass_stacker(
+            artifact_path=xgboost_aggregator_path,
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            total_augments=len(aug_ids),
+        )
     return metrics
 
 
@@ -277,6 +298,7 @@ def _build_private_corrections(
     best_k: int,
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
+    xgboost_aggregator_path: Path | None,
 ) -> pd.DataFrame:
     probabilities_by_strategy = _private_probabilities_by_strategy(
         logits_by_aug=logits_by_aug,
@@ -287,6 +309,7 @@ def _build_private_corrections(
         best_k=best_k,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
+        xgboost_aggregator_path=xgboost_aggregator_path,
     )
     predictions_by_strategy = {
         strategy: probabilities.argmax(axis=1)
@@ -309,6 +332,7 @@ def _private_probabilities_by_strategy(
     best_k: int,
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
+    xgboost_aggregator_path: Path | None,
 ) -> dict[str, np.ndarray]:
     probabilities = {
         "clean": average_probabilities(logits_by_aug, [identity_aug_id]),
@@ -360,6 +384,11 @@ def _private_probabilities_by_strategy(
             logits_by_aug,
             aug_ids=artifact.aug_ids,
             class_weights=artifact.weights,
+        )
+    if xgboost_aggregator_path is not None:
+        probabilities["xgboost_multiclass"] = xgboost_multiclass_probabilities(
+            artifact_path=xgboost_aggregator_path,
+            logits_by_aug=logits_by_aug,
         )
     return probabilities
 

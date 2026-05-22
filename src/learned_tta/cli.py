@@ -141,6 +141,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             candidate_ids=args.candidate_id,
             global_aggregator_path=_optional_path(args.global_aggregator),
             class_aggregator_path=_optional_path(args.class_aggregator),
+            xgboost_aggregator_path=_optional_path(args.xgboost_aggregator),
             random_seeds=args.random_seed,
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
@@ -308,7 +309,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train_aggregator.add_argument("--candidate-id", action="append")
     train_aggregator.add_argument(
         "--method",
-        choices=["global-nonnegative", "class-nonnegative"],
+        choices=["global-nonnegative", "class-nonnegative", "xgboost-multiclass"],
         default="global-nonnegative",
     )
     train_aggregator.add_argument("--epochs", type=int, default=200)
@@ -342,6 +343,7 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_private.add_argument("--tuning")
     evaluate_private.add_argument("--global-aggregator")
     evaluate_private.add_argument("--class-aggregator")
+    evaluate_private.add_argument("--xgboost-aggregator")
     evaluate_private.add_argument("--output-dir")
     evaluate_private.add_argument("--candidate-id", action="append")
     evaluate_private.add_argument("--random-seed", type=int, action="append")
@@ -600,6 +602,7 @@ def _cmd_evaluate_private(
     candidate_ids: list[str] | None,
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
+    xgboost_aggregator_path: Path | None,
     random_seeds: list[int] | None,
     image_size: int,
     batch_size: int,
@@ -617,6 +620,7 @@ def _cmd_evaluate_private(
         candidate_ids=candidate_ids,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
+        xgboost_aggregator_path=xgboost_aggregator_path,
         random_seeds=random_seeds,
         image_size=image_size,
         batch_size=batch_size,

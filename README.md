@@ -19,6 +19,9 @@ The project now keeps two TTA learning layers separate.
   non-negative weight per augmentation from cached public-val predictions.
 - `class_weighted_tta`: the same learned aggregation idea, but with separate
   sparse non-negative augmentation weights per output class.
+- `xgboost_multiclass`: an optional tabular stacker over flattened per-policy
+  probabilities. It is trained from cached public-val predictions and evaluated
+  on private when its artifact is present.
 
 This separation makes the article diagnostics cleaner: selection answers which
 AlbumentationsX transforms are useful, while aggregation answers how strongly to
@@ -55,6 +58,8 @@ which ImageNet classes benefit from which AlbumentationsX transforms.
 Aggregator training uses the historical `--l1-penalty` CLI option as a sparsity
 regularizer and then prunes weights at or below `active_threshold`; this makes
 zero-weight TTA candidates explicit in the saved artifact and report tables.
+The optional XGBoost stacker is deliberately not a default dependency; install
+`xgboost` in the experiment environment before running `--method xgboost-multiclass`.
 `corrections.csv` counts where a strategy fixes a clean ResNet50 mistake and
 where it breaks an originally correct clean prediction. This follows the TTA
 diagnostic framing from "Better Aggregation in Test-Time Augmentation": average
@@ -126,6 +131,10 @@ uv run python -m learned_tta.cli train-aggregator --method class-nonnegative \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --split public_val \
   --device cuda
+
+uv run python -m learned_tta.cli train-aggregator --method xgboost-multiclass \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --split public_val
 
 uv run python -m learned_tta.cli cache-teacher --split private \
   --config configs/experiment/resnet50_a1_in1k.yaml \
