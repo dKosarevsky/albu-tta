@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+from PIL import Image
+
+from learned_tta.selector_training import (
+    SelectorTrainingSummary,
+    make_selector_dataloader,
+    train_selector_from_artifacts,
+)
+from learned_tta.targets import TargetStats, save_selector_targets
+
+
+@pytest.fixture
+def selector_training_artifacts(tmp_path: Path) -> dict[str, Path]:
+    train_manifest = _write_manifest(tmp_path, split="public_train", count=4)
+    val_manifest = _write_manifest(tmp_path, split="public_val", count=2)
+    train_targets = _write_targets(tmp_path / "public_train_targets.npz", rows=4)
+    val_targets = _write_targets(tmp_path / "public_val_targets.npz", rows=2)
+    return {
+        "train_manifest": train_manifest,
+        "val_manifest": val_manifest,
+        "train_targets": train_targets,
+        "val_targets": val_targets,
+    }
+
+
+def test_make_selector_dataloader_returns_image_target_batches(
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    dataloader = make_selector_dataloader(
+        manifest_path=selector_training_artifacts["train_manifest"],
+        targets_path=selector_training_artifacts["train_targets"],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        shuffle=False,
+    )
+
+    images, targets = next(iter(dataloader))
+
+    assert images.shape == (2, 3, 16, 16)
+    assert targets.shape == (2, 2)
+    assert images.dtype == torch.float32
+    assert targets.dtype == torch.float32
+
+
+def test_train_selector_from_artifacts_saves_best_checkpoint(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    summary = train_selector_from_artifacts(
+        train_manifest_path=selector_training_artifacts["train_manifest"],
+        val_manifest_path=selector_training_artifacts["val_manifest"],
+        train_targets_path=selector_training_artifacts["train_targets"],
+        val_targets_path=selector_training_artifacts["val_targets"],
+        output_dir=tmp_path / "selector",
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        epochs=1,
+        learning_rate=1e-3,
+        rank_weight=0.2,
+        device="cpu",
+    )
+
+    checkpoint = torch.load(summary.checkpoint_path, weights_only=False)
+
+    assert isinstance(summary, SelectorTrainingSummary)
+    assert summary.checkpoint_path.exists()
+    assert summary.best_epoch == 1
+    assert summary.history[0]["epoch"] == 1
+    assert "model_state_dict" in checkpoint
+    assert checkpoint["val_nll"] == pytest.approx(summary.best_val_loss)
+
+
+def test_train_selector_cli_writes_checkpoint(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from learned_tta.cli import main
+
+    output_dir = tmp_path / "selector"
+
+    main(
+        [
+            "train-selector",
+            "--config",
+            str(Path(__file__).resolve().parents[1] / "configs/experiment/resnet50_a1_in1k.yaml"),
+            "--train-manifest",
+            str(selector_training_artifacts["train_manifest"]),
+            "--val-manifest",
+            str(selector_training_artifacts["val_manifest"]),
+            "--train-targets",
+            str(selector_training_artifacts["train_targets"]),
+            "--val-targets",
+            str(selector_training_artifacts["val_targets"]),
+            "--output-dir",
+            str(output_dir),
+            "--epochs",
+            "1",
+            "--batch-size",
+            "2",
+            "--num-workers",
+            "0",
+            "--image-size",
+            "16",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert "selector training: best epoch 1" in captured.out
+    assert (output_dir / "selector_best.pt").exists()
+
+
+def _write_manifest(root: Path, split: str, count: int) -> Path:
+    rows = []
+    for index in range(count):
+        path = root / f"{split}_{index}.png"
+        image = np.full((12, 12, 3), fill_value=20 + index, dtype=np.uint8)
+        Image.fromarray(image, mode="RGB").save(path)
+        rows.append(
+            {
+                "split": split,
+                "image_id": f"{split}-{index}",
+                "class_idx": index % 2,
+                "class_name": f"class-{index % 2}",
+                "path": str(path),
+            }
+        )
+    manifest_path = root / f"{split}.csv"
+    pd.DataFrame(rows).to_csv(manifest_path, index=False)
+    return manifest_path
+
+
+def _write_targets(path: Path, rows: int) -> Path:
+    gain = np.stack(
+        [
+            np.linspace(0.0, 0.3, rows, dtype=np.float32),
+            np.linspace(0.4, -0.2, rows, dtype=np.float32),
+        ],
+        axis=1,
+    )
+    stats = TargetStats(
+        mean=np.zeros(2, dtype=np.float32),
+        std=np.ones(2, dtype=np.float32),
+    )
+    save_selector_targets(
+        path=path,
+        aug_ids=["aug_000", "aug_001"],
+        gain=gain,
+        target_z=gain,
+        stats=stats,
+    )
+    return path

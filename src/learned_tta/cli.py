@@ -13,6 +13,7 @@ from learned_tta.imagenet_split import (
     discover_imagenet_val,
     write_split_manifests,
 )
+from learned_tta.selector_training import train_selector_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
 
@@ -57,6 +58,23 @@ def main(argv: Sequence[str] | None = None) -> None:
             train_split=str(args.train_split),
             val_split=str(args.val_split),
             candidate_ids=args.candidate_id,
+        )
+    elif command == "train-selector":
+        output_dir = Path(args.output_dir) if args.output_dir is not None else None
+        _cmd_train_selector(
+            config_path=Path(args.config),
+            train_manifest_path=_optional_path(args.train_manifest),
+            val_manifest_path=_optional_path(args.val_manifest),
+            train_targets_path=_optional_path(args.train_targets),
+            val_targets_path=_optional_path(args.val_targets),
+            output_dir=output_dir,
+            image_size=int(args.image_size),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            epochs=int(args.epochs),
+            learning_rate=float(args.learning_rate),
+            rank_weight=float(args.rank_weight),
+            device=str(args.device),
         )
     else:
         parser.error(f"unknown command {command!r}")
@@ -131,6 +149,24 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         help="Augmentation candidate id to include. May be passed more than once.",
     )
+
+    train_selector = subparsers.add_parser(
+        "train-selector",
+        help="Train the small selector CNN from clean images and selector targets.",
+    )
+    train_selector.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    train_selector.add_argument("--train-manifest")
+    train_selector.add_argument("--val-manifest")
+    train_selector.add_argument("--train-targets")
+    train_selector.add_argument("--val-targets")
+    train_selector.add_argument("--output-dir")
+    train_selector.add_argument("--image-size", type=int, default=224)
+    train_selector.add_argument("--batch-size", type=int, default=64)
+    train_selector.add_argument("--num-workers", type=int, default=4)
+    train_selector.add_argument("--epochs", type=int, default=20)
+    train_selector.add_argument("--learning-rate", type=float, default=1e-3)
+    train_selector.add_argument("--rank-weight", type=float, default=0.2)
+    train_selector.add_argument("--device", default="cpu")
     return parser
 
 
@@ -210,3 +246,45 @@ def _cmd_build_targets(
         f"selector targets: wrote {summary.train_path.name} and {summary.val_path.name} "
         f"for {_plural(len(summary.aug_ids), 'augmentation')}"
     )
+
+
+def _cmd_train_selector(
+    config_path: Path,
+    train_manifest_path: Path | None,
+    val_manifest_path: Path | None,
+    train_targets_path: Path | None,
+    val_targets_path: Path | None,
+    output_dir: Path | None,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    epochs: int,
+    learning_rate: float,
+    rank_weight: float,
+    device: str,
+) -> None:
+    summary = train_selector_from_config(
+        config_path=config_path,
+        train_manifest_path=train_manifest_path,
+        val_manifest_path=val_manifest_path,
+        train_targets_path=train_targets_path,
+        val_targets_path=val_targets_path,
+        output_dir=output_dir,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        rank_weight=rank_weight,
+        device=device,
+    )
+    print(
+        f"selector training: best epoch {summary.best_epoch}, "
+        f"best val loss {summary.best_val_loss:.6g}, checkpoint {summary.checkpoint_path}"
+    )
+
+
+def _optional_path(value: str | None) -> Path | None:
+    if value is None:
+        return None
+    return Path(value)
