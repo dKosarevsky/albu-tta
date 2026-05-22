@@ -13,6 +13,7 @@ from learned_tta.imagenet_split import (
     discover_imagenet_val,
     write_split_manifests,
 )
+from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
 
 
@@ -45,6 +46,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             num_workers=int(args.num_workers),
             resume=not bool(args.no_resume),
             device=str(args.device),
+        )
+    elif command == "build-targets":
+        cache_dir = Path(args.cache_dir) if args.cache_dir is not None else None
+        output_dir = Path(args.output_dir) if args.output_dir is not None else None
+        _cmd_build_targets(
+            config_path=Path(args.config),
+            cache_dir=cache_dir,
+            output_dir=output_dir,
+            train_split=str(args.train_split),
+            val_split=str(args.val_split),
+            candidate_ids=args.candidate_id,
         )
     else:
         parser.error(f"unknown command {command!r}")
@@ -98,6 +110,27 @@ def _build_parser() -> argparse.ArgumentParser:
     cache_teacher.add_argument("--num-workers", type=int, default=4)
     cache_teacher.add_argument("--device", default="cpu")
     cache_teacher.add_argument("--no-resume", action="store_true")
+
+    build_targets = subparsers.add_parser(
+        "build-targets",
+        help="Build selector target artifacts from teacher cache shards.",
+    )
+    build_targets.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    build_targets.add_argument(
+        "--cache-dir",
+        help="Teacher cache directory. Defaults to artifacts.teacher_cache_dir.",
+    )
+    build_targets.add_argument(
+        "--output-dir",
+        help="Selector output directory. Defaults to artifacts.selector_dir.",
+    )
+    build_targets.add_argument("--train-split", default="public_train")
+    build_targets.add_argument("--val-split", default="public_val")
+    build_targets.add_argument(
+        "--candidate-id",
+        action="append",
+        help="Augmentation candidate id to include. May be passed more than once.",
+    )
     return parser
 
 
@@ -155,3 +188,25 @@ def _cmd_cache_teacher(
 def _plural(count: int, singular: str) -> str:
     suffix = "" if count == 1 else "s"
     return f"{count} {singular}{suffix}"
+
+
+def _cmd_build_targets(
+    config_path: Path,
+    cache_dir: Path | None,
+    output_dir: Path | None,
+    train_split: str,
+    val_split: str,
+    candidate_ids: list[str] | None,
+) -> None:
+    summary = build_selector_targets_from_config(
+        config_path=config_path,
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        train_split=train_split,
+        val_split=val_split,
+        candidate_ids=candidate_ids,
+    )
+    print(
+        f"selector targets: wrote {summary.train_path.name} and {summary.val_path.name} "
+        f"for {_plural(len(summary.aug_ids), 'augmentation')}"
+    )
