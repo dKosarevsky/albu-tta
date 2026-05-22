@@ -162,6 +162,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             checkpoint_path=_optional_path(args.checkpoint),
             global_aggregator_path=_optional_path(args.global_aggregator),
             class_aggregator_path=_optional_path(args.class_aggregator),
+            xgboost_aggregator_path=_optional_path(args.xgboost_aggregator),
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
             num_workers=int(args.num_workers),
@@ -367,6 +368,7 @@ def _build_parser() -> argparse.ArgumentParser:
     build_report.add_argument("--checkpoint")
     build_report.add_argument("--global-aggregator")
     build_report.add_argument("--class-aggregator")
+    build_report.add_argument("--xgboost-aggregator")
     build_report.add_argument("--image-size", type=int, default=224)
     build_report.add_argument("--batch-size", type=int, default=64)
     build_report.add_argument("--num-workers", type=int, default=4)
@@ -645,6 +647,7 @@ def _cmd_build_report(
     checkpoint_path: Path | None,
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
+    xgboost_aggregator_path: Path | None,
     image_size: int,
     batch_size: int,
     num_workers: int,
@@ -662,6 +665,7 @@ def _cmd_build_report(
         checkpoint_path=checkpoint_path,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
+        xgboost_aggregator_path=xgboost_aggregator_path,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,

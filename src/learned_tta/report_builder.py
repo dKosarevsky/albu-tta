@@ -18,7 +18,11 @@ from learned_tta.reporting import (
     build_compute_table,
     build_metrics_table,
 )
-from learned_tta.stacking import default_aggregator_path, load_aggregation_artifact
+from learned_tta.stacking import (
+    default_aggregator_path,
+    load_aggregation_artifact,
+    load_xgboost_aggregation_artifact,
+)
 from learned_tta.targets import load_selector_targets
 from learned_tta.tta_eval import learned_topk_selection, oracle_selection_recall
 from learned_tta.tta_tuning import predict_selector_scores
@@ -35,11 +39,13 @@ class ReportBuildSummary:
     augmentation_impact_csv: Path
     aggregation_weights_csv: Path | None
     class_augmentation_weights_csv: Path | None
+    xgboost_feature_importance_csv: Path | None
     corrections_csv: Path | None
     selector_history_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
     aggregation_weights_svg: Path | None
+    xgboost_feature_importance_svg: Path | None
     corrections_svg: Path | None
     selector_history_svg: Path | None
     best_k: int
@@ -63,6 +69,7 @@ def build_report_from_artifacts(
     num_workers: int,
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
+    xgboost_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
     selector_history_path: Path | None = None,
     device: str | torch.device = "cpu",
@@ -114,6 +121,10 @@ def build_report_from_artifacts(
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
     )
+    xgboost_importance = _build_xgboost_feature_importance_table(
+        aug_ids=targets.aug_ids,
+        xgboost_aggregator_path=xgboost_aggregator_path,
+    )
     corrections_table = _read_corrections_csv(corrections_path) if corrections_path else None
     selector_history = (
         _read_selector_history_csv(selector_history_path) if selector_history_path else None
@@ -135,6 +146,11 @@ def build_report_from_artifacts(
             if aggregation_tables.class_weights is not None
             else None
         ),
+        xgboost_feature_importance_csv=(
+            tables_dir / "xgboost_feature_importance.csv"
+            if xgboost_importance is not None
+            else None
+        ),
         corrections_csv=tables_dir / "corrections.csv" if corrections_table is not None else None,
         selector_history_csv=(
             tables_dir / "selector_history.csv" if selector_history is not None else None
@@ -144,6 +160,11 @@ def build_report_from_artifacts(
         aggregation_weights_svg=(
             figures_dir / "aggregation_weights.svg"
             if aggregation_tables.weights is not None
+            else None
+        ),
+        xgboost_feature_importance_svg=(
+            figures_dir / "xgboost_feature_importance.svg"
+            if xgboost_importance is not None
             else None
         ),
         corrections_svg=figures_dir / "corrections.svg" if corrections_table is not None else None,
@@ -167,6 +188,8 @@ def build_report_from_artifacts(
             paths.class_augmentation_weights_csv,
             index=False,
         )
+    if paths.xgboost_feature_importance_csv is not None and xgboost_importance is not None:
+        xgboost_importance.to_csv(paths.xgboost_feature_importance_csv, index=False)
     if paths.corrections_csv is not None and corrections_table is not None:
         corrections_table.to_csv(paths.corrections_csv, index=False)
     if paths.selector_history_csv is not None and selector_history is not None:
@@ -182,6 +205,14 @@ def build_report_from_artifacts(
     if paths.aggregation_weights_svg is not None and aggregation_tables.weights is not None:
         paths.aggregation_weights_svg.write_text(
             _aggregation_weights_svg(aggregation_tables.weights),
+            encoding="utf-8",
+        )
+    if (
+        paths.xgboost_feature_importance_svg is not None
+        and xgboost_importance is not None
+    ):
+        paths.xgboost_feature_importance_svg.write_text(
+            _xgboost_feature_importance_svg(xgboost_importance),
             encoding="utf-8",
         )
     if paths.corrections_svg is not None and corrections_table is not None:
@@ -202,6 +233,7 @@ def build_report_from_artifacts(
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
             has_aggregation_weights=aggregation_tables.weights is not None,
             has_class_weights=aggregation_tables.class_weights is not None,
+            has_xgboost_importance=xgboost_importance is not None,
             has_corrections=corrections_table is not None,
             has_selector_history=selector_history is not None,
         ),
@@ -220,6 +252,7 @@ def build_report_from_config(
     checkpoint_path: Path | None = None,
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
+    xgboost_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
     selector_history_path: Path | None = None,
     image_size: int = 224,
@@ -255,6 +288,14 @@ def build_report_from_config(
                 config.artifacts.selector_dir,
                 split="public_val",
                 method="class-nonnegative",
+            )
+        ),
+        xgboost_aggregator_path=xgboost_aggregator_path
+        or _existing_path(
+            default_aggregator_path(
+                config.artifacts.selector_dir,
+                split="public_val",
+                method="xgboost-multiclass",
             )
         ),
         corrections_path=corrections_path
@@ -406,6 +447,26 @@ def _build_aggregation_tables(
     return _AggregationTables(weights=weights_table, class_weights=class_table)
 
 
+def _build_xgboost_feature_importance_table(
+    aug_ids: list[str],
+    xgboost_aggregator_path: Path | None,
+) -> pd.DataFrame | None:
+    if xgboost_aggregator_path is None:
+        return None
+
+    artifact = load_xgboost_aggregation_artifact(xgboost_aggregator_path)
+    _validate_aggregator_aug_ids(artifact.aug_ids, aug_ids, xgboost_aggregator_path)
+    feature_importance = np.asarray(artifact.feature_importance, dtype=np.float32)
+    if feature_importance.shape != (len(aug_ids),):
+        raise ValueError("xgboost feature importance must have shape [augmentations]")
+    return pd.DataFrame(
+        {
+            "aug_id": aug_ids,
+            "feature_importance": feature_importance,
+        }
+    )
+
+
 def _validate_aggregator_aug_ids(
     aggregator_aug_ids: list[str],
     expected_aug_ids: list[str],
@@ -445,6 +506,7 @@ def _results_markdown(
     recall: float,
     has_aggregation_weights: bool,
     has_class_weights: bool,
+    has_xgboost_importance: bool,
     has_corrections: bool,
     has_selector_history: bool,
 ) -> str:
@@ -499,6 +561,17 @@ def _results_markdown(
                     "",
                 ]
             )
+    if has_xgboost_importance:
+        lines.extend(
+            [
+                "## XGBoost Stacker Diagnostics",
+                "",
+                "- Table: `tables/xgboost_feature_importance.csv`",
+                "",
+                "![XGBoost feature importance](figures/xgboost_feature_importance.svg)",
+                "",
+            ]
+        )
     if has_corrections:
         lines.extend(
             [
@@ -565,6 +638,15 @@ def _aggregation_weights_svg(table: pd.DataFrame) -> str:
         values = []
         title = "Aggregation Weights"
     return _bar_svg(title=title, labels=labels, values=values, y_label="weight")
+
+
+def _xgboost_feature_importance_svg(table: pd.DataFrame) -> str:
+    return _bar_svg(
+        title="XGBoost Feature Importance",
+        labels=table["aug_id"].astype(str).tolist(),
+        values=table["feature_importance"].astype(float).tolist(),
+        y_label="importance",
+    )
 
 
 def _corrections_svg(table: pd.DataFrame) -> str:

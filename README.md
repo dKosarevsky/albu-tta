@@ -42,11 +42,13 @@ artifacts are present, and copies private clean-vs-TTA diagnostics when
 ```text
 reports/resnet50_a1_in1k/tables/aggregation_weights.csv
 reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
+reports/resnet50_a1_in1k/tables/xgboost_feature_importance.csv
 reports/resnet50_a1_in1k/tables/corrections.csv
 reports/resnet50_a1_in1k/tables/selector_history.csv
 reports/resnet50_a1_in1k/figures/gain_distribution.svg
 reports/resnet50_a1_in1k/figures/oracle_overlap.svg
 reports/resnet50_a1_in1k/figures/aggregation_weights.svg
+reports/resnet50_a1_in1k/figures/xgboost_feature_importance.svg
 reports/resnet50_a1_in1k/figures/corrections.svg
 reports/resnet50_a1_in1k/figures/selector_history.svg
 ```
@@ -60,6 +62,9 @@ regularizer and then prunes weights at or below `active_threshold`; this makes
 zero-weight TTA candidates explicit in the saved artifact and report tables.
 The optional XGBoost stacker is deliberately not a default dependency; install
 `xgboost` in the experiment environment before running `--method xgboost-multiclass`.
+When the XGBoost artifact is present, `build-report` writes
+`xgboost_feature_importance.csv` and `xgboost_feature_importance.svg` to show
+which augmentation candidates the stacker uses most.
 `corrections.csv` counts where a strategy fixes a clean ResNet50 mistake and
 where it breaks an originally correct clean prediction. This follows the TTA
 diagnostic framing from "Better Aggregation in Test-Time Augmentation": average

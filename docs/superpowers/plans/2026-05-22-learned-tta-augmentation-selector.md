@@ -496,6 +496,7 @@ Files:
 - Create `reports/resnet50_a1_in1k/tables/augmentation_impact.csv`
 - Create `reports/resnet50_a1_in1k/tables/aggregation_weights.csv`
 - Create `reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv`
+- Create `reports/resnet50_a1_in1k/tables/xgboost_feature_importance.csv`
 - Create `reports/resnet50_a1_in1k/tables/corrections.csv`
 
 Steps:
@@ -505,9 +506,11 @@ Steps:
 - [ ] Generate augmentation impact table with mean gain, selection frequency, and oracle frequency.
 - [ ] Generate learned aggregation weight table with global weight, class mean weight, class max weight, and class activation frequency.
 - [ ] Generate class-specific long table with one row per `(class_idx, aug_id)` weight.
+- [ ] Generate XGBoost feature-importance table with one row per augmentation.
 - [ ] Generate correction/corruption table showing where each TTA strategy fixes or breaks clean predictions.
 - [ ] Generate plots for gain distribution and learned versus oracle top-k overlap.
 - [ ] Generate plot for global learned aggregation weights.
+- [ ] Generate plot for XGBoost feature importance.
 - [ ] Generate plot for TTA corrections and corruptions.
 - [ ] Write a short result summary that avoids claiming SOTA until additional architectures are run.
 

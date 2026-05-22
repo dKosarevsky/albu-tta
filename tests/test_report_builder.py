@@ -11,7 +11,7 @@ from PIL import Image
 
 from learned_tta.report_builder import build_report_from_artifacts
 from learned_tta.selector_model import SelectorCNN
-from learned_tta.stacking import AggregationArtifact
+from learned_tta.stacking import AggregationArtifact, XGBoostAggregationArtifact
 from learned_tta.targets import TargetStats, save_selector_targets
 
 
@@ -122,6 +122,7 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
     checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=3)
     global_aggregator_path = tmp_path / "global_aggregator.json"
     class_aggregator_path = tmp_path / "class_aggregator.json"
+    xgboost_aggregator_path = tmp_path / "xgboost_aggregator.json"
     AggregationArtifact(
         method="global-nonnegative",
         aug_ids=["aug_000", "aug_001", "aug_002"],
@@ -142,6 +143,17 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         active_threshold=1e-6,
         metrics={"nll": 0.2},
     ).save(class_aggregator_path)
+    xgboost_model_path = tmp_path / "xgboost.model.json"
+    xgboost_model_path.write_text("fake xgboost model", encoding="utf-8")
+    XGBoostAggregationArtifact(
+        method="xgboost-multiclass",
+        aug_ids=["aug_000", "aug_001", "aug_002"],
+        model_path=xgboost_model_path,
+        num_classes=2,
+        feature_count=6,
+        feature_importance=np.array([0.1, 0.7, 0.2], dtype=np.float32),
+        metrics={"nll": 0.15},
+    ).save(xgboost_aggregator_path)
     return {
         "private_metrics": private_metrics_csv,
         "corrections": corrections_csv,
@@ -152,6 +164,7 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         "checkpoint": checkpoint_path,
         "global_aggregator": global_aggregator_path,
         "class_aggregator": class_aggregator_path,
+        "xgboost_aggregator": xgboost_aggregator_path,
     }
 
 
@@ -171,6 +184,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         num_workers=0,
         global_aggregator_path=report_artifacts["global_aggregator"],
         class_aggregator_path=report_artifacts["class_aggregator"],
+        xgboost_aggregator_path=report_artifacts["xgboost_aggregator"],
         corrections_path=report_artifacts["corrections"],
         selector_history_path=report_artifacts["selector_history"],
         device="cpu",
@@ -181,12 +195,15 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.aggregation_weights_csv is not None
     assert summary.class_augmentation_weights_csv is not None
     assert summary.aggregation_weights_svg is not None
+    assert summary.xgboost_feature_importance_csv is not None
+    assert summary.xgboost_feature_importance_svg is not None
     assert summary.corrections_csv is not None
     assert summary.corrections_svg is not None
     assert summary.selector_history_csv is not None
     assert summary.selector_history_svg is not None
     aggregation_weights = pd.read_csv(summary.aggregation_weights_csv)
     class_weights = pd.read_csv(summary.class_augmentation_weights_csv)
+    xgboost_importance = pd.read_csv(summary.xgboost_feature_importance_csv)
     corrections = pd.read_csv(summary.corrections_csv)
     selector_history = pd.read_csv(summary.selector_history_csv)
 
@@ -199,6 +216,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.aggregation_weights_csv.exists()
     assert summary.class_augmentation_weights_csv.exists()
     assert summary.aggregation_weights_svg.exists()
+    assert summary.xgboost_feature_importance_csv.exists()
+    assert summary.xgboost_feature_importance_svg.exists()
     assert summary.corrections_csv.exists()
     assert summary.corrections_svg.exists()
     assert summary.selector_history_csv.exists()
@@ -206,15 +225,18 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert set(class_weights.columns) == {"class_idx", "aug_id", "weight"}
+    assert xgboost_importance["feature_importance"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
     assert "figures/aggregation_weights.svg" in markdown
+    assert "figures/xgboost_feature_importance.svg" in markdown
     assert "figures/corrections.svg" in markdown
     assert "figures/selector_history.svg" in markdown
     assert "aggregation_weights.csv" in markdown
+    assert "xgboost_feature_importance.csv" in markdown
     assert "corrections.csv" in markdown
     assert "selector_history.csv" in markdown
     assert "augmentation_impact.csv" in markdown
@@ -254,6 +276,8 @@ def test_build_report_cli_writes_final_results(
             str(report_artifacts["global_aggregator"]),
             "--class-aggregator",
             str(report_artifacts["class_aggregator"]),
+            "--xgboost-aggregator",
+            str(report_artifacts["xgboost_aggregator"]),
             "--image-size",
             "16",
             "--batch-size",
@@ -272,6 +296,8 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "tables" / "selector_history.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
     assert (report_dir / "figures" / "aggregation_weights.svg").exists()
+    assert (report_dir / "tables" / "xgboost_feature_importance.csv").exists()
+    assert (report_dir / "figures" / "xgboost_feature_importance.svg").exists()
     assert (report_dir / "figures" / "corrections.svg").exists()
     assert (report_dir / "figures" / "selector_history.svg").exists()
 
