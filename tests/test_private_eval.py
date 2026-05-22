@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+from PIL import Image
+
+from learned_tta.cache import TeacherShard, write_teacher_shard
+from learned_tta.private_eval import evaluate_private_from_artifacts
+from learned_tta.selector_model import SelectorCNN
+
+
+@pytest.fixture
+def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
+    manifest_path = _write_manifest(tmp_path, split="private", count=2)
+    cache_dir = _write_cache(tmp_path / "teacher_cache")
+    checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=2)
+    tuning_path = tmp_path / "public_val_tta_tuning.json"
+    tuning_path.write_text(json.dumps({"best_k": 1}), encoding="utf-8")
+    return {
+        "manifest": manifest_path,
+        "cache_dir": cache_dir,
+        "checkpoint": checkpoint_path,
+        "tuning": tuning_path,
+    }
+
+
+def test_evaluate_private_from_artifacts_writes_metric_tables(
+    tmp_path: Path,
+    private_eval_artifacts: dict[str, Path],
+) -> None:
+    summary = evaluate_private_from_artifacts(
+        split="private",
+        manifest_path=private_eval_artifacts["manifest"],
+        cache_dir=private_eval_artifacts["cache_dir"],
+        checkpoint_path=private_eval_artifacts["checkpoint"],
+        tuning_path=private_eval_artifacts["tuning"],
+        output_dir=tmp_path / "reports",
+        aug_ids=["aug_000", "aug_001"],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        random_seeds=[1, 2],
+        device="cpu",
+    )
+
+    table = pd.read_csv(summary.private_metrics_csv)
+
+    assert summary.best_k == 1
+    assert summary.private_metrics_csv.exists()
+    assert summary.compute_csv.exists()
+    assert set(table["strategy"]) == {
+        "clean",
+        "fixed_light_tta",
+        "random_topk",
+        "all_100_uniform",
+        "learned_topk_uniform",
+        "learned_topk_softmax_weighted",
+        "oracle_topk_uniform",
+    }
+
+
+def test_evaluate_private_cli_writes_private_metrics(
+    tmp_path: Path,
+    private_eval_artifacts: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from learned_tta.cli import main
+
+    output_dir = tmp_path / "reports"
+
+    main(
+        [
+            "evaluate-private",
+            "--config",
+            str(Path(__file__).resolve().parents[1] / "configs/experiment/resnet50_a1_in1k.yaml"),
+            "--manifest",
+            str(private_eval_artifacts["manifest"]),
+            "--cache-dir",
+            str(private_eval_artifacts["cache_dir"]),
+            "--checkpoint",
+            str(private_eval_artifacts["checkpoint"]),
+            "--tuning",
+            str(private_eval_artifacts["tuning"]),
+            "--output-dir",
+            str(output_dir),
+            "--candidate-id",
+            "aug_000",
+            "--candidate-id",
+            "aug_001",
+            "--batch-size",
+            "2",
+            "--num-workers",
+            "0",
+            "--image-size",
+            "16",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert "private evaluation: best k 1" in captured.out
+    assert (output_dir / "tables" / "private_metrics.csv").exists()
+
+
+def _write_manifest(root: Path, split: str, count: int) -> Path:
+    rows = []
+    for index in range(count):
+        path = root / f"{split}_{index}.png"
+        image = np.full((12, 12, 3), fill_value=30 + index, dtype=np.uint8)
+        Image.fromarray(image, mode="RGB").save(path)
+        rows.append(
+            {
+                "split": split,
+                "image_id": f"{split}-{index}",
+                "class_idx": index % 2,
+                "class_name": f"class-{index % 2}",
+                "path": str(path),
+            }
+        )
+    manifest_path = root / f"{split}.csv"
+    pd.DataFrame(rows).to_csv(manifest_path, index=False)
+    return manifest_path
+
+
+def _write_cache(cache_dir: Path) -> Path:
+    image_ids = ["private-0", "private-1"]
+    class_idxs = np.array([0, 1], dtype=np.int64)
+    write_teacher_shard(
+        cache_dir,
+        TeacherShard(
+            split="private",
+            aug_id="aug_000",
+            image_ids=image_ids,
+            class_idxs=class_idxs,
+            logits=np.array([[3.0, 0.0], [0.0, 3.0]], dtype=np.float32),
+        ),
+    )
+    write_teacher_shard(
+        cache_dir,
+        TeacherShard(
+            split="private",
+            aug_id="aug_001",
+            image_ids=image_ids,
+            class_idxs=class_idxs,
+            logits=np.array([[4.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        ),
+    )
+    return cache_dir
+
+
+def _write_selector_checkpoint(path: Path, output_dim: int) -> Path:
+    model = SelectorCNN(output_dim=output_dim)
+    for parameter in model.parameters():
+        torch.nn.init.constant_(parameter, 0.0)
+    torch.save(
+        {
+            "epoch": 1,
+            "val_nll": 0.0,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": {},
+        },
+        path,
+    )
+    return path
