@@ -47,7 +47,7 @@ class SmokeRunSummary:
 def run_smoke_e2e(
     config_path: Path,
     output_dir: Path,
-    candidate_count: int = 2,
+    candidate_count: int = 3,
     image_size: int = 16,
     batch_size: int = 2,
     num_workers: int = 0,

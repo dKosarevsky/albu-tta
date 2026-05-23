@@ -89,7 +89,7 @@ private metrics, and writes `results.md`.
 uv run python -m learned_tta.cli run-smoke \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --output-dir artifacts/smoke \
-  --candidate-count 2 \
+  --candidate-count 3 \
   --image-size 16 \
   --batch-size 2 \
   --num-workers 0 \

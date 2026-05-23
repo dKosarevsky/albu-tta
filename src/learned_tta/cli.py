@@ -192,7 +192,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Directory for synthetic smoke artifacts.",
     )
-    run_smoke.add_argument("--candidate-count", type=int, default=2)
+    run_smoke.add_argument("--candidate-count", type=int, default=3)
     run_smoke.add_argument("--image-size", type=int, default=16)
     run_smoke.add_argument("--batch-size", type=int, default=2)
     run_smoke.add_argument("--num-workers", type=int, default=0)
