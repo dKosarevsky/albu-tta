@@ -128,7 +128,14 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         aug_ids=["aug_000", "aug_001", "aug_002"],
         weights=np.array([0.1, 0.7, 0.2], dtype=np.float32),
         active_threshold=1e-6,
-        metrics={"nll": 0.1},
+        metrics={
+            "top1": 1.0,
+            "top5": 1.0,
+            "nll": 0.1,
+            "ece": 0.02,
+            "forwards_per_image": 3.0,
+            "relative_compute_vs_all": 1.0,
+        },
     ).save(global_aggregator_path)
     AggregationArtifact(
         method="class-nonnegative",
@@ -141,7 +148,14 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
             dtype=np.float32,
         ),
         active_threshold=1e-6,
-        metrics={"nll": 0.2},
+        metrics={
+            "top1": 1.0,
+            "top5": 1.0,
+            "nll": 0.2,
+            "ece": 0.03,
+            "forwards_per_image": 3.0,
+            "relative_compute_vs_all": 1.0,
+        },
     ).save(class_aggregator_path)
     xgboost_model_path = tmp_path / "xgboost.model.json"
     xgboost_model_path.write_text("fake xgboost model", encoding="utf-8")
@@ -152,7 +166,14 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         num_classes=2,
         feature_count=6,
         feature_importance=np.array([0.1, 0.7, 0.2], dtype=np.float32),
-        metrics={"nll": 0.15},
+        metrics={
+            "top1": 1.0,
+            "top5": 1.0,
+            "nll": 0.15,
+            "ece": 0.025,
+            "forwards_per_image": 3.0,
+            "relative_compute_vs_all": 1.0,
+        },
     ).save(xgboost_aggregator_path)
     return {
         "private_metrics": private_metrics_csv,
@@ -192,6 +213,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
 
     markdown = summary.results_md.read_text(encoding="utf-8")
     impact = pd.read_csv(summary.augmentation_impact_csv)
+    public_metrics = pd.read_csv(summary.public_metrics_csv)
     assert summary.aggregation_weights_csv is not None
     assert summary.class_augmentation_weights_csv is not None
     assert summary.aggregation_weights_svg is not None
@@ -223,6 +245,13 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_history_csv.exists()
     assert summary.selector_history_svg.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
+    assert public_metrics["strategy"].tolist() == [
+        "learned_topk_uniform",
+        "global_weighted_tta",
+        "class_weighted_tta",
+        "xgboost_multiclass",
+    ]
+    assert public_metrics["nll"].tolist() == pytest.approx([0.3, 0.1, 0.2, 0.15])
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert set(class_weights.columns) == {"class_idx", "aug_id", "weight"}
     assert xgboost_importance["feature_importance"].tolist() == pytest.approx([0.1, 0.7, 0.2])
@@ -236,6 +265,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "figures/corrections.svg" in markdown
     assert "figures/selector_history.svg" in markdown
     assert "aggregation_weights.csv" in markdown
+    assert "global_weighted_tta" in markdown
+    assert "class_weighted_tta" in markdown
+    assert "xgboost_multiclass" in markdown
     assert "xgboost_feature_importance.csv" in markdown
     assert "corrections.csv" in markdown
     assert "selector_history.csv" in markdown
