@@ -236,6 +236,7 @@ def _cache_step_spec(
         for path in (
             config.artifacts.teacher_cache_dir / f"{split}__{aug_id}.parquet",
             config.artifacts.teacher_cache_dir / f"{split}__{aug_id}.logits.npy",
+            config.artifacts.teacher_cache_dir / f"{split}__{aug_id}.run.json",
         )
     )
     return _StepSpec(
@@ -300,10 +301,18 @@ def _has_complete_teacher_cache(
         return False
     parquet_shards = sorted(cache_dir.glob(f"{split}__*.parquet"))
     logits_shards = sorted(cache_dir.glob(f"{split}__*.logits.npy"))
+    run_metadata_shards = sorted(cache_dir.glob(f"{split}__*.run.json"))
     parquet_stems = {path.name.removesuffix(".parquet") for path in parquet_shards}
     logits_stems = {path.name.removesuffix(".logits.npy") for path in logits_shards}
+    run_metadata_stems = {
+        path.name.removesuffix(".run.json") for path in run_metadata_shards
+    }
     expected_stems = {f"{split}__{aug_id}" for aug_id in expected_aug_ids}
-    return parquet_stems == expected_stems and logits_stems == expected_stems
+    return (
+        parquet_stems == expected_stems
+        and logits_stems == expected_stems
+        and run_metadata_stems == expected_stems
+    )
 
 
 def _extra_teacher_cache_outputs(
@@ -318,6 +327,9 @@ def _extra_teacher_cache_outputs(
             extra_outputs.append(path)
     for path in sorted(cache_dir.glob(f"{split}__*.logits.npy")):
         if path.name.removesuffix(".logits.npy") not in expected_stems:
+            extra_outputs.append(path)
+    for path in sorted(cache_dir.glob(f"{split}__*.run.json")):
+        if path.name.removesuffix(".run.json") not in expected_stems:
             extra_outputs.append(path)
     return tuple(extra_outputs)
 
