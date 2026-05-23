@@ -56,6 +56,7 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
     [
         "run-smoke",
         "augmentation_registry_audit.json",
+        "serialized AlbumentationsX `Compose`",
         "--imagenet-val-dir",
         "cache-teacher --split public_train",
         "cache-teacher --split public_val",

@@ -40,9 +40,12 @@ def test_cli_validate_augmentations_writes_audit_artifact(
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
 
     assert f"wrote audit {audit_path}" in captured.out
+    assert audit["seed"] == 20260522
     assert audit["candidate_count"] == 100
     assert audit["identity_id"] == "aug_000"
     assert audit["candidates"][0]["class_name"] is None
+    assert audit["candidates"][0]["serialized_transform"] is None
+    assert audit["candidates"][1]["serialized_transform"]["transform"]["seed"] == 20260522
 
 
 def test_cli_make_splits_writes_manifests(

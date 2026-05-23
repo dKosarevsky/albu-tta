@@ -36,7 +36,8 @@ regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
 written to `selector/selector_history.csv`.
 
 `validate-augmentations --audit-output` writes a stable JSON audit of the exact
-AlbumentationsX candidate ids, transform classes, and parameters used in the run:
+AlbumentationsX candidate ids, transform classes, parameters, experiment seed,
+and serialized AlbumentationsX `Compose` payloads used in the run:
 
 ```text
 artifacts/augmentation_registry_audit.json

@@ -396,7 +396,7 @@ def _cmd_validate_augmentations(config_path: Path, audit_output: Path | None) ->
     )
     message = f"validated {len(candidates)} augmentation candidates"
     if audit_output is not None:
-        written = write_augmentation_audit(candidates, audit_output)
+        written = write_augmentation_audit(candidates, audit_output, seed=config.seed)
         message = f"{message}; wrote audit {written}"
     print(message)
 
