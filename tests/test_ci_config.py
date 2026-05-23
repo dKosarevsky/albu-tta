@@ -15,6 +15,11 @@ def readme_text() -> str:
 
 
 @pytest.fixture
+def implementation_status_text() -> str:
+    return (ROOT / "docs" / "implementation-status.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
 def ci_workflow() -> dict[str, Any]:
     workflow_path = ROOT / ".github" / "workflows" / "ci.yml"
     with workflow_path.open(encoding="utf-8") as handle:
@@ -49,6 +54,39 @@ def test_readme_badges_do_not_duplicate_ci_workflow_status(readme_text: str) -> 
 
 def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
     assert "pypi" not in readme_text.lower()
+
+
+@pytest.mark.parametrize(
+    "target_fragment",
+    [
+        "augmentation utility predictor",
+        "100 augmentation utility scores",
+        "not a 50-bin loss classification task",
+        "raw true-class NLL",
+        "gain = clean_nll - aug_nll",
+        "ranking/top-k TTA selection",
+    ],
+)
+def test_readme_documents_selector_target_formulation(
+    readme_text: str,
+    target_fragment: str,
+) -> None:
+    assert target_fragment in readme_text
+
+
+@pytest.mark.parametrize(
+    "status_fragment",
+    [
+        "100-score augmentation utility predictor",
+        "not 50-bin loss classification",
+        "ranking/top-k TTA selection",
+    ],
+)
+def test_implementation_status_documents_selector_target_choice(
+    implementation_status_text: str,
+    status_fragment: str,
+) -> None:
+    assert status_fragment in implementation_status_text
 
 
 @pytest.mark.parametrize(
