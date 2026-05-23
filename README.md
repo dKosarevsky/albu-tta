@@ -53,6 +53,7 @@ reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
 reports/resnet50_a1_in1k/tables/xgboost_feature_importance.csv
 reports/resnet50_a1_in1k/tables/corrections.csv
 reports/resnet50_a1_in1k/tables/selector_history.csv
+reports/resnet50_a1_in1k/tables/transform_class_impact.csv
 reports/resnet50_a1_in1k/figures/gain_distribution.svg
 reports/resnet50_a1_in1k/figures/oracle_overlap.svg
 reports/resnet50_a1_in1k/figures/aggregation_weights.svg
@@ -68,6 +69,9 @@ which ImageNet classes benefit from which AlbumentationsX transforms.
 Augmentation-level report tables include `augmentation_name` and
 `transform_class` columns resolved from the registry, so impact and learned
 weight tables remain interpretable without a separate id lookup.
+`transform_class_impact.csv` groups mean gain, learned selection frequency, and
+oracle frequency by AlbumentationsX transform class for a compact article-level
+view of which transform families matter.
 `public_metrics.csv` combines the tuned public-val `learned_topk_uniform` result
 with public-val metrics saved inside the optional learned aggregation artifacts,
 so global, class-specific, and XGBoost stackers can be compared before private

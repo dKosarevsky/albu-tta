@@ -226,11 +226,13 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.corrections_svg is not None
     assert summary.selector_history_csv is not None
     assert summary.selector_history_svg is not None
+    assert summary.transform_class_impact_csv is not None
     aggregation_weights = pd.read_csv(summary.aggregation_weights_csv)
     class_weights = pd.read_csv(summary.class_augmentation_weights_csv)
     xgboost_importance = pd.read_csv(summary.xgboost_feature_importance_csv)
     corrections = pd.read_csv(summary.corrections_csv)
     selector_history = pd.read_csv(summary.selector_history_csv)
+    transform_class_impact = pd.read_csv(summary.transform_class_impact_csv)
 
     assert summary.best_k == 1
     assert summary.public_metrics_csv.exists()
@@ -247,6 +249,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.corrections_svg.exists()
     assert summary.selector_history_csv.exists()
     assert summary.selector_history_svg.exists()
+    assert summary.transform_class_impact_csv.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",
@@ -306,6 +309,19 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "horizontal_flip",
         "vertical_flip",
     ]
+    assert transform_class_impact.columns.tolist() == [
+        "transform_class",
+        "candidate_count",
+        "mean_gain",
+        "selection_frequency",
+        "oracle_frequency",
+    ]
+    assert transform_class_impact["transform_class"].tolist() == [
+        "HorizontalFlip",
+        "VerticalFlip",
+        "identity",
+    ]
+    assert transform_class_impact["candidate_count"].tolist() == [1, 1, 1]
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
@@ -325,6 +341,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "corrections.csv" in markdown
     assert "selector_history.csv" in markdown
     assert "augmentation_impact.csv" in markdown
+    assert "transform_class_impact.csv" in markdown
 
 
 def test_build_report_cli_writes_final_results(
