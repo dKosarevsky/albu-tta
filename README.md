@@ -57,6 +57,10 @@ reports/resnet50_a1_in1k/figures/selector_history.svg
 active flag, mean class weight, max class weight, and class activation frequency
 per augmentation. The class-level long table is kept for deeper diagnosis of
 which ImageNet classes benefit from which AlbumentationsX transforms.
+`public_metrics.csv` combines the tuned public-val `learned_topk_uniform` result
+with public-val metrics saved inside the optional learned aggregation artifacts,
+so global, class-specific, and XGBoost stackers can be compared before private
+evaluation.
 Aggregator training uses the historical `--l1-penalty` CLI option as a sparsity
 regularizer and then prunes weights at or below `active_threshold`; this makes
 zero-weight TTA candidates explicit in the saved artifact and report tables.

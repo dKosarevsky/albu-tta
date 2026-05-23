@@ -14,6 +14,7 @@ import torch
 
 from learned_tta.config import load_experiment_config
 from learned_tta.reporting import (
+    METRIC_COLUMNS,
     build_augmentation_impact_table,
     build_compute_table,
     build_metrics_table,
@@ -109,7 +110,12 @@ def build_report_from_artifacts(
     )
 
     private_metrics = _read_metrics_csv(private_metrics_path)
-    public_metrics = _public_metrics_from_tuning(tuning)
+    public_metrics = _public_metrics_from_tuning(
+        tuning=tuning,
+        global_aggregator_path=global_aggregator_path,
+        class_aggregator_path=class_aggregator_path,
+        xgboost_aggregator_path=xgboost_aggregator_path,
+    )
     impact_table = build_augmentation_impact_table(
         aug_ids=targets.aug_ids,
         gain=targets.gain,
@@ -476,7 +482,12 @@ def _validate_aggregator_aug_ids(
         raise ValueError(f"aggregator aug_ids in {path} must match selector target aug_ids")
 
 
-def _public_metrics_from_tuning(tuning: Mapping[str, Any]) -> dict[str, dict[str, float]]:
+def _public_metrics_from_tuning(
+    tuning: Mapping[str, Any],
+    global_aggregator_path: Path | None = None,
+    class_aggregator_path: Path | None = None,
+    xgboost_aggregator_path: Path | None = None,
+) -> dict[str, dict[str, float]]:
     best_k = str(_json_int(tuning["best_k"]))
     results_by_k = tuning.get("results_by_k")
     if not isinstance(results_by_k, dict) or best_k not in results_by_k:
@@ -484,11 +495,37 @@ def _public_metrics_from_tuning(tuning: Mapping[str, Any]) -> dict[str, dict[str
     best_metrics = results_by_k[best_k]
     if not isinstance(best_metrics, dict):
         raise ValueError("best_k metrics must be a JSON object")
-    return {
+    metrics = {
         "learned_topk_uniform": {
             str(key): float(value) for key, value in best_metrics.items()
         }
     }
+    if global_aggregator_path is not None:
+        artifact = load_aggregation_artifact(global_aggregator_path)
+        metrics["global_weighted_tta"] = _complete_metrics(
+            artifact.metrics,
+            strategy="global_weighted_tta",
+        )
+    if class_aggregator_path is not None:
+        artifact = load_aggregation_artifact(class_aggregator_path)
+        metrics["class_weighted_tta"] = _complete_metrics(
+            artifact.metrics,
+            strategy="class_weighted_tta",
+        )
+    if xgboost_aggregator_path is not None:
+        artifact = load_xgboost_aggregation_artifact(xgboost_aggregator_path)
+        metrics["xgboost_multiclass"] = _complete_metrics(
+            artifact.metrics,
+            strategy="xgboost_multiclass",
+        )
+    return metrics
+
+
+def _complete_metrics(metrics: Mapping[str, float], strategy: str) -> dict[str, float]:
+    missing = [column for column in METRIC_COLUMNS[1:] if column not in metrics]
+    if missing:
+        raise ValueError(f"{strategy} metrics are missing columns: {missing}")
+    return {column: float(metrics[column]) for column in METRIC_COLUMNS[1:]}
 
 
 def _json_int(value: object) -> int:
