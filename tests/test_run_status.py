@@ -54,9 +54,13 @@ def test_inspect_full_run_status_reports_complete_run(tmp_path: Path) -> None:
     for directory in (artifacts_dir, manifests_dir, cache_dir, selector_dir, tables_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
+    manifest_paths = tuple(
+        manifests_dir / f"{split}.csv"
+        for split in ("public_train", "public_val", "public", "private")
+    )
     _touch(
         artifacts_dir / "augmentation_registry_audit.json",
-        *(manifests_dir / f"{split}.csv" for split in ("public_train", "public_val", "public", "private")),
+        *manifest_paths,
         selector_dir / "public_train_targets.npz",
         selector_dir / "public_val_targets.npz",
         selector_dir / "selector_best.pt",
