@@ -127,17 +127,21 @@ For each split image and candidate, store:
 - `nll_true_fp32`
 - `is_top1`
 - `is_top5`
+- `.run.json` sidecar with seed, augmentation params, teacher model name,
+  pretrained flag, timm data config, class count, and storage format.
 
 Storage format:
 
 - Metadata in parquet.
 - Logits in sharded `.npy` or `.npz` files, fp16.
 - One shard per split and candidate group, with manifest files that map rows back to ImageNet image ids.
+- The `.run.json` sidecar is part of cache completeness and resume validation.
 
 Rationale:
 
 - The selector trains only on 100 target scores, but storing full logits makes TTA aggregation, ablations, calibration analysis, and article plots much cheaper than rerunning ResNet50.
 - fp16 logits are accurate enough for ranking and probability aggregation after converting to fp32 during analysis.
+- Comparing run metadata before resume prevents silent reuse after changing seed, preprocessing, teacher checkpoint, or candidate params.
 
 ### Selector Target
 
@@ -440,7 +444,8 @@ Steps:
 - [x] Resolve teacher preprocessing from the model data config.
 - [x] Build dataloaders that apply one candidate per image and batch tensors for the teacher.
 - [x] Save logits as fp16 shards and metadata as parquet.
-- [x] Add a resume mode that skips completed `(split, aug_id)` shards after validating shape and row count.
+- [x] Save teacher cache `.run.json` sidecars with model/preprocessing metadata.
+- [x] Add a resume mode that skips completed `(split, aug_id)` shards after validating shape, row count, and run metadata.
 - [x] Run a smoke inference on 2 classes, 2 images per class, and 3 candidates before full ImageNet-val inference.
 
 ### Task 5: Target Generation

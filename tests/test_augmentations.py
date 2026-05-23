@@ -53,6 +53,12 @@ def test_build_augmentation_audit_is_stable_json_payload() -> None:
     assert audit["seed"] == 20260522
     assert audit["candidate_count"] == 100
     assert audit["identity_id"] == "aug_000"
+    assert audit["runtime"]["python"]
+    assert audit["runtime"]["packages"]["albumentationsx"]
+    assert audit["runtime"]["packages"]["opencv-python-headless"]
+    assert audit["runtime"]["packages"]["numpy"]
+    assert audit["runtime"]["opencv"]["version"]
+    assert isinstance(audit["runtime"]["opencv"]["threads"], int)
     assert audit["candidates"][0] == {
         "id": "aug_000",
         "name": "identity",
