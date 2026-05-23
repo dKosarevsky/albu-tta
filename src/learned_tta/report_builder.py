@@ -40,6 +40,7 @@ class ReportBuildSummary:
     compute_csv: Path
     augmentation_impact_csv: Path
     transform_class_impact_csv: Path | None
+    transform_class_aggregation_csv: Path | None
     aggregation_weights_csv: Path | None
     class_augmentation_weights_csv: Path | None
     xgboost_feature_importance_csv: Path | None
@@ -52,6 +53,7 @@ class ReportBuildSummary:
     corrections_svg: Path | None
     selector_history_svg: Path | None
     transform_class_impact_svg: Path | None
+    transform_class_aggregation_svg: Path | None
     best_k: int
 
 
@@ -142,6 +144,9 @@ def build_report_from_artifacts(
         aggregation_tables,
         augmentation_metadata,
     )
+    transform_class_aggregation = _build_transform_class_aggregation_table(
+        aggregation_tables.weights
+    )
     xgboost_importance = _build_xgboost_feature_importance_table(
         aug_ids=targets.aug_ids,
         xgboost_aggregator_path=xgboost_aggregator_path,
@@ -165,6 +170,11 @@ def build_report_from_artifacts(
         transform_class_impact_csv=(
             tables_dir / "transform_class_impact.csv"
             if transform_class_impact is not None
+            else None
+        ),
+        transform_class_aggregation_csv=(
+            tables_dir / "transform_class_aggregation.csv"
+            if transform_class_aggregation is not None
             else None
         ),
         aggregation_weights_csv=(
@@ -207,6 +217,11 @@ def build_report_from_artifacts(
             if transform_class_impact is not None
             else None
         ),
+        transform_class_aggregation_svg=(
+            figures_dir / "transform_class_aggregation.svg"
+            if transform_class_aggregation is not None
+            else None
+        ),
         best_k=best_k,
     )
 
@@ -220,6 +235,14 @@ def build_report_from_artifacts(
     impact_table.to_csv(paths.augmentation_impact_csv, index=False)
     if paths.transform_class_impact_csv is not None and transform_class_impact is not None:
         transform_class_impact.to_csv(paths.transform_class_impact_csv, index=False)
+    if (
+        paths.transform_class_aggregation_csv is not None
+        and transform_class_aggregation is not None
+    ):
+        transform_class_aggregation.to_csv(
+            paths.transform_class_aggregation_csv,
+            index=False,
+        )
     if paths.aggregation_weights_csv is not None and aggregation_tables.weights is not None:
         aggregation_tables.weights.to_csv(paths.aggregation_weights_csv, index=False)
     if (
@@ -272,6 +295,14 @@ def build_report_from_artifacts(
             _transform_class_impact_svg(transform_class_impact),
             encoding="utf-8",
         )
+    if (
+        paths.transform_class_aggregation_svg is not None
+        and transform_class_aggregation is not None
+    ):
+        paths.transform_class_aggregation_svg.write_text(
+            _transform_class_aggregation_svg(transform_class_aggregation),
+            encoding="utf-8",
+        )
     paths.results_md.write_text(
         _results_markdown(
             public_metrics=public_metrics,
@@ -281,6 +312,7 @@ def build_report_from_artifacts(
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
             impact_table=impact_table,
             transform_class_impact=transform_class_impact,
+            transform_class_aggregation=transform_class_aggregation,
             aggregation_weights=aggregation_tables.weights,
             xgboost_importance=xgboost_importance,
             identity_aug_id=identity_aug_id,
@@ -573,6 +605,34 @@ def _build_transform_class_impact_table(impact_table: pd.DataFrame) -> pd.DataFr
     )
 
 
+def _build_transform_class_aggregation_table(
+    aggregation_weights: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    if aggregation_weights is None or "transform_class" not in aggregation_weights.columns:
+        return None
+
+    aggregations: dict[str, tuple[str, str]] = {
+        "candidate_count": ("aug_id", "count"),
+    }
+    ordered_columns = ["transform_class", "candidate_count"]
+    if "global_weight" in aggregation_weights.columns:
+        aggregations["mean_global_weight"] = ("global_weight", "mean")
+        ordered_columns.append("mean_global_weight")
+    if "class_mean_weight" in aggregation_weights.columns:
+        aggregations["mean_class_mean_weight"] = ("class_mean_weight", "mean")
+        aggregations["max_class_mean_weight"] = ("class_mean_weight", "max")
+        ordered_columns.extend(["mean_class_mean_weight", "max_class_mean_weight"])
+    if "class_active_frequency" in aggregation_weights.columns:
+        aggregations["class_active_frequency"] = ("class_active_frequency", "mean")
+        ordered_columns.append("class_active_frequency")
+
+    return (
+        aggregation_weights.groupby("transform_class", as_index=False, sort=True)
+        .agg(**aggregations)
+        .loc[:, ordered_columns]
+    )
+
+
 def _build_xgboost_feature_importance_table(
     aug_ids: list[str],
     xgboost_aggregator_path: Path | None,
@@ -676,6 +736,7 @@ def _results_markdown(
     recall: float,
     impact_table: pd.DataFrame,
     transform_class_impact: pd.DataFrame | None,
+    transform_class_aggregation: pd.DataFrame | None,
     aggregation_weights: pd.DataFrame | None,
     xgboost_importance: pd.DataFrame | None,
     identity_aug_id: str,
@@ -743,6 +804,16 @@ def _results_markdown(
                 "",
             ]
         )
+        if transform_class_aggregation is not None:
+            lines.extend(
+                [
+                    "- Transform-class aggregation table: "
+                    "`tables/transform_class_aggregation.csv`",
+                    "",
+                    "![Transform-class aggregation](figures/transform_class_aggregation.svg)",
+                    "",
+                ]
+            )
         if has_class_weights:
             lines.extend(
                 [
@@ -962,6 +1033,40 @@ def _transform_class_impact_svg(table: pd.DataFrame) -> str:
             ),
         ],
         y_label="frequency",
+    )
+
+
+def _transform_class_aggregation_svg(table: pd.DataFrame) -> str:
+    series: list[tuple[str, list[float], str]] = []
+    if "mean_global_weight" in table.columns:
+        series.append(
+            (
+                "global weight",
+                table["mean_global_weight"].astype(float).tolist(),
+                "#2f6f9f",
+            )
+        )
+    if "mean_class_mean_weight" in table.columns:
+        series.append(
+            (
+                "class mean weight",
+                table["mean_class_mean_weight"].astype(float).tolist(),
+                "#8a5a9f",
+            )
+        )
+    if "class_active_frequency" in table.columns:
+        series.append(
+            (
+                "class active frequency",
+                table["class_active_frequency"].astype(float).tolist(),
+                "#c47f2c",
+            )
+        )
+    return _grouped_bar_svg(
+        title="Transform-class Aggregation Weights",
+        labels=table["transform_class"].astype(str).tolist(),
+        series=series,
+        y_label="weight",
     )
 
 

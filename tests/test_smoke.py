@@ -34,13 +34,21 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert (summary.reports_dir / "tables" / "selector_history.csv").exists()
     assert (summary.reports_dir / "tables" / "aggregation_weights.csv").exists()
     assert (summary.reports_dir / "tables" / "transform_class_impact.csv").exists()
+    assert (summary.reports_dir / "tables" / "transform_class_aggregation.csv").exists()
     assert (summary.reports_dir / "figures" / "corrections.svg").exists()
     assert (summary.reports_dir / "figures" / "selector_history.svg").exists()
     assert (summary.reports_dir / "figures" / "transform_class_impact.svg").exists()
+    assert (summary.reports_dir / "figures" / "transform_class_aggregation.svg").exists()
     assert "corrections.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "selector_history.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "transform_class_impact.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "transform_class_impact.svg" in summary.results_md.read_text(encoding="utf-8")
+    assert "transform_class_aggregation.csv" in summary.results_md.read_text(
+        encoding="utf-8"
+    )
+    assert "transform_class_aggregation.svg" in summary.results_md.read_text(
+        encoding="utf-8"
+    )
     assert "Top mean-gain augmentations" in summary.results_md.read_text(encoding="utf-8")
     assert "Top transform classes by mean gain" in summary.results_md.read_text(
         encoding="utf-8"

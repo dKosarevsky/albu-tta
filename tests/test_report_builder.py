@@ -228,12 +228,15 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_history_svg is not None
     assert summary.transform_class_impact_csv is not None
     assert summary.transform_class_impact_svg is not None
+    assert summary.transform_class_aggregation_csv is not None
+    assert summary.transform_class_aggregation_svg is not None
     aggregation_weights = pd.read_csv(summary.aggregation_weights_csv)
     class_weights = pd.read_csv(summary.class_augmentation_weights_csv)
     xgboost_importance = pd.read_csv(summary.xgboost_feature_importance_csv)
     corrections = pd.read_csv(summary.corrections_csv)
     selector_history = pd.read_csv(summary.selector_history_csv)
     transform_class_impact = pd.read_csv(summary.transform_class_impact_csv)
+    transform_class_aggregation = pd.read_csv(summary.transform_class_aggregation_csv)
 
     assert summary.best_k == 1
     assert summary.public_metrics_csv.exists()
@@ -252,6 +255,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_history_svg.exists()
     assert summary.transform_class_impact_csv.exists()
     assert summary.transform_class_impact_svg.exists()
+    assert summary.transform_class_aggregation_csv.exists()
+    assert summary.transform_class_aggregation_svg.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",
@@ -324,6 +329,22 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "identity",
     ]
     assert transform_class_impact["candidate_count"].tolist() == [1, 1, 1]
+    assert transform_class_aggregation.columns.tolist() == [
+        "transform_class",
+        "candidate_count",
+        "mean_global_weight",
+        "mean_class_mean_weight",
+        "max_class_mean_weight",
+        "class_active_frequency",
+    ]
+    assert transform_class_aggregation["transform_class"].tolist() == [
+        "HorizontalFlip",
+        "VerticalFlip",
+        "identity",
+    ]
+    assert transform_class_aggregation["mean_global_weight"].tolist() == pytest.approx(
+        [0.7, 0.2, 0.1]
+    )
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
@@ -334,6 +355,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "figures/corrections.svg" in markdown
     assert "figures/selector_history.svg" in markdown
     assert "figures/transform_class_impact.svg" in markdown
+    assert "figures/transform_class_aggregation.svg" in markdown
     assert "Top mean-gain augmentations" in markdown
     assert "Top learned-selection augmentations" in markdown
     assert "Top oracle-selection augmentations" in markdown
@@ -356,6 +378,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "selector_history.csv" in markdown
     assert "augmentation_impact.csv" in markdown
     assert "transform_class_impact.csv" in markdown
+    assert "transform_class_aggregation.csv" in markdown
 
 
 def test_build_report_cli_writes_final_results(
