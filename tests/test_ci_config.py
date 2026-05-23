@@ -61,6 +61,7 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
         "full-run-status",
         "--format json",
         "--fail-on-incomplete",
+        "--next-command",
         "optional XGBoost",
         "required/optional status",
         "every configured augmentation candidate",
