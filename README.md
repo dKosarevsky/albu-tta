@@ -54,6 +54,14 @@ training, the best checkpoint is selected by public-validation
 regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
 written to `selector/selector_history.csv`.
 
+### Split Contract
+
+The code treats public/private separation as an API contract, not only a
+runbook convention. Selector targets are built only from `public_train` and `public_val`.
+Selector checkpoint selection, `tune-tta`, and learned aggregation training use `public_val`.
+`evaluate-private` accepts only `private` and reads a frozen public-val tuning
+artifact. Private oracle rows are diagnostics and upper bounds, not deployable methods or tuning inputs.
+
 `validate-augmentations --audit-output` writes a stable JSON audit of the exact
 AlbumentationsX candidate ids, transform classes, parameters, experiment seed,
 and serialized AlbumentationsX `Compose` payloads used in the run:

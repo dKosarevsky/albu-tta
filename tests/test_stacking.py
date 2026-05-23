@@ -130,6 +130,24 @@ def test_train_aggregator_from_artifacts_writes_json(tmp_path: Path) -> None:
     assert loaded.weights.shape == (2,)
 
 
+def test_train_aggregator_from_artifacts_rejects_private_split(tmp_path: Path) -> None:
+    cache_dir = _write_public_val_cache(tmp_path / "teacher_cache", split="private")
+
+    with pytest.raises(ValueError, match="train-aggregator split must be public_val"):
+        train_aggregator_from_artifacts(
+            split="private",
+            cache_dir=cache_dir,
+            output_path=tmp_path / "selector" / "global.json",
+            aug_ids=["aug_000", "aug_001"],
+            method="global-nonnegative",
+            epochs=20,
+            learning_rate=0.1,
+            l1_penalty=0.0,
+            active_threshold=1e-6,
+            device="cpu",
+        )
+
+
 def test_train_aggregator_from_artifacts_writes_xgboost_stacker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -317,13 +335,13 @@ def _install_fake_xgboost(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _write_public_val_cache(cache_dir: Path) -> Path:
-    image_ids = ["public_val-0", "public_val-1"]
+def _write_public_val_cache(cache_dir: Path, split: str = "public_val") -> Path:
+    image_ids = [f"{split}-0", f"{split}-1"]
     class_idxs = np.array([0, 1], dtype=np.int64)
     write_teacher_shard(
         cache_dir,
         TeacherShard(
-            split="public_val",
+            split=split,
             aug_id="aug_000",
             image_ids=image_ids,
             class_idxs=class_idxs,
@@ -333,7 +351,7 @@ def _write_public_val_cache(cache_dir: Path) -> Path:
     write_teacher_shard(
         cache_dir,
         TeacherShard(
-            split="public_val",
+            split=split,
             aug_id="aug_001",
             image_ids=image_ids,
             class_idxs=class_idxs,

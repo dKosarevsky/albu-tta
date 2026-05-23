@@ -123,6 +123,54 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
     assert random_row["clean_right_tta_wrong"] == pytest.approx(0.5)
 
 
+def test_evaluate_private_from_artifacts_rejects_public_val_split(
+    tmp_path: Path,
+    private_eval_artifacts: dict[str, Path],
+) -> None:
+    with pytest.raises(ValueError, match="evaluate-private split must be private"):
+        evaluate_private_from_artifacts(
+            split="public_val",
+            manifest_path=private_eval_artifacts["manifest"],
+            cache_dir=private_eval_artifacts["cache_dir"],
+            checkpoint_path=private_eval_artifacts["checkpoint"],
+            tuning_path=private_eval_artifacts["tuning"],
+            output_dir=tmp_path / "reports",
+            aug_ids=["aug_000", "aug_001", "aug_002"],
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            random_seeds=[1],
+            device="cpu",
+        )
+
+
+def test_evaluate_private_from_artifacts_rejects_private_tuning_artifact(
+    tmp_path: Path,
+    private_eval_artifacts: dict[str, Path],
+) -> None:
+    bad_tuning_path = tmp_path / "private_tta_tuning.json"
+    bad_tuning_path.write_text(
+        json.dumps({"best_k": 1, "split": "private"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="tuning artifact split must be public_val"):
+        evaluate_private_from_artifacts(
+            split="private",
+            manifest_path=private_eval_artifacts["manifest"],
+            cache_dir=private_eval_artifacts["cache_dir"],
+            checkpoint_path=private_eval_artifacts["checkpoint"],
+            tuning_path=bad_tuning_path,
+            output_dir=tmp_path / "reports",
+            aug_ids=["aug_000", "aug_001", "aug_002"],
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            random_seeds=[1],
+            device="cpu",
+        )
+
+
 def test_evaluate_private_cli_writes_private_metrics(
     tmp_path: Path,
     private_eval_artifacts: dict[str, Path],

@@ -15,6 +15,7 @@ from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest
 from learned_tta.selector_model import SelectorCNN
+from learned_tta.split_policy import validate_public_tuning_split
 from learned_tta.tta_eval import evaluate_learned_topk_uniform, select_best_k
 
 
@@ -45,6 +46,7 @@ def tune_tta_from_artifacts(
 ) -> TTATuningSummary:
     """Tune learned top-k uniform TTA by public-validation NLL."""
 
+    validate_public_tuning_split(split, command="tune-tta")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     records = load_manifest(manifest_path)

@@ -15,6 +15,7 @@ from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest
 from learned_tta.selector_model import SelectorCNN
+from learned_tta.split_policy import validate_public_tuning_split
 from learned_tta.targets import SavedSelectorTargets, TargetStats, load_selector_targets
 from learned_tta.train_selector import (
     CheckpointState,
@@ -115,6 +116,7 @@ def train_selector_from_artifacts(
 ) -> SelectorTrainingSummary:
     """Train selector CNN from manifest CSVs and saved target artifacts."""
 
+    validate_public_tuning_split(val_split, command="train-selector")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     train_targets = load_selector_targets(train_targets_path)
