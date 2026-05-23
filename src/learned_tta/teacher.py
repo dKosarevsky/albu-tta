@@ -16,6 +16,8 @@ class TeacherBundle:
     model: Any
     data_config: dict[str, Any]
     preprocess: Any
+    model_name: str | None = None
+    pretrained: bool | None = None
 
 
 def load_teacher(model_name: str, pretrained: bool = True) -> TeacherBundle:
@@ -25,4 +27,10 @@ def load_teacher(model_name: str, pretrained: bool = True) -> TeacherBundle:
     model.eval()
     data_config = timm.data.resolve_model_data_config(model)
     preprocess = timm.data.create_transform(**data_config, is_training=False)
-    return TeacherBundle(model=model, data_config=data_config, preprocess=preprocess)
+    return TeacherBundle(
+        model=model,
+        data_config=data_config,
+        preprocess=preprocess,
+        model_name=model_name,
+        pretrained=pretrained,
+    )

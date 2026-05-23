@@ -6,8 +6,8 @@ Implemented:
 
 - Project bootstrap, CI, pytest, coverage, Ruff, ty, badges, and artifact policy.
 - Stratified ImageNet-val manifests for `public_train`, `public_val`, `public`, and `private`.
-- AlbumentationsX registry with 100 deterministic single-transform candidates and audit JSON.
-- Teacher cache runner for timm ResNet50 preprocessing, fp16 logits, parquet metadata, and resume checks.
+- AlbumentationsX registry with 100 deterministic single-transform candidates and audit JSON including runtime package versions.
+- Teacher cache runner for timm ResNet50 preprocessing, fp16 logits, parquet metadata, `.run.json` sidecars, and metadata-aware resume checks.
 - Selector target generation from cached logits with clean-vs-augmentation gain targets.
 - Selector target formulation documented as a 100-score augmentation utility predictor for ranking/top-k TTA selection, not 50-bin loss classification.
 - Public/private split-role guards for target building, selector checkpoint selection, TTA tuning, learned aggregation training, and final private evaluation.

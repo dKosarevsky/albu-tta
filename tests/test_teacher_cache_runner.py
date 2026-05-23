@@ -88,6 +88,50 @@ def test_run_teacher_cache_writes_and_resumes_complete_shards(
     assert loaded.logits.shape == (2, 3)
     assert loaded.metadata["image_id"].tolist() == ["image-0", "image-1"]
     assert loaded.metadata["class_idx"].tolist() == [0, 1]
+    assert loaded.run_metadata["version"] == 1
+    assert loaded.run_metadata["seed"] == 20260522
+    assert loaded.run_metadata["split"] == "public"
+    assert loaded.run_metadata["aug_id"] == "aug_000"
+    assert loaded.run_metadata["augmentation"]["name"] == "identity"
+    assert loaded.run_metadata["teacher"]["model_name"] == "fake_resnet"
+    assert loaded.run_metadata["teacher"]["pretrained"] is False
+    assert loaded.run_metadata["teacher"]["data_config"]["input_size"] == [3, 8, 8]
+
+
+def test_run_teacher_cache_resume_recomputes_when_run_metadata_changes(
+    tmp_path: Path,
+    manifest_records: list[ManifestRecord],
+    candidates: list[AugmentationCandidate],
+) -> None:
+    output_dir = tmp_path / "cache"
+    teacher = _fake_teacher_bundle()
+
+    first = run_teacher_cache(
+        split="public",
+        records=manifest_records,
+        candidates=[candidates[0]],
+        teacher=teacher,
+        output_dir=output_dir,
+        seed=20260522,
+        batch_size=2,
+        num_workers=0,
+        resume=True,
+    )
+    second = run_teacher_cache(
+        split="public",
+        records=manifest_records,
+        candidates=[candidates[0]],
+        teacher=teacher,
+        output_dir=output_dir,
+        seed=20260523,
+        batch_size=2,
+        num_workers=0,
+        resume=True,
+    )
+
+    assert first.written == ["aug_000"]
+    assert second.written == ["aug_000"]
+    assert second.skipped == []
 
 
 def test_cache_teacher_cli_uses_manifest_and_candidate_filter(
@@ -163,4 +207,6 @@ def _fake_teacher_bundle() -> TeacherBundle:
         model=_FakeTeacher(),
         data_config={"input_size": (3, 8, 8)},
         preprocess=preprocess,
+        model_name="fake_resnet",
+        pretrained=False,
     )

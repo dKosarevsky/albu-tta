@@ -64,11 +64,19 @@ artifact. Private oracle rows are diagnostics and upper bounds, not deployable m
 
 `validate-augmentations --audit-output` writes a stable JSON audit of the exact
 AlbumentationsX candidate ids, transform classes, parameters, experiment seed,
-and serialized AlbumentationsX `Compose` payloads used in the run:
+serialized AlbumentationsX `Compose` payloads, and runtime package versions used
+in the run:
 
 ```text
 artifacts/augmentation_registry_audit.json
 ```
+
+Each teacher cache shard writes a `.run.json` sidecar next to the parquet
+metadata and fp16 logits. The sidecar stores the augmentation id and params,
+seed, model name, pretrained flag, timm data config, class count, and storage
+format. Resume checks compare this metadata before skipping an existing shard,
+so changing the teacher checkpoint, preprocessing, candidate params, or seed
+forces recomputation instead of silently reusing stale logits.
 
 `build-report` writes the aggregation diagnostics when the learned aggregator
 artifacts are present, and copies private clean-vs-TTA diagnostics when

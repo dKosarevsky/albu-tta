@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
+import platform
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -105,6 +107,7 @@ def build_augmentation_audit(candidates: list[AugmentationCandidate], seed: int)
         "seed": int(seed),
         "candidate_count": len(candidates),
         "identity_id": identity_id,
+        "runtime": _runtime_audit(),
         "candidates": [
             {
                 "id": candidate.id,
@@ -167,3 +170,27 @@ def _serialized_transform(candidate: AugmentationCandidate, seed: int) -> dict[s
     if pipeline is None:
         return None
     return _json_ready(pipeline.to_dict())
+
+
+def _runtime_audit() -> dict[str, Any]:
+    return {
+        "python": platform.python_version(),
+        "packages": {
+            "albumentationsx": _package_version("albumentationsx"),
+            "opencv-python-headless": _package_version("opencv-python-headless"),
+            "numpy": np.__version__,
+            "pyyaml": _package_version("pyyaml"),
+        },
+        "opencv": {
+            "version": cv2.__version__,
+            "threads": int(cv2.getNumThreads()),
+            "opencl": bool(cv2.ocl.useOpenCL()),
+        },
+    }
+
+
+def _package_version(distribution_name: str) -> str:
+    try:
+        return importlib.metadata.version(distribution_name)
+    except importlib.metadata.PackageNotFoundError:
+        return "not-installed"

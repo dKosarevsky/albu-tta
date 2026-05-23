@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -18,6 +21,7 @@ class TeacherShard:
     image_ids: list[str]
     class_idxs: np.ndarray
     logits: np.ndarray
+    run_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +30,7 @@ class TeacherShardPaths:
 
     metadata_path: Path
     logits_path: Path
+    run_metadata_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +39,7 @@ class LoadedTeacherShard:
 
     metadata: pd.DataFrame
     logits: np.ndarray
+    run_metadata: dict[str, Any]
 
 
 def teacher_shard_paths(output_dir: Path, split: str, aug_id: str) -> TeacherShardPaths:
@@ -44,6 +50,7 @@ def teacher_shard_paths(output_dir: Path, split: str, aug_id: str) -> TeacherSha
     return TeacherShardPaths(
         metadata_path=output_dir / f"{filename_prefix}.parquet",
         logits_path=output_dir / f"{filename_prefix}.logits.npy",
+        run_metadata_path=output_dir / f"{filename_prefix}.run.json",
     )
 
 
@@ -64,6 +71,10 @@ def write_teacher_shard(output_dir: Path, shard: TeacherShard) -> TeacherShardPa
     metadata = _build_metadata(shard, logits, class_idxs)
     metadata.to_parquet(paths.metadata_path, index=False)
     np.save(paths.logits_path, logits.astype(np.float16))
+    paths.run_metadata_path.write_text(
+        json.dumps(_json_ready(shard.run_metadata), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     return paths
 
 
@@ -73,6 +84,7 @@ def read_teacher_shard(metadata_path: Path, logits_path: Path) -> LoadedTeacherS
     return LoadedTeacherShard(
         metadata=pd.read_parquet(metadata_path),
         logits=np.load(logits_path),
+        run_metadata=_read_run_metadata(_default_run_metadata_path(metadata_path)),
     )
 
 
@@ -81,6 +93,8 @@ def shard_is_complete(
     logits_path: Path,
     expected_rows: int,
     expected_classes: int,
+    run_metadata_path: Path | None = None,
+    expected_run_metadata: Mapping[str, Any] | None = None,
 ) -> bool:
     """Return true when a shard exists and has the expected row and class counts."""
 
@@ -95,7 +109,28 @@ def shard_is_complete(
     except (OSError, ValueError):
         return False
 
-    return len(metadata) == expected_rows and logits.shape == (expected_rows, expected_classes)
+    shape_matches = len(metadata) == expected_rows and logits.shape == (
+        expected_rows,
+        expected_classes,
+    )
+    if not shape_matches:
+        return False
+
+    if expected_run_metadata is None:
+        return True
+
+    resolved_run_metadata_path = (
+        Path(run_metadata_path)
+        if run_metadata_path is not None
+        else _default_run_metadata_path(metadata_path)
+    )
+    if not resolved_run_metadata_path.exists():
+        return False
+    try:
+        actual_run_metadata = _read_run_metadata(resolved_run_metadata_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    return actual_run_metadata == _json_ready(dict(expected_run_metadata))
 
 
 def _build_metadata(
@@ -132,3 +167,31 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     shifted = logits - logits.max(axis=1, keepdims=True)
     exp = np.exp(shifted)
     return exp / exp.sum(axis=1, keepdims=True)
+
+
+def _default_run_metadata_path(metadata_path: Path) -> Path:
+    metadata_path = Path(metadata_path)
+    if metadata_path.name.endswith(".parquet"):
+        return metadata_path.with_name(f"{metadata_path.name.removesuffix('.parquet')}.run.json")
+    return metadata_path.with_suffix(".run.json")
+
+
+def _read_run_metadata(path: Path) -> dict[str, Any]:
+    path = Path(path)
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise ValueError("teacher shard run metadata must be a JSON object")
+    return data
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return repr(value)

@@ -44,6 +44,8 @@ def test_load_teacher_uses_timm_model_config_and_eval(monkeypatch) -> None:
         model=fake_model,
         data_config={"input_size": (3, 224, 224), "mean": (0.5, 0.5, 0.5)},
         preprocess="preprocess",
+        model_name="resnet50.a1_in1k",
+        pretrained=True,
     )
     assert fake_model.eval_called
     assert calls["model_name"] == "resnet50.a1_in1k"
