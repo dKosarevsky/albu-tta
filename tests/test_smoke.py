@@ -36,9 +36,11 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert (summary.reports_dir / "tables" / "transform_class_impact.csv").exists()
     assert (summary.reports_dir / "figures" / "corrections.svg").exists()
     assert (summary.reports_dir / "figures" / "selector_history.svg").exists()
+    assert (summary.reports_dir / "figures" / "transform_class_impact.svg").exists()
     assert "corrections.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "selector_history.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "transform_class_impact.csv" in summary.results_md.read_text(encoding="utf-8")
+    assert "transform_class_impact.svg" in summary.results_md.read_text(encoding="utf-8")
     assert summary.candidate_ids == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",

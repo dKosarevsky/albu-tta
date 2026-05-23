@@ -73,6 +73,7 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
         "augmentation_name",
         "transform_class",
         "transform_class_impact.csv",
+        "transform_class_impact.svg",
         "gain_distribution.svg",
         "oracle_overlap.svg",
         "cache-teacher --split private",
