@@ -75,6 +75,29 @@ def test_cli_make_splits_writes_manifests(
     assert (output_dir / "private.csv").exists()
 
 
+def test_cli_check_full_run_reports_preflight_summary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path)
+
+    main(
+        [
+            "check-full-run",
+            "--config",
+            str(CONFIG_PATH),
+            "--imagenet-val-dir",
+            str(val_root),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert "full run preflight ok" in captured.out
+    assert "classes=2" in captured.out
+    assert "images=100" in captured.out
+    assert "candidates=100" in captured.out
+
+
 def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int = 50) -> Path:
     val_root = root / "val"
     for class_idx in range(classes):
