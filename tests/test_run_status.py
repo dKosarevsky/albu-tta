@@ -20,6 +20,8 @@ def test_inspect_full_run_status_reports_first_missing_step(tmp_path: Path) -> N
     assert summary.steps[0].outputs == (
         tmp_path / "project" / "artifacts" / "augmentation_registry_audit.json",
     )
+    assert summary.steps[0].missing_outputs == summary.steps[0].outputs
+    assert summary.steps[0].extra_outputs == ()
 
 
 def test_inspect_full_run_status_advances_past_completed_manifests(
@@ -60,13 +62,18 @@ def test_inspect_full_run_status_rejects_partial_teacher_cache(
     _touch(
         cache_dir / "public_train__aug_000.parquet",
         cache_dir / "public_train__aug_000.logits.npy",
+        cache_dir / "public_train__aug_999.parquet",
     )
 
     summary = inspect_full_run_status(config_path)
+    cache_step = next(step for step in summary.steps if step.name == "cache_public_train")
 
     assert summary.completed_required_steps == 2
     assert summary.next_step is not None
     assert summary.next_step.name == "cache_public_train"
+    assert len(cache_step.missing_outputs) == 198
+    assert cache_step.missing_outputs[0].name == "public_train__aug_001.parquet"
+    assert cache_step.extra_outputs == (cache_dir / "public_train__aug_999.parquet",)
 
 
 def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
@@ -112,6 +119,7 @@ def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
     assert summary.total_steps == 13
     assert summary.completed_required_steps == summary.total_required_steps
     assert summary.next_step is None
+    assert all(step.missing_outputs == () for step in summary.steps if step.required)
     optional_steps = [step for step in summary.steps if not step.required]
     assert [step.name for step in optional_steps] == ["train_xgboost_aggregator"]
     assert optional_steps[0].complete is False
