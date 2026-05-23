@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -95,6 +96,41 @@ def validate_augmentation_registry(
             raise ValueError(f"{candidate.id} must set p=1.0")
 
 
+def build_augmentation_audit(candidates: list[AugmentationCandidate]) -> dict[str, Any]:
+    """Build a stable JSON-ready audit payload for the augmentation registry."""
+
+    identity_id = next((candidate.id for candidate in candidates if candidate.is_identity), None)
+    return {
+        "version": 1,
+        "candidate_count": len(candidates),
+        "identity_id": identity_id,
+        "candidates": [
+            {
+                "id": candidate.id,
+                "name": candidate.name,
+                "class_name": candidate.class_name,
+                "params": _json_ready(candidate.params),
+            }
+            for candidate in candidates
+        ],
+    }
+
+
+def write_augmentation_audit(
+    candidates: list[AugmentationCandidate],
+    output_path: Path,
+) -> Path:
+    """Write a stable registry audit JSON artifact."""
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(build_augmentation_audit(candidates), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return output_path
+
+
 def instantiate_candidate(candidate: AugmentationCandidate, seed: int) -> A.Compose | None:
     """Instantiate one candidate as an AlbumentationsX Compose pipeline."""
 
@@ -117,3 +153,7 @@ def apply_candidate(
     if pipeline is None:
         return image.copy()
     return pipeline(image=image)["image"]
+
+
+def _json_ready(value: Any) -> Any:
+    return json.loads(json.dumps(value, sort_keys=True))

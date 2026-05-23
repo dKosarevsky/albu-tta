@@ -6,7 +6,11 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from learned_tta.augmentations import load_augmentation_registry, validate_augmentation_registry
+from learned_tta.augmentations import (
+    load_augmentation_registry,
+    validate_augmentation_registry,
+    write_augmentation_audit,
+)
 from learned_tta.config import load_experiment_config
 from learned_tta.imagenet_split import (
     build_stratified_splits,
@@ -31,7 +35,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     command = str(args.command)
 
     if command == "validate-augmentations":
-        _cmd_validate_augmentations(config_path=Path(args.config))
+        _cmd_validate_augmentations(
+            config_path=Path(args.config),
+            audit_output=_optional_path(args.audit_output),
+        )
     elif command == "run-smoke":
         _cmd_run_smoke(
             config_path=Path(args.config),
@@ -181,6 +188,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Validate the configured AlbumentationsX candidate registry.",
     )
     validate.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    validate.add_argument(
+        "--audit-output",
+        help="Optional path for a stable JSON audit of the loaded augmentation registry.",
+    )
 
     run_smoke = subparsers.add_parser(
         "run-smoke",
@@ -376,14 +387,18 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _cmd_validate_augmentations(config_path: Path) -> None:
+def _cmd_validate_augmentations(config_path: Path, audit_output: Path | None) -> None:
     config = load_experiment_config(config_path)
     candidates = load_augmentation_registry(config.augmentations.registry_path)
     validate_augmentation_registry(
         candidates=candidates,
         expected_count=config.augmentations.candidate_count,
     )
-    print(f"validated {len(candidates)} augmentation candidates")
+    message = f"validated {len(candidates)} augmentation candidates"
+    if audit_output is not None:
+        written = write_augmentation_audit(candidates, audit_output)
+        message = f"{message}; wrote audit {written}"
+    print(message)
 
 
 def _cmd_run_smoke(

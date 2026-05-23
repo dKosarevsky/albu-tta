@@ -35,6 +35,13 @@ training, the best checkpoint is selected by public-validation
 regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
 written to `selector/selector_history.csv`.
 
+`validate-augmentations --audit-output` writes a stable JSON audit of the exact
+AlbumentationsX candidate ids, transform classes, and parameters used in the run:
+
+```text
+artifacts/augmentation_registry_audit.json
+```
+
 `build-report` writes the aggregation diagnostics when the learned aggregator
 artifacts are present, and copies private clean-vs-TTA diagnostics when
 `evaluate-private` has produced them:
@@ -114,7 +121,8 @@ must point to an ImageNet validation directory laid out as
 
 ```bash
 uv run python -m learned_tta.cli validate-augmentations \
-  --config configs/experiment/resnet50_a1_in1k.yaml
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --audit-output artifacts/augmentation_registry_audit.json
 
 uv run python -m learned_tta.cli make-splits \
   --config configs/experiment/resnet50_a1_in1k.yaml \
