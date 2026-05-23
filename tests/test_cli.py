@@ -98,6 +98,16 @@ def test_cli_check_full_run_reports_preflight_summary(
     assert "candidates=100" in captured.out
 
 
+def test_cli_full_run_status_reports_next_step(capsys: pytest.CaptureFixture[str]) -> None:
+    main(["full-run-status", "--config", str(CONFIG_PATH)])
+
+    captured = capsys.readouterr()
+
+    assert "full run status:" in captured.out
+    assert "next:" in captured.out
+    assert "validate_augmentations" in captured.out
+
+
 def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int = 50) -> Path:
     val_root = root / "val"
     for class_idx in range(classes):

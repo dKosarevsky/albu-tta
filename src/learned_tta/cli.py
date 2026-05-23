@@ -20,6 +20,7 @@ from learned_tta.imagenet_split import (
 from learned_tta.preflight import run_full_run_preflight
 from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
+from learned_tta.run_status import inspect_full_run_status
 from learned_tta.selector_training import train_selector_from_config
 from learned_tta.smoke import run_smoke_e2e
 from learned_tta.stacking import train_aggregator_from_config
@@ -63,6 +64,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             config_path=Path(args.config),
             imagenet_val_dir=Path(args.imagenet_val_dir),
         )
+    elif command == "full-run-status":
+        _cmd_full_run_status(config_path=Path(args.config))
     elif command == "cache-teacher":
         manifest_path = Path(args.manifest) if args.manifest is not None else None
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
@@ -244,6 +247,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--imagenet-val-dir",
         required=True,
         help="Path to ImageNet validation directory laid out as val/class_name/image.JPEG.",
+    )
+
+    full_run_status = subparsers.add_parser(
+        "full-run-status",
+        help="Inspect full ImageNet-run artifacts and print the next missing step.",
+    )
+    full_run_status.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
     )
 
     cache_teacher = subparsers.add_parser(
@@ -470,6 +483,19 @@ def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:
         f"candidates={summary.candidate_count}, "
         f"teacher={summary.teacher_model_name}"
     )
+
+
+def _cmd_full_run_status(config_path: Path) -> None:
+    summary = inspect_full_run_status(config_path)
+    print(f"full run status: {summary.completed_steps}/{summary.total_steps} steps complete")
+    for step in summary.steps:
+        marker = "x" if step.complete else " "
+        print(f"[{marker}] {step.name}")
+    if summary.next_step is None:
+        print("next: none")
+    else:
+        print(f"next: {summary.next_step.name}")
+        print(f"command: {summary.next_step.command}")
 
 
 def _cmd_cache_teacher(

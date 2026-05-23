@@ -153,6 +153,9 @@ uv run python -m learned_tta.cli check-full-run \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val
 
+uv run python -m learned_tta.cli full-run-status \
+  --config configs/experiment/resnet50_a1_in1k.yaml
+
 uv run python -m learned_tta.cli make-splits \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val
@@ -204,6 +207,10 @@ uv run python -m learned_tta.cli build-report \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --device cuda
 ```
+
+Use `full-run-status` between expensive steps to inspect the configured artifact
+locations and print the next missing command without loading ImageNet or GPU
+models.
 
 When private evaluation artifacts live outside the report directory, pass
 `--corrections /path/to/corrections.csv` to `build-report`.
