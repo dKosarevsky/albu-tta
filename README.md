@@ -164,6 +164,10 @@ uv run python -m learned_tta.cli full-run-status \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --fail-on-incomplete
 
+uv run python -m learned_tta.cli full-run-status \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --next-command
+
 uv run python -m learned_tta.cli make-splits \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val
@@ -226,7 +230,8 @@ shard files before a teacher-cache split is marked complete. Incomplete steps
 show `missing=` and `extra=` counts in text output; JSON output includes
 `missing_outputs` and `extra_outputs` path lists for resumable run scripts.
 Use `--fail-on-incomplete` when shell scripts should stop unless all required
-full-run steps are complete.
+full-run steps are complete. Use `--next-command` when a wrapper only needs the
+next required command without parsing the full status report.
 
 When private evaluation artifacts live outside the report directory, pass
 `--corrections /path/to/corrections.csv` to `build-report`.

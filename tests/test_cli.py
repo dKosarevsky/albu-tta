@@ -148,6 +148,20 @@ def test_cli_full_run_status_can_fail_on_incomplete_required_steps(
     assert "next: validate_augmentations" in captured.out
 
 
+def test_cli_full_run_status_can_print_only_next_command(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main(["full-run-status", "--config", str(CONFIG_PATH), "--next-command"])
+
+    captured = capsys.readouterr()
+
+    assert captured.err == ""
+    assert captured.out.startswith("uv run python -m learned_tta.cli validate-augmentations")
+    assert "--audit-output" in captured.out
+    assert "full run status:" not in captured.out
+    assert captured.out.count("\n") == 1
+
+
 def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int = 50) -> Path:
     val_root = root / "val"
     for class_idx in range(classes):
