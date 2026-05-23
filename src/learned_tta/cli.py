@@ -70,6 +70,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             config_path=Path(args.config),
             output_format=str(args.format),
             fail_on_incomplete=bool(args.fail_on_incomplete),
+            next_command=bool(args.next_command),
         )
     elif command == "cache-teacher":
         manifest_path = Path(args.manifest) if args.manifest is not None else None
@@ -273,6 +274,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--fail-on-incomplete",
         action="store_true",
         help="Exit with code 1 when any required full-run step is incomplete.",
+    )
+    full_run_status.add_argument(
+        "--next-command",
+        action="store_true",
+        help="Print only the next required full-run command, if any.",
     )
 
     cache_teacher = subparsers.add_parser(
@@ -505,8 +511,16 @@ def _cmd_full_run_status(
     config_path: Path,
     output_format: str,
     fail_on_incomplete: bool,
+    next_command: bool,
 ) -> None:
     summary = inspect_full_run_status(config_path)
+    if next_command:
+        if summary.next_step is not None:
+            print(summary.next_step.command)
+            if fail_on_incomplete:
+                raise SystemExit(1)
+        return
+
     if output_format == "json":
         print(json.dumps(full_run_status_to_dict(summary), indent=2, sort_keys=True))
         if fail_on_incomplete and summary.next_step is not None:
