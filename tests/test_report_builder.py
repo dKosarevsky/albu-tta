@@ -338,7 +338,12 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "Top learned-selection augmentations" in markdown
     assert "Top oracle-selection augmentations" in markdown
     assert "Top transform classes by mean gain" in markdown
+    assert "Top global aggregation weights" in markdown
+    assert "Top class-mean aggregation weights" in markdown
+    assert "Top class-active aggregation weights" in markdown
+    assert "Top XGBoost feature importance" in markdown
     assert "| aug_002 | vertical_flip | VerticalFlip |" in markdown
+    assert "| aug_001 | horizontal_flip | HorizontalFlip | 0.7 |" in markdown
     assert "| VerticalFlip | 1 |" in markdown
     assert "aggregation_weights.csv" in markdown
     assert "public_val" in markdown
