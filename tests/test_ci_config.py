@@ -62,6 +62,7 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
         "--format json",
         "optional XGBoost",
         "required/optional status",
+        "every configured augmentation candidate",
         "serialized AlbumentationsX `Compose`",
         "--imagenet-val-dir",
         "cache-teacher --split public_train",
