@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from learned_tta.imagenet_split import (
 from learned_tta.preflight import run_full_run_preflight
 from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
-from learned_tta.run_status import inspect_full_run_status
+from learned_tta.run_status import full_run_status_to_dict, inspect_full_run_status
 from learned_tta.selector_training import train_selector_from_config
 from learned_tta.smoke import run_smoke_e2e
 from learned_tta.stacking import train_aggregator_from_config
@@ -65,7 +66,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             imagenet_val_dir=Path(args.imagenet_val_dir),
         )
     elif command == "full-run-status":
-        _cmd_full_run_status(config_path=Path(args.config))
+        _cmd_full_run_status(config_path=Path(args.config), output_format=str(args.format))
     elif command == "cache-teacher":
         manifest_path = Path(args.manifest) if args.manifest is not None else None
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
@@ -257,6 +258,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--config",
         required=True,
         help="Path to experiment YAML config.",
+    )
+    full_run_status.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the artifact status summary.",
     )
 
     cache_teacher = subparsers.add_parser(
@@ -485,12 +492,22 @@ def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:
     )
 
 
-def _cmd_full_run_status(config_path: Path) -> None:
+def _cmd_full_run_status(config_path: Path, output_format: str) -> None:
     summary = inspect_full_run_status(config_path)
-    print(f"full run status: {summary.completed_steps}/{summary.total_steps} steps complete")
+    if output_format == "json":
+        print(json.dumps(full_run_status_to_dict(summary), indent=2, sort_keys=True))
+        return
+
+    print(
+        "full run status: "
+        f"{summary.completed_required_steps}/{summary.total_required_steps} "
+        "required steps complete "
+        f"({summary.completed_steps}/{summary.total_steps} total)"
+    )
     for step in summary.steps:
         marker = "x" if step.complete else " "
-        print(f"[{marker}] {step.name}")
+        label = "optional: " if not step.required else ""
+        print(f"[{marker}] {label}{step.name}")
     if summary.next_step is None:
         print("next: none")
     else:
