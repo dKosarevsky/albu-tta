@@ -10,6 +10,7 @@ Implemented:
 - Teacher cache runner for timm ResNet50 preprocessing, fp16 logits, parquet metadata, and resume checks.
 - Selector target generation from cached logits with clean-vs-augmentation gain targets.
 - Selector target formulation documented as a 100-score augmentation utility predictor for ranking/top-k TTA selection, not 50-bin loss classification.
+- Public/private split-role guards for target building, selector checkpoint selection, TTA tuning, learned aggregation training, and final private evaluation.
 - Small selector CNN training with standardized targets, SmoothL1, pairwise rank loss, public-val diagnostics, and checkpoint selection by public-val learned TTA NLL.
 - TTA evaluation for clean, fixed, random, all-candidate, learned uniform, learned softmax-weighted, oracle, global non-negative aggregation, class-specific aggregation, and optional XGBoost stacker.
 - Private evaluation artifacts with metrics, compute, clean-vs-TTA corrections, and metric deltas against clean.

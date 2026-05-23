@@ -10,6 +10,7 @@ import numpy as np
 from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
+from learned_tta.split_policy import validate_selector_target_splits
 from learned_tta.targets import (
     compute_gain_targets,
     compute_target_stats,
@@ -39,6 +40,7 @@ def build_selector_targets_from_cache(
 ) -> SelectorTargetBuildSummary:
     """Build public-train and public-val selector target artifacts from cached logits."""
 
+    validate_selector_target_splits(train_split=train_split, val_split=val_split)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

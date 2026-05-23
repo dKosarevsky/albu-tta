@@ -15,6 +15,7 @@ from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import load_manifest
 from learned_tta.reporting import build_compute_table, build_correction_table, build_metrics_table
+from learned_tta.split_policy import PUBLIC_VAL_SPLIT, validate_private_evaluation_split
 from learned_tta.stacking import (
     default_aggregator_path,
     evaluate_xgboost_multiclass_stacker,
@@ -74,6 +75,7 @@ def evaluate_private_from_artifacts(
 ) -> PrivateEvaluationSummary:
     """Evaluate private split baselines with the frozen public-val top-k."""
 
+    validate_private_evaluation_split(split, command="evaluate-private")
     best_k = _load_best_k(tuning_path)
     records = load_manifest(manifest_path)
     logits_by_aug, class_idxs = _read_split_logits(cache_dir, split=split, aug_ids=aug_ids)
@@ -462,6 +464,11 @@ def _average_per_image_probabilities(
 def _load_best_k(tuning_path: Path) -> int:
     with Path(tuning_path).open(encoding="utf-8") as handle:
         data = json.load(handle)
+    split = data.get("split")
+    if split is not None and split != PUBLIC_VAL_SPLIT:
+        raise ValueError(
+            f"tuning artifact split must be {PUBLIC_VAL_SPLIT}; got {split!r}"
+        )
     return int(data["best_k"])
 
 

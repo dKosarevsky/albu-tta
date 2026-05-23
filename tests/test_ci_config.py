@@ -90,6 +90,30 @@ def test_implementation_status_documents_selector_target_choice(
 
 
 @pytest.mark.parametrize(
+    "leakage_fragment",
+    [
+        "Split Contract",
+        "API contract",
+        "Selector targets are built only from `public_train` and `public_val`",
+        "learned aggregation training use `public_val`",
+        "`evaluate-private` accepts only `private`",
+        "not deployable methods or tuning inputs",
+    ],
+)
+def test_readme_documents_split_contract(
+    readme_text: str,
+    leakage_fragment: str,
+) -> None:
+    assert leakage_fragment in readme_text
+
+
+def test_implementation_status_documents_split_role_guards(
+    implementation_status_text: str,
+) -> None:
+    assert "Public/private split-role guards" in implementation_status_text
+
+
+@pytest.mark.parametrize(
     "runbook_fragment",
     [
         "run-smoke",

@@ -100,6 +100,31 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
     assert summary.best_val_nll == pytest.approx(checkpoint["val_nll"])
 
 
+def test_train_selector_from_artifacts_rejects_private_validation_split(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    with pytest.raises(ValueError, match="train-selector split must be public_val"):
+        train_selector_from_artifacts(
+            train_manifest_path=selector_training_artifacts["train_manifest"],
+            val_manifest_path=selector_training_artifacts["val_manifest"],
+            train_targets_path=selector_training_artifacts["train_targets"],
+            val_targets_path=selector_training_artifacts["val_targets"],
+            output_dir=tmp_path / "selector",
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            epochs=1,
+            learning_rate=1e-3,
+            rank_weight=0.2,
+            val_cache_dir=selector_training_artifacts["cache_dir"],
+            val_split="private",
+            aug_ids=["aug_000", "aug_001"],
+            top_k_grid=[1],
+            device="cpu",
+        )
+
+
 def test_train_selector_cli_writes_checkpoint(
     tmp_path: Path,
     selector_training_artifacts: dict[str, Path],

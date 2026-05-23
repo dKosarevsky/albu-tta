@@ -54,6 +54,27 @@ def test_tune_tta_from_artifacts_selects_and_writes_best_k(
     assert summary.predicted_gain_shape == (2, 2)
 
 
+def test_tune_tta_from_artifacts_rejects_private_split(tmp_path: Path) -> None:
+    manifest_path = _write_manifest(tmp_path, split="private", count=2)
+    cache_dir = _write_cache(tmp_path / "teacher_cache", split="private")
+    checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=2)
+
+    with pytest.raises(ValueError, match="tune-tta split must be public_val"):
+        tune_tta_from_artifacts(
+            split="private",
+            manifest_path=manifest_path,
+            cache_dir=cache_dir,
+            checkpoint_path=checkpoint_path,
+            output_dir=tmp_path / "selector",
+            aug_ids=["aug_000", "aug_001"],
+            top_k_grid=[1],
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            device="cpu",
+        )
+
+
 def test_tune_tta_cli_writes_result_json(
     tmp_path: Path,
     tuning_artifacts: dict[str, Path],
@@ -145,13 +166,13 @@ def _write_manifest(root: Path, split: str, count: int) -> Path:
     return manifest_path
 
 
-def _write_cache(cache_dir: Path) -> Path:
-    image_ids = ["public_val-0", "public_val-1"]
+def _write_cache(cache_dir: Path, split: str = "public_val") -> Path:
+    image_ids = [f"{split}-0", f"{split}-1"]
     class_idxs = np.array([0, 1], dtype=np.int64)
     write_teacher_shard(
         cache_dir,
         TeacherShard(
-            split="public_val",
+            split=split,
             aug_id="aug_000",
             image_ids=image_ids,
             class_idxs=class_idxs,
@@ -161,7 +182,7 @@ def _write_cache(cache_dir: Path) -> Path:
     write_teacher_shard(
         cache_dir,
         TeacherShard(
-            split="public_val",
+            split=split,
             aug_id="aug_001",
             image_ids=image_ids,
             class_idxs=class_idxs,

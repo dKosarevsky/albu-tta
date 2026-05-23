@@ -58,6 +58,7 @@ Rationale:
 
 - The 25/25 class split is exactly stratified because ImageNet-val has 50 images per class.
 - A nested public train/val split is needed to tune selector loss, checkpoint choice, top-k, and optional weighting without leaking private results.
+- The implementation enforces these split roles in code: target building uses only `public_train`/`public_val`, tuning and aggregation training use only `public_val`, and final evaluation uses only `private`.
 
 ### TTA Candidate Set
 
@@ -560,7 +561,7 @@ If tuned `k=4`, learned TTA uses 5 ResNet50 forwards per image instead of 100.
 - Risk: The selector's absolute score scale is poorly calibrated.
   - Mitigation: main method uses top-k ranking with uniform averaging.
 - Risk: Private leakage through tuning.
-  - Mitigation: tune only on public-val; private is used once for final tables.
+  - Mitigation: tune only on public-val; private is used once for final tables, with split-role guards rejecting private tuning and public split final evaluation.
 - Risk: Some transforms silently behave randomly.
   - Mitigation: deterministic byte-output test over all 100 candidates.
 - Risk: All-100 private cache is expensive.

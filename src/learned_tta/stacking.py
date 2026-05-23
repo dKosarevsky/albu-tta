@@ -16,6 +16,7 @@ from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.metrics import classification_metrics, expected_calibration_error
+from learned_tta.split_policy import validate_public_tuning_split
 from learned_tta.tta_eval import evaluate_class_weighted_tta, evaluate_global_weighted_tta
 
 AggregatorMethod = Literal["global-nonnegative", "class-nonnegative", "xgboost-multiclass"]
@@ -362,6 +363,7 @@ def train_aggregator_from_artifacts(
 ) -> AggregationTrainingSummary:
     """Train and save learned aggregation weights from cached split logits."""
 
+    validate_public_tuning_split(split, command="train-aggregator")
     if method not in {"global-nonnegative", "class-nonnegative", "xgboost-multiclass"}:
         raise ValueError(f"unknown aggregator method {method!r}")
 

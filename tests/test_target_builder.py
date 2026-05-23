@@ -57,6 +57,31 @@ def test_build_selector_targets_from_cache_uses_train_stats_for_val(
     assert val_targets.gain.shape == (2, 2)
 
 
+@pytest.mark.parametrize(
+    ("train_split", "val_split", "match"),
+    [
+        ("private", "public_val", "train_split must be public_train"),
+        ("public_train", "private", "val_split must be public_val"),
+    ],
+)
+def test_build_selector_targets_from_cache_rejects_private_leakage(
+    tmp_path: Path,
+    cache_dir: Path,
+    train_split: str,
+    val_split: str,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        build_selector_targets_from_cache(
+            cache_dir=cache_dir,
+            output_dir=tmp_path / "selector",
+            train_split=train_split,
+            val_split=val_split,
+            aug_ids=["aug_000", "aug_001"],
+            identity_aug_id="aug_000",
+        )
+
+
 def test_build_targets_cli_writes_default_artifacts(
     tmp_path: Path,
     cache_dir: Path,
