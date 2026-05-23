@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from learned_tta.config import ExperimentConfig, load_experiment_config
 
@@ -17,6 +18,7 @@ class FullRunStepStatus:
     complete: bool
     outputs: tuple[Path, ...]
     command: str
+    required: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +29,8 @@ class FullRunStatusSummary:
     steps: tuple[FullRunStepStatus, ...]
     completed_steps: int
     total_steps: int
+    completed_required_steps: int
+    total_required_steps: int
     next_step: FullRunStepStatus | None
 
 
@@ -36,6 +40,7 @@ class _StepSpec:
     outputs: tuple[Path, ...]
     command: str
     complete: Callable[[], bool]
+    required: bool = True
 
 
 def inspect_full_run_status(config_path: Path) -> FullRunStatusSummary:
@@ -44,14 +49,32 @@ def inspect_full_run_status(config_path: Path) -> FullRunStatusSummary:
     config = load_experiment_config(config_path)
     steps = tuple(_build_step_statuses(config))
     completed_steps = sum(step.complete for step in steps)
-    next_step = next((step for step in steps if not step.complete), None)
+    required_steps = tuple(step for step in steps if step.required)
+    completed_required_steps = sum(step.complete for step in required_steps)
+    next_step = next((step for step in required_steps if not step.complete), None)
     return FullRunStatusSummary(
         config_path=config.path,
         steps=steps,
         completed_steps=completed_steps,
         total_steps=len(steps),
+        completed_required_steps=completed_required_steps,
+        total_required_steps=len(required_steps),
         next_step=next_step,
     )
+
+
+def full_run_status_to_dict(summary: FullRunStatusSummary) -> dict[str, Any]:
+    """Return a JSON-serializable representation of a full-run status summary."""
+
+    return {
+        "config_path": str(summary.config_path),
+        "completed_steps": summary.completed_steps,
+        "total_steps": summary.total_steps,
+        "completed_required_steps": summary.completed_required_steps,
+        "total_required_steps": summary.total_required_steps,
+        "next_step": _step_to_dict(summary.next_step) if summary.next_step is not None else None,
+        "steps": [_step_to_dict(step) for step in summary.steps],
+    }
 
 
 def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
@@ -65,12 +88,22 @@ def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
     selector_checkpoint = config.artifacts.selector_dir / "selector_best.pt"
     selector_history = config.artifacts.selector_dir / "selector_history.csv"
     tuning_path = config.artifacts.selector_dir / "public_val_tta_tuning.json"
-    global_aggregator = (
-        config.artifacts.selector_dir / "public_val_global_nonnegative_aggregator.json"
+    global_aggregator = _aggregator_path(
+        output_dir=config.artifacts.selector_dir,
+        split="public_val",
+        method="global-nonnegative",
     )
-    class_aggregator = (
-        config.artifacts.selector_dir / "public_val_class_nonnegative_aggregator.json"
+    class_aggregator = _aggregator_path(
+        output_dir=config.artifacts.selector_dir,
+        split="public_val",
+        method="class-nonnegative",
     )
+    xgboost_aggregator = _aggregator_path(
+        output_dir=config.artifacts.selector_dir,
+        split="public_val",
+        method="xgboost-multiclass",
+    )
+    xgboost_model = xgboost_aggregator.with_suffix(".model.json")
     private_metrics = config.artifacts.reports_dir / "tables" / "private_metrics.csv"
     corrections = config.artifacts.reports_dir / "tables" / "corrections.csv"
     results_md = config.artifacts.reports_dir / "results.md"
@@ -141,6 +174,17 @@ def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
             ),
             complete=lambda: class_aggregator.exists(),
         ),
+        _StepSpec(
+            name="train_xgboost_aggregator",
+            outputs=(xgboost_aggregator, xgboost_model),
+            command=(
+                "uv run python -m learned_tta.cli train-aggregator "
+                "--method xgboost-multiclass "
+                f"--config {config.path} --split public_val"
+            ),
+            complete=lambda: xgboost_aggregator.exists() and xgboost_model.exists(),
+            required=False,
+        ),
         _cache_step_spec(config, "private"),
         _StepSpec(
             name="evaluate_private",
@@ -169,6 +213,7 @@ def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
             complete=spec.complete(),
             outputs=spec.outputs,
             command=spec.command,
+            required=spec.required,
         )
         for spec in specs
     ]
@@ -190,6 +235,11 @@ def _all_exist(paths: tuple[Path, ...]) -> bool:
     return all(path.exists() for path in paths)
 
 
+def _aggregator_path(output_dir: Path, split: str, method: str) -> Path:
+    method_slug = method.replace("-", "_")
+    return output_dir / f"{split}_{method_slug}_aggregator.json"
+
+
 def _has_complete_teacher_cache(cache_dir: Path, split: str) -> bool:
     parquet_shards = sorted(cache_dir.glob(f"{split}__*.parquet"))
     logits_shards = sorted(cache_dir.glob(f"{split}__*.logits.npy"))
@@ -198,3 +248,13 @@ def _has_complete_teacher_cache(cache_dir: Path, split: str) -> bool:
     parquet_stems = {path.name.removesuffix(".parquet") for path in parquet_shards}
     logits_stems = {path.name.removesuffix(".logits.npy") for path in logits_shards}
     return parquet_stems == logits_stems
+
+
+def _step_to_dict(step: FullRunStepStatus) -> dict[str, Any]:
+    return {
+        "name": step.name,
+        "complete": step.complete,
+        "required": step.required,
+        "outputs": [str(path) for path in step.outputs],
+        "command": step.command,
+    }

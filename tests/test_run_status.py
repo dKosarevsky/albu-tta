@@ -11,9 +11,12 @@ def test_inspect_full_run_status_reports_first_missing_step(tmp_path: Path) -> N
     summary = inspect_full_run_status(config_path)
 
     assert summary.completed_steps == 0
-    assert summary.total_steps == 12
+    assert summary.total_steps == 13
+    assert summary.completed_required_steps == 0
+    assert summary.total_required_steps == 12
     assert summary.next_step is not None
     assert summary.next_step.name == "validate_augmentations"
+    assert summary.steps[0].required is True
     assert summary.steps[0].outputs == (
         tmp_path / "project" / "artifacts" / "augmentation_registry_audit.json",
     )
@@ -37,12 +40,15 @@ def test_inspect_full_run_status_advances_past_completed_manifests(
     summary = inspect_full_run_status(config_path)
 
     assert summary.completed_steps == 2
+    assert summary.completed_required_steps == 2
     assert summary.next_step is not None
     assert summary.next_step.name == "cache_public_train"
     assert "cache-teacher --split public_train" in summary.next_step.command
 
 
-def test_inspect_full_run_status_reports_complete_run(tmp_path: Path) -> None:
+def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
+    tmp_path: Path,
+) -> None:
     config_path = _write_experiment_config(tmp_path)
     project_root = tmp_path / "project"
     artifacts_dir = project_root / "artifacts"
@@ -82,9 +88,14 @@ def test_inspect_full_run_status_reports_complete_run(tmp_path: Path) -> None:
 
     summary = inspect_full_run_status(config_path)
 
-    assert summary.completed_steps == summary.total_steps
+    assert summary.completed_steps == 12
+    assert summary.total_steps == 13
+    assert summary.completed_required_steps == summary.total_required_steps
     assert summary.next_step is None
-    assert all(step.complete for step in summary.steps)
+    optional_steps = [step for step in summary.steps if not step.required]
+    assert [step.name for step in optional_steps] == ["train_xgboost_aggregator"]
+    assert optional_steps[0].complete is False
+    assert "xgboost-multiclass" in optional_steps[0].command
 
 
 def _write_experiment_config(tmp_path: Path) -> Path:

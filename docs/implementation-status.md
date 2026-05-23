@@ -25,6 +25,8 @@ Next research step:
 
 Run `check-full-run` against the local ImageNet-val directory, run the full
 experiment with `resnet50.a1_in1k`, use `full-run-status` after each expensive
-step to confirm the next missing artifact, review
-`reports/resnet50_a1_in1k/results.md`, then decide which additional timm
-architectures are worth running for the preprint.
+step to confirm the next missing required artifact, use `--format json` if the
+GPU run is driven by scripts, review `reports/resnet50_a1_in1k/results.md`,
+then decide which additional timm architectures are worth running for the
+preprint. The optional XGBoost stacker is tracked separately and does not block
+the required full-run status.
