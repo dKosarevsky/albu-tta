@@ -23,4 +23,7 @@ Not part of the implementation-complete status:
 
 Next research step:
 
-Run the full experiment on ImageNet-val with `resnet50.a1_in1k`, review `reports/resnet50_a1_in1k/results.md`, then decide which additional timm architectures are worth running for the preprint.
+Run `check-full-run` against the local ImageNet-val directory, run the full
+experiment with `resnet50.a1_in1k`, review `reports/resnet50_a1_in1k/results.md`,
+then decide which additional timm architectures are worth running for the
+preprint.
