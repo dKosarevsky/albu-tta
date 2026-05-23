@@ -1,6 +1,6 @@
 # Learned TTA Augmentation Selector Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]` / `- [x]`) syntax for tracking.
 
 **Goal:** Build an end-to-end experiment where a small CNN predicts which AlbumentationsX transforms are useful for TTA on each ImageNet validation image, reducing ResNet50 inference cost while preserving or improving metrics.
 
@@ -12,7 +12,11 @@
 
 ## Current Repository State
 
-`/Users/if/Documents/albu-a` is currently an empty git repository with no committed files. This document defines the target project structure from scratch.
+The planned lightweight end-to-end implementation is complete in the
+`dKosarevsky/albu-tta` repository. See
+`docs/implementation-status.md` for the implementation status, completed
+artifact surface, and the boundary between implemented code and future full
+ImageNet experiment runs.
 
 ## External Choices
 
@@ -384,10 +388,10 @@ Files:
 
 Steps:
 
-- [ ] Add project metadata and dependencies: PyTorch, timm, albumentationsx headless, opencv-python-headless, numpy, pandas, pyarrow, pillow, tqdm, pydantic, pytest, ruff.
-- [ ] Add config with model name `resnet50.a1_in1k`, seed `20260522`, split sizes `25/25` and `20/5`, candidate count `100`, and top-k grid `{1,2,4,8,16}`.
-- [ ] Add artifact README explaining that ImageNet images, logits caches, checkpoints, and result tables are not committed.
-- [ ] Run `pytest` and confirm the empty suite is discovered cleanly once tests exist in later tasks.
+- [x] Add project metadata and dependencies: PyTorch, timm, albumentationsx headless, opencv-python-headless, numpy, pandas, pyarrow, pillow, tqdm, pydantic, pytest, ruff.
+- [x] Add config with model name `resnet50.a1_in1k`, seed `20260522`, split sizes `25/25` and `20/5`, candidate count `100`, and top-k grid `{1,2,4,8,16}`.
+- [x] Add artifact README explaining that ImageNet images, logits caches, checkpoints, and result tables are not committed.
+- [x] Run `pytest` and confirm the empty suite is discovered cleanly once tests exist in later tasks.
 
 ### Task 2: ImageNet Split Manifests
 
@@ -398,11 +402,11 @@ Files:
 
 Steps:
 
-- [ ] Implement class-index discovery from ImageNet-val directory layout.
-- [ ] Implement deterministic per-class shuffle with seed `20260522`.
-- [ ] Emit four manifests: `public_train`, `public_val`, `public`, `private`.
-- [ ] Test that each class has 20 public-train, 5 public-val, 25 public total, and 25 private images.
-- [ ] Test that splits are disjoint and stable across repeated runs.
+- [x] Implement class-index discovery from ImageNet-val directory layout.
+- [x] Implement deterministic per-class shuffle with seed `20260522`.
+- [x] Emit four manifests: `public_train`, `public_val`, `public`, `private`.
+- [x] Test that each class has 20 public-train, 5 public-val, 25 public total, and 25 private images.
+- [x] Test that splits are disjoint and stable across repeated runs.
 
 ### Task 3: Augmentation Registry
 
@@ -414,12 +418,12 @@ Files:
 
 Steps:
 
-- [ ] Define exactly 100 candidate ids, with `aug_000` identity and 99 single AlbumentationsX transforms.
-- [ ] Validate every candidate has one transform only, except identity.
-- [ ] Validate every non-identity candidate has `p=1.0`.
-- [ ] Validate the registry contains no duplicate ids and no duplicate transform specs.
-- [ ] Validate applying every candidate twice to a fixed sample image gives byte-identical output.
-- [ ] Serialize the loaded AlbumentationsX transforms for audit.
+- [x] Define exactly 100 candidate ids, with `aug_000` identity and 99 single AlbumentationsX transforms.
+- [x] Validate every candidate has one transform only, except identity.
+- [x] Validate every non-identity candidate has `p=1.0`.
+- [x] Validate the registry contains no duplicate ids and no duplicate transform specs.
+- [x] Validate applying every candidate twice to a fixed sample image gives byte-identical output.
+- [x] Serialize the loaded AlbumentationsX transforms for audit.
 
 ### Task 4: Teacher Inference Cache
 
@@ -431,12 +435,12 @@ Files:
 
 Steps:
 
-- [ ] Load `timm.create_model('resnet50.a1_in1k', pretrained=True)` in eval mode.
-- [ ] Resolve teacher preprocessing from the model data config.
-- [ ] Build dataloaders that apply one candidate per image and batch tensors for the teacher.
-- [ ] Save logits as fp16 shards and metadata as parquet.
-- [ ] Add a resume mode that skips completed `(split, aug_id)` shards after validating shape and row count.
-- [ ] Run a smoke inference on 2 classes, 2 images per class, and 3 candidates before full ImageNet-val inference.
+- [x] Load `timm.create_model('resnet50.a1_in1k', pretrained=True)` in eval mode.
+- [x] Resolve teacher preprocessing from the model data config.
+- [x] Build dataloaders that apply one candidate per image and batch tensors for the teacher.
+- [x] Save logits as fp16 shards and metadata as parquet.
+- [x] Add a resume mode that skips completed `(split, aug_id)` shards after validating shape and row count.
+- [x] Run a smoke inference on 2 classes, 2 images per class, and 3 candidates before full ImageNet-val inference.
 
 ### Task 5: Target Generation
 
@@ -447,12 +451,12 @@ Files:
 
 Steps:
 
-- [ ] Compute true-class probability and NLL from cached logits.
-- [ ] Compute clean NLL from `aug_000`.
-- [ ] Compute per-candidate gain as `clean_nll - aug_nll`.
-- [ ] Compute public-train mean and std per candidate.
-- [ ] Save selector target matrices for public-train and public-val.
-- [ ] Test target math with a small hand-written logits tensor where the expected NLL and gain are known.
+- [x] Compute true-class probability and NLL from cached logits.
+- [x] Compute clean NLL from `aug_000`.
+- [x] Compute per-candidate gain as `clean_nll - aug_nll`.
+- [x] Compute public-train mean and std per candidate.
+- [x] Save selector target matrices for public-train and public-val.
+- [x] Test target math with a small hand-written logits tensor where the expected NLL and gain are known.
 
 ### Task 6: Selector CNN
 
@@ -463,11 +467,11 @@ Files:
 
 Steps:
 
-- [ ] Implement the depthwise-separable CNN with under 1.5M parameters.
-- [ ] Train on public-train clean images and standardized gain targets.
-- [ ] Use SmoothL1 plus pairwise rank loss.
-- [ ] Track public-val regression loss, Spearman correlation, oracle top-k recall, and resulting learned TTA metrics from cached logits.
-- [ ] Save best checkpoint by public-val NLL of `learned_topk_uniform`, not by raw regression loss.
+- [x] Implement the depthwise-separable CNN with under 1.5M parameters.
+- [x] Train on public-train clean images and standardized gain targets.
+- [x] Use SmoothL1 plus pairwise rank loss.
+- [x] Track public-val regression loss, Spearman correlation, oracle top-k recall, and resulting learned TTA metrics from cached logits.
+- [x] Save best checkpoint by public-val NLL of `learned_topk_uniform`, not by raw regression loss.
 
 ### Task 7: TTA Evaluation
 
@@ -479,13 +483,13 @@ Files:
 
 Steps:
 
-- [ ] Implement probability averaging from cached logits.
-- [ ] Implement `clean`, `fixed_light_tta`, `random_topk`, `all_100_uniform`, `global_weighted_tta`, `class_weighted_tta`, `learned_topk_uniform`, `learned_topk_softmax_weighted`, and `oracle_topk_uniform`.
-- [ ] Tune `k` on public-val and freeze the winning value.
-- [ ] Train global and class-specific non-negative aggregation weights on public-val cached predictions.
-- [ ] Evaluate the frozen method on private.
-- [ ] Write private clean-vs-TTA correction diagnostics: fixed clean mistakes, newly broken clean predictions, both-right, and both-wrong counts per strategy.
-- [ ] Test that aggregation returns correct top-1, top-5, and NLL on a small synthetic logits cache.
+- [x] Implement probability averaging from cached logits.
+- [x] Implement `clean`, `fixed_light_tta`, `random_topk`, `all_100_uniform`, `global_weighted_tta`, `class_weighted_tta`, `learned_topk_uniform`, `learned_topk_softmax_weighted`, and `oracle_topk_uniform`.
+- [x] Tune `k` on public-val and freeze the winning value.
+- [x] Train global and class-specific non-negative aggregation weights on public-val cached predictions.
+- [x] Evaluate the frozen method on private.
+- [x] Write private clean-vs-TTA correction diagnostics: fixed clean mistakes, newly broken clean predictions, both-right, and both-wrong counts per strategy.
+- [x] Test that aggregation returns correct top-1, top-5, and NLL on a small synthetic logits cache.
 
 ### Task 8: Results and Article Artifacts
 
@@ -501,18 +505,18 @@ Files:
 
 Steps:
 
-- [ ] Generate public-val and private metric tables.
-- [ ] Generate compute table with average ResNet50 forwards per image.
-- [ ] Generate augmentation impact table with mean gain, selection frequency, and oracle frequency.
-- [ ] Generate learned aggregation weight table with global weight, class mean weight, class max weight, and class activation frequency.
-- [ ] Generate class-specific long table with one row per `(class_idx, aug_id)` weight.
-- [ ] Generate XGBoost feature-importance table with one row per augmentation.
-- [ ] Generate correction/corruption table showing where each TTA strategy fixes or breaks clean predictions.
-- [ ] Generate plots for gain distribution and learned versus oracle top-k overlap.
-- [ ] Generate plot for global learned aggregation weights.
-- [ ] Generate plot for XGBoost feature importance.
-- [ ] Generate plot for TTA corrections and corruptions.
-- [ ] Write a short result summary that avoids claiming SOTA until additional architectures are run.
+- [x] Generate public-val and private metric tables.
+- [x] Generate compute table with average ResNet50 forwards per image.
+- [x] Generate augmentation impact table with mean gain, selection frequency, and oracle frequency.
+- [x] Generate learned aggregation weight table with global weight, class mean weight, class max weight, and class activation frequency.
+- [x] Generate class-specific long table with one row per `(class_idx, aug_id)` weight.
+- [x] Generate XGBoost feature-importance table with one row per augmentation.
+- [x] Generate correction/corruption table showing where each TTA strategy fixes or breaks clean predictions.
+- [x] Generate plots for gain distribution and learned versus oracle top-k overlap.
+- [x] Generate plot for global learned aggregation weights.
+- [x] Generate plot for XGBoost feature importance.
+- [x] Generate plot for TTA corrections and corruptions.
+- [x] Write a short result summary that avoids claiming SOTA until additional architectures are run.
 
 ## Full Run Order
 
