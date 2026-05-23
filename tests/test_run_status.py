@@ -46,6 +46,29 @@ def test_inspect_full_run_status_advances_past_completed_manifests(
     assert "cache-teacher --split public_train" in summary.next_step.command
 
 
+def test_inspect_full_run_status_rejects_partial_teacher_cache(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_experiment_config(tmp_path)
+    project_root = tmp_path / "project"
+    artifacts_dir = project_root / "artifacts"
+    manifests_dir = artifacts_dir / "manifests"
+    cache_dir = artifacts_dir / "teacher_cache"
+    _touch(artifacts_dir / "augmentation_registry_audit.json")
+    for split in ("public_train", "public_val", "public", "private"):
+        _touch(manifests_dir / f"{split}.csv")
+    _touch(
+        cache_dir / "public_train__aug_000.parquet",
+        cache_dir / "public_train__aug_000.logits.npy",
+    )
+
+    summary = inspect_full_run_status(config_path)
+
+    assert summary.completed_required_steps == 2
+    assert summary.next_step is not None
+    assert summary.next_step.name == "cache_public_train"
+
+
 def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
     tmp_path: Path,
 ) -> None:
@@ -81,10 +104,7 @@ def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
         tables_dir / "private_metric_deltas.csv",
     )
     for split in ("public_train", "public_val", "private"):
-        _touch(
-            cache_dir / f"{split}__000.parquet",
-            cache_dir / f"{split}__000.logits.npy",
-        )
+        _touch_teacher_cache(cache_dir, split=split, candidate_count=100)
 
     summary = inspect_full_run_status(config_path)
 
@@ -142,3 +162,12 @@ def _touch(*paths: Path) -> None:
     for path in paths:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"")
+
+
+def _touch_teacher_cache(cache_dir: Path, split: str, candidate_count: int) -> None:
+    for candidate_idx in range(candidate_count):
+        aug_id = f"aug_{candidate_idx:03d}"
+        _touch(
+            cache_dir / f"{split}__{aug_id}.parquet",
+            cache_dir / f"{split}__{aug_id}.logits.npy",
+        )
