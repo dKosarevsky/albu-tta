@@ -61,6 +61,9 @@ which ImageNet classes benefit from which AlbumentationsX transforms.
 with public-val metrics saved inside the optional learned aggregation artifacts,
 so global, class-specific, and XGBoost stackers can be compared before private
 evaluation.
+`compute.csv` keeps compute rows for both `public_val` and `private` with an
+explicit `split` column, so public tuning diagnostics and final private compute
+costs are not mixed implicitly.
 Aggregator training uses the historical `--l1-penalty` CLI option as a sparsity
 regularizer and then prunes weights at or below `active_threshold`; this makes
 zero-weight TTA candidates explicit in the saved artifact and report tables.

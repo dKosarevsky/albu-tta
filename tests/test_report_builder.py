@@ -214,6 +214,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     markdown = summary.results_md.read_text(encoding="utf-8")
     impact = pd.read_csv(summary.augmentation_impact_csv)
     public_metrics = pd.read_csv(summary.public_metrics_csv)
+    compute = pd.read_csv(summary.compute_csv)
     assert summary.aggregation_weights_csv is not None
     assert summary.class_augmentation_weights_csv is not None
     assert summary.aggregation_weights_svg is not None
@@ -252,6 +253,28 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "xgboost_multiclass",
     ]
     assert public_metrics["nll"].tolist() == pytest.approx([0.3, 0.1, 0.2, 0.15])
+    assert compute.columns.tolist() == [
+        "split",
+        "strategy",
+        "forwards_per_image",
+        "relative_compute_vs_all",
+    ]
+    assert compute["split"].tolist() == [
+        "public_val",
+        "public_val",
+        "public_val",
+        "public_val",
+        "private",
+        "private",
+    ]
+    assert compute["strategy"].tolist() == [
+        "learned_topk_uniform",
+        "global_weighted_tta",
+        "class_weighted_tta",
+        "xgboost_multiclass",
+        "clean",
+        "learned_topk_uniform",
+    ]
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert set(class_weights.columns) == {"class_idx", "aug_id", "weight"}
     assert xgboost_importance["feature_importance"].tolist() == pytest.approx([0.1, 0.7, 0.2])
@@ -265,6 +288,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "figures/corrections.svg" in markdown
     assert "figures/selector_history.svg" in markdown
     assert "aggregation_weights.csv" in markdown
+    assert "public_val" in markdown
+    assert "private" in markdown
     assert "global_weighted_tta" in markdown
     assert "class_weighted_tta" in markdown
     assert "xgboost_multiclass" in markdown

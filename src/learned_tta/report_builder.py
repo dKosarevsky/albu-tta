@@ -86,6 +86,7 @@ def build_report_from_artifacts(
 
     tuning = _load_tuning(tuning_path)
     best_k = _json_int(tuning["best_k"])
+    public_split = str(tuning.get("split", "public_val"))
     targets = load_selector_targets(impact_targets_path)
     predicted_gain = predict_selector_scores(
         checkpoint_path=checkpoint_path,
@@ -182,7 +183,11 @@ def build_report_from_artifacts(
 
     build_metrics_table(public_metrics).to_csv(paths.public_metrics_csv, index=False)
     build_metrics_table(private_metrics).to_csv(paths.private_metrics_csv, index=False)
-    build_compute_table(private_metrics).to_csv(paths.compute_csv, index=False)
+    _build_split_compute_table(
+        public_split=public_split,
+        public_metrics=public_metrics,
+        private_metrics=private_metrics,
+    ).to_csv(paths.compute_csv, index=False)
     impact_table.to_csv(paths.augmentation_impact_csv, index=False)
     if paths.aggregation_weights_csv is not None and aggregation_tables.weights is not None:
         aggregation_tables.weights.to_csv(paths.aggregation_weights_csv, index=False)
@@ -235,6 +240,7 @@ def build_report_from_artifacts(
         _results_markdown(
             public_metrics=public_metrics,
             private_metrics=private_metrics,
+            public_split=public_split,
             best_k=best_k,
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
             has_aggregation_weights=aggregation_tables.weights is not None,
@@ -528,6 +534,18 @@ def _complete_metrics(metrics: Mapping[str, float], strategy: str) -> dict[str, 
     return {column: float(metrics[column]) for column in METRIC_COLUMNS[1:]}
 
 
+def _build_split_compute_table(
+    public_split: str,
+    public_metrics: Mapping[str, Mapping[str, float]],
+    private_metrics: Mapping[str, Mapping[str, float]],
+) -> pd.DataFrame:
+    public_compute = build_compute_table(public_metrics)
+    public_compute.insert(0, "split", public_split)
+    private_compute = build_compute_table(private_metrics)
+    private_compute.insert(0, "split", "private")
+    return pd.concat([public_compute, private_compute], ignore_index=True)
+
+
 def _json_int(value: object) -> int:
     if isinstance(value, int):
         return value
@@ -539,6 +557,7 @@ def _json_int(value: object) -> int:
 def _results_markdown(
     public_metrics: dict[str, dict[str, float]],
     private_metrics: dict[str, dict[str, float]],
+    public_split: str,
     best_k: int,
     recall: float,
     has_aggregation_weights: bool,
@@ -549,7 +568,11 @@ def _results_markdown(
 ) -> str:
     public_table = build_metrics_table(public_metrics)
     private_table = build_metrics_table(private_metrics)
-    compute_table = build_compute_table(private_metrics)
+    compute_table = _build_split_compute_table(
+        public_split=public_split,
+        public_metrics=public_metrics,
+        private_metrics=private_metrics,
+    )
     lines = [
         "# albu-tta ResNet50 Case Study",
         "",
