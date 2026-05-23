@@ -73,6 +73,9 @@ weight tables remain interpretable without a separate id lookup.
 `transform_class_impact.csv` groups mean gain, learned selection frequency, and
 oracle frequency by AlbumentationsX transform class for a compact article-level
 view of which transform families matter.
+`results.md` also embeds compact top-N markdown tables for mean-gain
+augmentations, learned selector choices, oracle choices, and transform classes,
+so the main article artifact can be reviewed without opening every CSV first.
 `public_metrics.csv` combines the tuned public-val `learned_topk_uniform` result
 with public-val metrics saved inside the optional learned aggregation artifacts,
 so global, class-specific, and XGBoost stackers can be compared before private

@@ -41,6 +41,10 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert "selector_history.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "transform_class_impact.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "transform_class_impact.svg" in summary.results_md.read_text(encoding="utf-8")
+    assert "Top mean-gain augmentations" in summary.results_md.read_text(encoding="utf-8")
+    assert "Top transform classes by mean gain" in summary.results_md.read_text(
+        encoding="utf-8"
+    )
     assert summary.candidate_ids == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",

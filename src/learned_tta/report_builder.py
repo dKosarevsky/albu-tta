@@ -279,12 +279,14 @@ def build_report_from_artifacts(
             public_split=public_split,
             best_k=best_k,
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
+            impact_table=impact_table,
+            transform_class_impact=transform_class_impact,
+            identity_aug_id=identity_aug_id,
             has_aggregation_weights=aggregation_tables.weights is not None,
             has_class_weights=aggregation_tables.class_weights is not None,
             has_xgboost_importance=xgboost_importance is not None,
             has_corrections=corrections_table is not None,
             has_selector_history=selector_history is not None,
-            has_transform_class_impact=transform_class_impact is not None,
         ),
         encoding="utf-8",
     )
@@ -672,12 +674,14 @@ def _results_markdown(
     public_split: str,
     best_k: int,
     recall: float,
+    impact_table: pd.DataFrame,
+    transform_class_impact: pd.DataFrame | None,
+    identity_aug_id: str,
     has_aggregation_weights: bool,
     has_class_weights: bool,
     has_xgboost_importance: bool,
     has_corrections: bool,
     has_selector_history: bool,
-    has_transform_class_impact: bool,
 ) -> str:
     public_table = build_metrics_table(public_metrics)
     private_table = build_metrics_table(private_metrics)
@@ -711,16 +715,18 @@ def _results_markdown(
         "",
         "- Table: `tables/augmentation_impact.csv`",
         "",
+        *_augmentation_impact_summary_lines(impact_table, identity_aug_id=identity_aug_id),
         "![Gain distribution](figures/gain_distribution.svg)",
         "",
         "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
         "",
     ]
-    if has_transform_class_impact:
+    if transform_class_impact is not None:
         lines.extend(
             [
                 "- Transform-class table: `tables/transform_class_impact.csv`",
                 "",
+                *_transform_class_summary_lines(transform_class_impact),
                 "![Transform-class impact](figures/transform_class_impact.svg)",
                 "",
             ]
@@ -777,6 +783,74 @@ def _results_markdown(
             ]
         )
     return "\n".join(lines)
+
+
+def _augmentation_impact_summary_lines(
+    impact_table: pd.DataFrame,
+    identity_aug_id: str,
+    limit: int = 5,
+) -> list[str]:
+    candidate_table = impact_table.loc[impact_table["aug_id"] != identity_aug_id].copy()
+    if candidate_table.empty:
+        return []
+
+    lines: list[str] = []
+    for title, metric in [
+        ("Top mean-gain augmentations", "mean_gain"),
+        ("Top learned-selection augmentations", "selection_frequency"),
+        ("Top oracle-selection augmentations", "oracle_frequency"),
+    ]:
+        rows = _top_rows(candidate_table, metric=metric, limit=limit)
+        lines.extend(
+            [
+                f"### {title}",
+                "",
+                _markdown_table(rows.loc[:, [*_impact_label_columns(rows), metric]]),
+                "",
+            ]
+        )
+    return lines
+
+
+def _transform_class_summary_lines(
+    transform_class_impact: pd.DataFrame,
+    limit: int = 5,
+) -> list[str]:
+    rows = _top_rows(transform_class_impact, metric="mean_gain", limit=limit)
+    return [
+        "### Top transform classes by mean gain",
+        "",
+        _markdown_table(
+            rows.loc[
+                :,
+                [
+                    "transform_class",
+                    "candidate_count",
+                    "mean_gain",
+                    "selection_frequency",
+                    "oracle_frequency",
+                ],
+            ]
+        ),
+        "",
+    ]
+
+
+def _impact_label_columns(table: pd.DataFrame) -> list[str]:
+    columns = ["aug_id"]
+    for column in ["augmentation_name", "transform_class"]:
+        if column in table.columns:
+            columns.append(column)
+    return columns
+
+
+def _top_rows(table: pd.DataFrame, metric: str, limit: int) -> pd.DataFrame:
+    return (
+        table.assign(_sort_label=table.iloc[:, 0].astype(str))
+        .sort_values([metric, "_sort_label"], ascending=[False, True])
+        .head(limit)
+        .drop(columns="_sort_label")
+    )
 
 
 def _gain_distribution_svg(gain: np.ndarray) -> str:
@@ -1037,7 +1111,7 @@ def _markdown_table(table: pd.DataFrame) -> str:
 
 
 def _format_markdown_value(value: object) -> str:
-    if isinstance(value, float):
+    if isinstance(value, (float, np.floating)):
         return f"{value:.6g}"
     return str(value)
 
