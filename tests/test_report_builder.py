@@ -203,6 +203,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         image_size=16,
         batch_size=2,
         num_workers=0,
+        augmentation_registry_path=Path(__file__).resolve().parents[1]
+        / "configs/augmentations/imagenet100.yaml",
         global_aggregator_path=report_artifacts["global_aggregator"],
         class_aggregator_path=report_artifacts["class_aggregator"],
         xgboost_aggregator_path=report_artifacts["xgboost_aggregator"],
@@ -246,6 +248,16 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_history_csv.exists()
     assert summary.selector_history_svg.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
+    assert impact["augmentation_name"].tolist() == [
+        "identity",
+        "horizontal_flip",
+        "vertical_flip",
+    ]
+    assert impact["transform_class"].tolist() == [
+        "identity",
+        "HorizontalFlip",
+        "VerticalFlip",
+    ]
     assert public_metrics["strategy"].tolist() == [
         "learned_topk_uniform",
         "global_weighted_tta",
@@ -276,8 +288,24 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "learned_topk_uniform",
     ]
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
-    assert set(class_weights.columns) == {"class_idx", "aug_id", "weight"}
+    assert aggregation_weights["augmentation_name"].tolist() == [
+        "identity",
+        "horizontal_flip",
+        "vertical_flip",
+    ]
+    assert set(class_weights.columns) == {
+        "class_idx",
+        "aug_id",
+        "augmentation_name",
+        "transform_class",
+        "weight",
+    }
     assert xgboost_importance["feature_importance"].tolist() == pytest.approx([0.1, 0.7, 0.2])
+    assert xgboost_importance["augmentation_name"].tolist() == [
+        "identity",
+        "horizontal_flip",
+        "vertical_flip",
+    ]
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])

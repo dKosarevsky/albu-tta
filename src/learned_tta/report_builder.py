@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.config import load_experiment_config
 from learned_tta.reporting import (
     METRIC_COLUMNS,
@@ -68,6 +69,7 @@ def build_report_from_artifacts(
     image_size: int,
     batch_size: int,
     num_workers: int,
+    augmentation_registry_path: Path | None = None,
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
     xgboost_aggregator_path: Path | None = None,
@@ -117,21 +119,35 @@ def build_report_from_artifacts(
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
     )
+    augmentation_metadata = _augmentation_metadata_table(
+        aug_ids=targets.aug_ids,
+        registry_path=augmentation_registry_path,
+    )
     impact_table = build_augmentation_impact_table(
         aug_ids=targets.aug_ids,
         gain=targets.gain,
         selected_aug_ids=selected_aug_ids,
         oracle_aug_ids=oracle_aug_ids,
     )
+    impact_table = _attach_augmentation_metadata(impact_table, augmentation_metadata)
     aggregation_tables = _build_aggregation_tables(
         aug_ids=targets.aug_ids,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
     )
+    aggregation_tables = _attach_aggregation_metadata(
+        aggregation_tables,
+        augmentation_metadata,
+    )
     xgboost_importance = _build_xgboost_feature_importance_table(
         aug_ids=targets.aug_ids,
         xgboost_aggregator_path=xgboost_aggregator_path,
     )
+    if xgboost_importance is not None:
+        xgboost_importance = _attach_augmentation_metadata(
+            xgboost_importance,
+            augmentation_metadata,
+        )
     corrections_table = _read_corrections_csv(corrections_path) if corrections_path else None
     selector_history = (
         _read_selector_history_csv(selector_history_path) if selector_history_path else None
@@ -317,6 +333,7 @@ def build_report_from_config(
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
+        augmentation_registry_path=config.augmentations.registry_path,
         device=device,
         identity_aug_id=config.augmentations.identity_id,
     )
@@ -457,6 +474,55 @@ def _build_aggregation_tables(
         )
 
     return _AggregationTables(weights=weights_table, class_weights=class_table)
+
+
+def _attach_aggregation_metadata(
+    tables: _AggregationTables,
+    metadata: pd.DataFrame | None,
+) -> _AggregationTables:
+    return _AggregationTables(
+        weights=(
+            _attach_augmentation_metadata(tables.weights, metadata)
+            if tables.weights is not None
+            else None
+        ),
+        class_weights=(
+            _attach_augmentation_metadata(tables.class_weights, metadata)
+            if tables.class_weights is not None
+            else None
+        ),
+    )
+
+
+def _augmentation_metadata_table(
+    aug_ids: list[str],
+    registry_path: Path | None,
+) -> pd.DataFrame | None:
+    if registry_path is None:
+        return None
+
+    candidates = load_augmentation_registry(registry_path)
+    metadata_by_id = {
+        candidate.id: {
+            "aug_id": candidate.id,
+            "augmentation_name": candidate.name,
+            "transform_class": candidate.class_name or "identity",
+        }
+        for candidate in candidates
+    }
+    missing = [aug_id for aug_id in aug_ids if aug_id not in metadata_by_id]
+    if missing:
+        raise ValueError(f"augmentation registry is missing ids: {missing}")
+    return pd.DataFrame([metadata_by_id[aug_id] for aug_id in aug_ids])
+
+
+def _attach_augmentation_metadata(
+    table: pd.DataFrame,
+    metadata: pd.DataFrame | None,
+) -> pd.DataFrame:
+    if metadata is None:
+        return table
+    return table.merge(metadata, on="aug_id", how="left", validate="many_to_one")
 
 
 def _build_xgboost_feature_importance_table(

@@ -205,6 +205,7 @@ def run_smoke_e2e(
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
+        augmentation_registry_path=config.augmentations.registry_path,
         device=device,
         identity_aug_id=config.augmentations.identity_id,
     )
