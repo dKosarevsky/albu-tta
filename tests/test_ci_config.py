@@ -75,6 +75,8 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
         "transform_class_impact.csv",
         "transform_class_impact.svg",
         "top-N markdown tables",
+        "learned aggregation weights",
+        "XGBoost feature importance",
         "gain_distribution.svg",
         "oracle_overlap.svg",
         "cache-teacher --split private",

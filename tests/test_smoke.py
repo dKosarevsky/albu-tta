@@ -45,6 +45,12 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert "Top transform classes by mean gain" in summary.results_md.read_text(
         encoding="utf-8"
     )
+    assert "Top global aggregation weights" in summary.results_md.read_text(
+        encoding="utf-8"
+    )
+    assert "Top class-mean aggregation weights" in summary.results_md.read_text(
+        encoding="utf-8"
+    )
     assert summary.candidate_ids == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",

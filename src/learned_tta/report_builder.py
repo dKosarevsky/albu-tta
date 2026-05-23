@@ -281,10 +281,10 @@ def build_report_from_artifacts(
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
             impact_table=impact_table,
             transform_class_impact=transform_class_impact,
+            aggregation_weights=aggregation_tables.weights,
+            xgboost_importance=xgboost_importance,
             identity_aug_id=identity_aug_id,
-            has_aggregation_weights=aggregation_tables.weights is not None,
             has_class_weights=aggregation_tables.class_weights is not None,
-            has_xgboost_importance=xgboost_importance is not None,
             has_corrections=corrections_table is not None,
             has_selector_history=selector_history is not None,
         ),
@@ -676,10 +676,10 @@ def _results_markdown(
     recall: float,
     impact_table: pd.DataFrame,
     transform_class_impact: pd.DataFrame | None,
+    aggregation_weights: pd.DataFrame | None,
+    xgboost_importance: pd.DataFrame | None,
     identity_aug_id: str,
-    has_aggregation_weights: bool,
     has_class_weights: bool,
-    has_xgboost_importance: bool,
     has_corrections: bool,
     has_selector_history: bool,
 ) -> str:
@@ -731,13 +731,14 @@ def _results_markdown(
                 "",
             ]
         )
-    if has_aggregation_weights:
+    if aggregation_weights is not None:
         lines.extend(
             [
                 "## Learned Aggregation Weights",
                 "",
                 "- Table: `tables/aggregation_weights.csv`",
                 "",
+                *_aggregation_weight_summary_lines(aggregation_weights),
                 "![Aggregation weights](figures/aggregation_weights.svg)",
                 "",
             ]
@@ -749,13 +750,14 @@ def _results_markdown(
                     "",
                 ]
             )
-    if has_xgboost_importance:
+    if xgboost_importance is not None:
         lines.extend(
             [
                 "## XGBoost Stacker Diagnostics",
                 "",
                 "- Table: `tables/xgboost_feature_importance.csv`",
                 "",
+                *_xgboost_importance_summary_lines(xgboost_importance),
                 "![XGBoost feature importance](figures/xgboost_feature_importance.svg)",
                 "",
             ]
@@ -832,6 +834,44 @@ def _transform_class_summary_lines(
                 ],
             ]
         ),
+        "",
+    ]
+
+
+def _aggregation_weight_summary_lines(
+    aggregation_weights: pd.DataFrame,
+    limit: int = 5,
+) -> list[str]:
+    summaries = [
+        ("Top global aggregation weights", "global_weight"),
+        ("Top class-mean aggregation weights", "class_mean_weight"),
+        ("Top class-active aggregation weights", "class_active_frequency"),
+    ]
+    lines: list[str] = []
+    for title, metric in summaries:
+        if metric not in aggregation_weights.columns:
+            continue
+        rows = _top_rows(aggregation_weights, metric=metric, limit=limit)
+        lines.extend(
+            [
+                f"### {title}",
+                "",
+                _markdown_table(rows.loc[:, [*_impact_label_columns(rows), metric]]),
+                "",
+            ]
+        )
+    return lines
+
+
+def _xgboost_importance_summary_lines(
+    xgboost_importance: pd.DataFrame,
+    limit: int = 5,
+) -> list[str]:
+    rows = _top_rows(xgboost_importance, metric="feature_importance", limit=limit)
+    return [
+        "### Top XGBoost feature importance",
+        "",
+        _markdown_table(rows.loc[:, [*_impact_label_columns(rows), "feature_importance"]]),
         "",
     ]
 
