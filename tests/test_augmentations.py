@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
 
 from learned_tta.augmentations import (
     apply_candidate,
+    build_augmentation_audit,
     load_augmentation_registry,
     validate_augmentation_registry,
 )
@@ -38,3 +40,27 @@ def test_augmentation_registry_outputs_are_deterministic_with_fixed_seed() -> No
         assert np.array_equal(first, second), candidate.id
         assert first.shape == image.shape, candidate.id
         assert first.dtype == image.dtype, candidate.id
+
+
+def test_build_augmentation_audit_is_stable_json_payload() -> None:
+    candidates = load_augmentation_registry(REGISTRY_PATH)
+
+    audit = build_augmentation_audit(candidates)
+    encoded = json.dumps(audit, sort_keys=True)
+
+    assert "aug_000" in encoded
+    assert audit["version"] == 1
+    assert audit["candidate_count"] == 100
+    assert audit["identity_id"] == "aug_000"
+    assert audit["candidates"][0] == {
+        "id": "aug_000",
+        "name": "identity",
+        "class_name": None,
+        "params": {},
+    }
+    assert audit["candidates"][19]["id"] == "aug_019"
+    assert audit["candidates"][19]["params"] == {
+        "brightness_range": [0.1, 0.1],
+        "contrast_range": [0.0, 0.0],
+        "p": 1.0,
+    }

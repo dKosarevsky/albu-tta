@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,30 @@ def test_cli_validate_augmentations_reports_candidate_count(
     captured = capsys.readouterr()
 
     assert "validated 100 augmentation candidates" in captured.out
+
+
+def test_cli_validate_augmentations_writes_audit_artifact(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    audit_path = tmp_path / "augmentation_registry_audit.json"
+
+    main(
+        [
+            "validate-augmentations",
+            "--config",
+            str(CONFIG_PATH),
+            "--audit-output",
+            str(audit_path),
+        ]
+    )
+    captured = capsys.readouterr()
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+
+    assert f"wrote audit {audit_path}" in captured.out
+    assert audit["candidate_count"] == 100
+    assert audit["identity_id"] == "aug_000"
+    assert audit["candidates"][0]["class_name"] is None
 
 
 def test_cli_make_splits_writes_manifests(
