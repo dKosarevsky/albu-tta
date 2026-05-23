@@ -29,6 +29,7 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert summary.selector_checkpoint.exists()
     assert summary.tuning_json.exists()
     assert summary.private_metrics_csv.exists()
+    assert (summary.reports_dir / "tables" / "private_metric_deltas.csv").exists()
     assert (summary.selector_dir / "selector_history.csv").exists()
     assert (summary.reports_dir / "tables" / "corrections.csv").exists()
     assert (summary.reports_dir / "tables" / "selector_history.csv").exists()
@@ -40,6 +41,10 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert (summary.reports_dir / "figures" / "transform_class_impact.svg").exists()
     assert (summary.reports_dir / "figures" / "transform_class_aggregation.svg").exists()
     assert "corrections.csv" in summary.results_md.read_text(encoding="utf-8")
+    assert "private_metric_deltas.csv" in summary.results_md.read_text(encoding="utf-8")
+    assert "Private metric deltas vs clean" in summary.results_md.read_text(
+        encoding="utf-8"
+    )
     assert "selector_history.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "transform_class_impact.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "transform_class_impact.svg" in summary.results_md.read_text(encoding="utf-8")

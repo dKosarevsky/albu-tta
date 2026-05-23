@@ -241,6 +241,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.best_k == 1
     assert summary.public_metrics_csv.exists()
     assert summary.private_metrics_csv.exists()
+    assert summary.private_metric_deltas_csv.exists()
     assert summary.compute_csv.exists()
     assert summary.gain_distribution_svg.exists()
     assert summary.oracle_overlap_svg.exists()
@@ -297,6 +298,19 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "clean",
         "learned_topk_uniform",
     ]
+    private_deltas = pd.read_csv(summary.private_metric_deltas_csv)
+    assert private_deltas.columns.tolist() == [
+        "strategy",
+        "top1_delta_vs_clean",
+        "top5_delta_vs_clean",
+        "nll_delta_vs_clean",
+        "ece_delta_vs_clean",
+        "forwards_per_image",
+        "relative_compute_vs_all",
+    ]
+    assert private_deltas["strategy"].tolist() == ["clean", "learned_topk_uniform"]
+    assert private_deltas["top1_delta_vs_clean"].tolist() == pytest.approx([0.0, 0.5])
+    assert private_deltas["nll_delta_vs_clean"].tolist() == pytest.approx([0.0, -0.4])
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert aggregation_weights["augmentation_name"].tolist() == [
         "identity",
@@ -368,6 +382,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "| aug_001 | horizontal_flip | HorizontalFlip | 0.7 |" in markdown
     assert "| VerticalFlip | 1 |" in markdown
     assert "aggregation_weights.csv" in markdown
+    assert "private_metric_deltas.csv" in markdown
+    assert "Private metric deltas vs clean" in markdown
+    assert "| learned_topk_uniform | 0.5 | 0 | -0.4 | -0.05 |" in markdown
     assert "public_val" in markdown
     assert "private" in markdown
     assert "global_weighted_tta" in markdown

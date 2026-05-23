@@ -69,6 +69,7 @@ def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
         "xgboost_multiclass",
         "xgboost_feature_importance.csv",
         "xgboost_feature_importance.svg",
+        "private_metric_deltas.csv",
         "active_threshold",
         "augmentation_name",
         "transform_class",

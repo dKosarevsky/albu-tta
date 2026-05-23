@@ -51,6 +51,7 @@ artifacts are present, and copies private clean-vs-TTA diagnostics when
 reports/resnet50_a1_in1k/tables/aggregation_weights.csv
 reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
 reports/resnet50_a1_in1k/tables/xgboost_feature_importance.csv
+reports/resnet50_a1_in1k/tables/private_metric_deltas.csv
 reports/resnet50_a1_in1k/tables/corrections.csv
 reports/resnet50_a1_in1k/tables/selector_history.csv
 reports/resnet50_a1_in1k/tables/transform_class_impact.csv
@@ -86,6 +87,9 @@ weight table with a family-level view.
 with public-val metrics saved inside the optional learned aggregation artifacts,
 so global, class-specific, and XGBoost stackers can be compared before private
 evaluation.
+`private_metric_deltas.csv` compares each private strategy against clean
+ResNet50 on top-1, top-5, NLL, ECE, and compute, making the final trade-off
+table explicit.
 `compute.csv` keeps compute rows for both `public_val` and `private` with an
 explicit `split` column, so public tuning diagnostics and final private compute
 costs are not mixed implicitly.
