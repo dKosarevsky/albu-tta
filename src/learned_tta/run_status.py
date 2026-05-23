@@ -20,6 +20,8 @@ class FullRunStepStatus:
     outputs: tuple[Path, ...]
     command: str
     required: bool
+    missing_outputs: tuple[Path, ...]
+    extra_outputs: tuple[Path, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +37,10 @@ class FullRunStatusSummary:
     next_step: FullRunStepStatus | None
 
 
+def _empty_outputs() -> tuple[Path, ...]:
+    return ()
+
+
 @dataclass(frozen=True, slots=True)
 class _StepSpec:
     name: str
@@ -42,6 +48,7 @@ class _StepSpec:
     command: str
     complete: Callable[[], bool]
     required: bool = True
+    extra_outputs: Callable[[], tuple[Path, ...]] = _empty_outputs
 
 
 def inspect_full_run_status(config_path: Path) -> FullRunStatusSummary:
@@ -213,13 +220,7 @@ def _build_step_statuses(
         ),
     )
     return [
-        FullRunStepStatus(
-            name=spec.name,
-            complete=spec.complete(),
-            outputs=spec.outputs,
-            command=spec.command,
-            required=spec.required,
-        )
+        _build_step_status(spec)
         for spec in specs
     ]
 
@@ -249,11 +250,28 @@ def _cache_step_spec(
             split,
             expected_aug_ids=expected_aug_ids,
         ),
+        extra_outputs=lambda: _extra_teacher_cache_outputs(
+            config.artifacts.teacher_cache_dir,
+            split,
+            expected_aug_ids=expected_aug_ids,
+        ),
     )
 
 
 def _all_exist(paths: tuple[Path, ...]) -> bool:
     return all(path.exists() for path in paths)
+
+
+def _build_step_status(spec: _StepSpec) -> FullRunStepStatus:
+    return FullRunStepStatus(
+        name=spec.name,
+        complete=spec.complete(),
+        outputs=spec.outputs,
+        command=spec.command,
+        required=spec.required,
+        missing_outputs=tuple(path for path in spec.outputs if not path.exists()),
+        extra_outputs=spec.extra_outputs(),
+    )
 
 
 def _aggregator_path(output_dir: Path, split: str, method: str) -> Path:
@@ -288,11 +306,31 @@ def _has_complete_teacher_cache(
     return parquet_stems == expected_stems and logits_stems == expected_stems
 
 
+def _extra_teacher_cache_outputs(
+    cache_dir: Path,
+    split: str,
+    expected_aug_ids: tuple[str, ...],
+) -> tuple[Path, ...]:
+    expected_stems = {f"{split}__{aug_id}" for aug_id in expected_aug_ids}
+    extra_outputs = []
+    for path in sorted(cache_dir.glob(f"{split}__*.parquet")):
+        if path.name.removesuffix(".parquet") not in expected_stems:
+            extra_outputs.append(path)
+    for path in sorted(cache_dir.glob(f"{split}__*.logits.npy")):
+        if path.name.removesuffix(".logits.npy") not in expected_stems:
+            extra_outputs.append(path)
+    return tuple(extra_outputs)
+
+
 def _step_to_dict(step: FullRunStepStatus) -> dict[str, Any]:
     return {
         "name": step.name,
         "complete": step.complete,
         "required": step.required,
         "outputs": [str(path) for path in step.outputs],
+        "missing_output_count": len(step.missing_outputs),
+        "missing_outputs": [str(path) for path in step.missing_outputs],
+        "extra_output_count": len(step.extra_outputs),
+        "extra_outputs": [str(path) for path in step.extra_outputs],
         "command": step.command,
     }

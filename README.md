@@ -218,7 +218,9 @@ models. The text output separates required steps from the optional XGBoost
 stacker, and `--format json` exposes the same required/optional status for
 external run scripts.
 The status check requires every configured augmentation candidate to have metadata and logits
-shard files before a teacher-cache split is marked complete.
+shard files before a teacher-cache split is marked complete. Incomplete steps
+show `missing=` and `extra=` counts in text output; JSON output includes
+`missing_outputs` and `extra_outputs` path lists for resumable run scripts.
 
 When private evaluation artifacts live outside the report directory, pass
 `--corrections /path/to/corrections.csv` to `build-report`.

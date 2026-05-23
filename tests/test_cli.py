@@ -106,6 +106,7 @@ def test_cli_full_run_status_reports_next_step(capsys: pytest.CaptureFixture[str
     assert "full run status:" in captured.out
     assert "required steps complete" in captured.out
     assert "optional:" in captured.out
+    assert "missing=1" in captured.out
     assert "next:" in captured.out
     assert "validate_augmentations" in captured.out
 
@@ -120,7 +121,12 @@ def test_cli_full_run_status_can_emit_json(capsys: pytest.CaptureFixture[str]) -
     assert payload["total_required_steps"] == 12
     assert payload["next_step"]["name"] == "validate_augmentations"
     assert payload["steps"][0]["required"] is True
+    assert payload["steps"][0]["missing_output_count"] == 1
+    assert payload["steps"][0]["extra_output_count"] == 0
     assert payload["steps"][0]["outputs"][0].endswith("augmentation_registry_audit.json")
+    assert payload["steps"][0]["missing_outputs"][0].endswith(
+        "augmentation_registry_audit.json"
+    )
 
 
 def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int = 50) -> Path:

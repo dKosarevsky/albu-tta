@@ -507,7 +507,12 @@ def _cmd_full_run_status(config_path: Path, output_format: str) -> None:
     for step in summary.steps:
         marker = "x" if step.complete else " "
         label = "optional: " if not step.required else ""
-        print(f"[{marker}] {label}{step.name}")
+        diagnostics = (
+            f" missing={len(step.missing_outputs)} extra={len(step.extra_outputs)}"
+            if not step.complete
+            else ""
+        )
+        print(f"[{marker}] {label}{step.name}{diagnostics}")
     if summary.next_step is None:
         print("next: none")
     else:

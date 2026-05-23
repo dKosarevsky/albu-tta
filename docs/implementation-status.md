@@ -14,7 +14,7 @@ Implemented:
 - Private evaluation artifacts with metrics, compute, clean-vs-TTA corrections, and metric deltas against clean.
 - Final report builder with tables, SVG plots, top-N markdown summaries, transform-class impact, transform-class aggregation, selector history, XGBoost importance, and result text that avoids SOTA claims.
 - Synthetic smoke run covering manifests, teacher cache, target build, selector training, tuning, aggregation training, private evaluation, and final report generation.
-- Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates.
+- Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates and missing/extra artifact diagnostics.
 
 Not part of the implementation-complete status:
 
