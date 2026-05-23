@@ -9,6 +9,9 @@
 
 Learned test-time augmentation selector experiments with AlbumentationsX.
 
+Implementation status for the planned lightweight pipeline is tracked in
+[`docs/implementation-status.md`](docs/implementation-status.md).
+
 ## Methods
 
 The project now keeps two TTA learning layers separate.
