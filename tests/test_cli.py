@@ -129,6 +129,25 @@ def test_cli_full_run_status_can_emit_json(capsys: pytest.CaptureFixture[str]) -
     )
 
 
+def test_cli_full_run_status_can_fail_on_incomplete_required_steps(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "full-run-status",
+                "--config",
+                str(CONFIG_PATH),
+                "--fail-on-incomplete",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 1
+    assert "next: validate_augmentations" in captured.out
+
+
 def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int = 50) -> Path:
     val_root = root / "val"
     for class_idx in range(classes):

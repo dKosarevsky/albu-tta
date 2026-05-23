@@ -15,6 +15,7 @@ Implemented:
 - Final report builder with tables, SVG plots, top-N markdown summaries, transform-class impact, transform-class aggregation, selector history, XGBoost importance, and result text that avoids SOTA claims.
 - Synthetic smoke run covering manifests, teacher cache, target build, selector training, tuning, aggregation training, private evaluation, and final report generation.
 - Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates and missing/extra artifact diagnostics.
+- Script-friendly full-run status exit mode via `--fail-on-incomplete`.
 
 Not part of the implementation-complete status:
 
@@ -27,7 +28,8 @@ Next research step:
 Run `check-full-run` against the local ImageNet-val directory, run the full
 experiment with `resnet50.a1_in1k`, use `full-run-status` after each expensive
 step to confirm the next missing required artifact, use `--format json` if the
-GPU run is driven by scripts, review `reports/resnet50_a1_in1k/results.md`,
-then decide which additional timm architectures are worth running for the
-preprint. The optional XGBoost stacker is tracked separately and does not block
-the required full-run status.
+GPU run is driven by scripts, use `--fail-on-incomplete` when a shell step
+should stop on incomplete required artifacts, review
+`reports/resnet50_a1_in1k/results.md`, then decide which additional timm
+architectures are worth running for the preprint. The optional XGBoost stacker
+is tracked separately and does not block the required full-run status.
