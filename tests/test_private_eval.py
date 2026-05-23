@@ -21,21 +21,21 @@ from learned_tta.stacking import AggregationArtifact, XGBoostAggregationArtifact
 def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
     manifest_path = _write_manifest(tmp_path, split="private", count=2)
     cache_dir = _write_cache(tmp_path / "teacher_cache")
-    checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=2)
+    checkpoint_path = _write_selector_checkpoint(tmp_path / "selector_best.pt", output_dim=3)
     global_aggregator_path = tmp_path / "global_aggregator.json"
     class_aggregator_path = tmp_path / "class_aggregator.json"
     xgboost_aggregator_path = tmp_path / "xgboost_aggregator.json"
     AggregationArtifact(
         method="global-nonnegative",
-        aug_ids=["aug_000", "aug_001"],
-        weights=np.array([0.0, 1.0], dtype=np.float32),
+        aug_ids=["aug_000", "aug_001", "aug_002"],
+        weights=np.array([0.0, 1.0, 0.0], dtype=np.float32),
         active_threshold=1e-6,
         metrics={"nll": 0.0},
     ).save(global_aggregator_path)
     AggregationArtifact(
         method="class-nonnegative",
-        aug_ids=["aug_000", "aug_001"],
-        weights=np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        aug_ids=["aug_000", "aug_001", "aug_002"],
+        weights=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32),
         active_threshold=1e-6,
         metrics={"nll": 0.0},
     ).save(class_aggregator_path)
@@ -43,11 +43,11 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
     xgboost_model_path.write_text("fake xgboost model", encoding="utf-8")
     XGBoostAggregationArtifact(
         method="xgboost-multiclass",
-        aug_ids=["aug_000", "aug_001"],
+        aug_ids=["aug_000", "aug_001", "aug_002"],
         model_path=xgboost_model_path,
         num_classes=2,
-        feature_count=4,
-        feature_importance=np.array([0.4, 0.6], dtype=np.float32),
+        feature_count=6,
+        feature_importance=np.array([0.2, 0.6, 0.2], dtype=np.float32),
         metrics={"nll": 0.0},
     ).save(xgboost_aggregator_path)
     tuning_path = tmp_path / "public_val_tta_tuning.json"
@@ -76,11 +76,11 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
         checkpoint_path=private_eval_artifacts["checkpoint"],
         tuning_path=private_eval_artifacts["tuning"],
         output_dir=tmp_path / "reports",
-        aug_ids=["aug_000", "aug_001"],
+        aug_ids=["aug_000", "aug_001", "aug_002"],
         image_size=16,
         batch_size=2,
         num_workers=0,
-        random_seeds=[1, 2],
+        random_seeds=[1, 5],
         global_aggregator_path=private_eval_artifacts["global_aggregator"],
         class_aggregator_path=private_eval_artifacts["class_aggregator"],
         xgboost_aggregator_path=private_eval_artifacts["xgboost_aggregator"],
@@ -116,7 +116,11 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
         "both_wrong",
         "num_images",
     }
-    assert (set(table["strategy"]) - {"random_topk"}) <= set(corrections["strategy"])
+    assert set(table["strategy"]) <= set(corrections["strategy"])
+    random_row = corrections[corrections["strategy"] == "random_topk"].iloc[0]
+    assert random_row["clean_correct"] == pytest.approx(2.0)
+    assert random_row["tta_correct"] == pytest.approx(1.5)
+    assert random_row["clean_right_tta_wrong"] == pytest.approx(0.5)
 
 
 def test_evaluate_private_cli_writes_private_metrics(
@@ -147,6 +151,8 @@ def test_evaluate_private_cli_writes_private_metrics(
             "aug_000",
             "--candidate-id",
             "aug_001",
+            "--candidate-id",
+            "aug_002",
             "--batch-size",
             "2",
             "--num-workers",
@@ -205,6 +211,16 @@ def _write_cache(cache_dir: Path) -> Path:
             logits=np.array([[4.0, 0.0], [0.0, 1.0]], dtype=np.float32),
         ),
     )
+    write_teacher_shard(
+        cache_dir,
+        TeacherShard(
+            split="private",
+            aug_id="aug_002",
+            image_ids=image_ids,
+            class_idxs=class_idxs,
+            logits=np.array([[4.0, 0.0], [3.0, 0.0]], dtype=np.float32),
+        ),
+    )
     return cache_dir
 
 
@@ -230,7 +246,7 @@ def _install_fake_xgboost(monkeypatch: pytest.MonkeyPatch) -> None:
             assert Path(path).exists()
 
         def predict_proba(self, features: np.ndarray) -> np.ndarray:
-            assert features.shape == (2, 4)
+            assert features.shape == (2, 6)
             return np.array([[0.9, 0.1], [0.1, 0.9]], dtype=np.float32)
 
     monkeypatch.setitem(
