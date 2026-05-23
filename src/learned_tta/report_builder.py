@@ -51,6 +51,7 @@ class ReportBuildSummary:
     xgboost_feature_importance_svg: Path | None
     corrections_svg: Path | None
     selector_history_svg: Path | None
+    transform_class_impact_svg: Path | None
     best_k: int
 
 
@@ -201,6 +202,11 @@ def build_report_from_artifacts(
         selector_history_svg=(
             figures_dir / "selector_history.svg" if selector_history is not None else None
         ),
+        transform_class_impact_svg=(
+            figures_dir / "transform_class_impact.svg"
+            if transform_class_impact is not None
+            else None
+        ),
         best_k=best_k,
     )
 
@@ -259,6 +265,11 @@ def build_report_from_artifacts(
     if paths.selector_history_svg is not None and selector_history is not None:
         paths.selector_history_svg.write_text(
             _selector_history_svg(selector_history),
+            encoding="utf-8",
+        )
+    if paths.transform_class_impact_svg is not None and transform_class_impact is not None:
+        paths.transform_class_impact_svg.write_text(
+            _transform_class_impact_svg(transform_class_impact),
             encoding="utf-8",
         )
     paths.results_md.write_text(
@@ -710,6 +721,8 @@ def _results_markdown(
             [
                 "- Transform-class table: `tables/transform_class_impact.csv`",
                 "",
+                "![Transform-class impact](figures/transform_class_impact.svg)",
+                "",
             ]
         )
     if has_aggregation_weights:
@@ -815,6 +828,26 @@ def _xgboost_feature_importance_svg(table: pd.DataFrame) -> str:
         labels=table["aug_id"].astype(str).tolist(),
         values=table["feature_importance"].astype(float).tolist(),
         y_label="importance",
+    )
+
+
+def _transform_class_impact_svg(table: pd.DataFrame) -> str:
+    return _grouped_bar_svg(
+        title="Transform-class Selection Frequencies",
+        labels=table["transform_class"].astype(str).tolist(),
+        series=[
+            (
+                "learned selection",
+                table["selection_frequency"].astype(float).tolist(),
+                "#2f6f9f",
+            ),
+            (
+                "oracle selection",
+                table["oracle_frequency"].astype(float).tolist(),
+                "#8a5a9f",
+            ),
+        ],
+        y_label="frequency",
     )
 
 

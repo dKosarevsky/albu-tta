@@ -60,6 +60,7 @@ reports/resnet50_a1_in1k/figures/aggregation_weights.svg
 reports/resnet50_a1_in1k/figures/xgboost_feature_importance.svg
 reports/resnet50_a1_in1k/figures/corrections.svg
 reports/resnet50_a1_in1k/figures/selector_history.svg
+reports/resnet50_a1_in1k/figures/transform_class_impact.svg
 ```
 
 `aggregation_weights.csv` is the compact table for the article: global weight,

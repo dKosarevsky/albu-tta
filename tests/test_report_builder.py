@@ -227,6 +227,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_history_csv is not None
     assert summary.selector_history_svg is not None
     assert summary.transform_class_impact_csv is not None
+    assert summary.transform_class_impact_svg is not None
     aggregation_weights = pd.read_csv(summary.aggregation_weights_csv)
     class_weights = pd.read_csv(summary.class_augmentation_weights_csv)
     xgboost_importance = pd.read_csv(summary.xgboost_feature_importance_csv)
@@ -250,6 +251,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_history_csv.exists()
     assert summary.selector_history_svg.exists()
     assert summary.transform_class_impact_csv.exists()
+    assert summary.transform_class_impact_svg.exists()
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",
@@ -331,6 +333,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "figures/xgboost_feature_importance.svg" in markdown
     assert "figures/corrections.svg" in markdown
     assert "figures/selector_history.svg" in markdown
+    assert "figures/transform_class_impact.svg" in markdown
     assert "aggregation_weights.csv" in markdown
     assert "public_val" in markdown
     assert "private" in markdown
