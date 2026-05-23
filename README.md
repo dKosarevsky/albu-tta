@@ -65,6 +65,9 @@ reports/resnet50_a1_in1k/figures/selector_history.svg
 active flag, mean class weight, max class weight, and class activation frequency
 per augmentation. The class-level long table is kept for deeper diagnosis of
 which ImageNet classes benefit from which AlbumentationsX transforms.
+Augmentation-level report tables include `augmentation_name` and
+`transform_class` columns resolved from the registry, so impact and learned
+weight tables remain interpretable without a separate id lookup.
 `public_metrics.csv` combines the tuned public-val `learned_topk_uniform` result
 with public-val metrics saved inside the optional learned aggregation artifacts,
 so global, class-specific, and XGBoost stackers can be compared before private
