@@ -77,6 +77,8 @@ which augmentation candidates the stacker uses most.
 where it breaks an originally correct clean prediction. This follows the TTA
 diagnostic framing from "Better Aggregation in Test-Time Augmentation": average
 dataset gain is not enough, because TTA can help and hurt different images.
+For `random_topk`, correction counts are averaged across the same random seeds
+used for the private metric row.
 
 ## Smoke Run
 

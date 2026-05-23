@@ -37,6 +37,7 @@ from learned_tta.tta_eval import (
     global_weighted_probabilities,
     learned_topk_selection,
     oracle_topk_selection,
+    random_topk_selection,
     weighted_average_probabilities,
 )
 from learned_tta.tta_tuning import predict_selector_scores
@@ -112,6 +113,7 @@ def evaluate_private_from_artifacts(
         predicted_gain=predicted_gain,
         identity_aug_id=identity_aug_id,
         best_k=best_k,
+        random_seeds=random_seeds,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
@@ -296,6 +298,7 @@ def _build_private_corrections(
     predicted_gain: np.ndarray,
     identity_aug_id: str,
     best_k: int,
+    random_seeds: list[int],
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
     xgboost_aggregator_path: Path | None,
@@ -316,11 +319,56 @@ def _build_private_corrections(
         for strategy, probabilities in probabilities_by_strategy.items()
     }
     clean_predictions = predictions_by_strategy["clean"]
-    return build_correction_table(
+    corrections = build_correction_table(
         clean_correct=clean_predictions == class_idxs,
         predictions_by_strategy=predictions_by_strategy,
         class_idxs=class_idxs,
     )
+    random_row = _random_topk_correction_row(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        identity_aug_id=identity_aug_id,
+        best_k=best_k,
+        random_seeds=random_seeds,
+        clean_correct=clean_predictions == class_idxs,
+    )
+    return pd.concat([corrections, random_row], ignore_index=True)
+
+
+def _random_topk_correction_row(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    identity_aug_id: str,
+    best_k: int,
+    random_seeds: list[int],
+    clean_correct: np.ndarray,
+) -> pd.DataFrame:
+    rows = []
+    for seed in random_seeds:
+        selected_aug_ids = random_topk_selection(
+            aug_ids=aug_ids,
+            num_images=len(class_idxs),
+            identity_aug_id=identity_aug_id,
+            k=best_k,
+            seed=seed,
+        )
+        probabilities = _average_per_image_probabilities(logits_by_aug, selected_aug_ids)
+        rows.append(
+            build_correction_table(
+                clean_correct=clean_correct,
+                predictions_by_strategy={"random_topk": probabilities.argmax(axis=1)},
+                class_idxs=class_idxs,
+            ).iloc[0]
+        )
+    table = pd.DataFrame(rows)
+    averaged = {
+        column: float(table[column].mean())
+        for column in table.columns
+        if column != "strategy"
+    }
+    return pd.DataFrame([{"strategy": "random_topk", **averaged}])
 
 
 def _private_probabilities_by_strategy(
