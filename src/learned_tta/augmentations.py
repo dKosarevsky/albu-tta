@@ -96,12 +96,13 @@ def validate_augmentation_registry(
             raise ValueError(f"{candidate.id} must set p=1.0")
 
 
-def build_augmentation_audit(candidates: list[AugmentationCandidate]) -> dict[str, Any]:
+def build_augmentation_audit(candidates: list[AugmentationCandidate], seed: int) -> dict[str, Any]:
     """Build a stable JSON-ready audit payload for the augmentation registry."""
 
     identity_id = next((candidate.id for candidate in candidates if candidate.is_identity), None)
     return {
         "version": 1,
+        "seed": int(seed),
         "candidate_count": len(candidates),
         "identity_id": identity_id,
         "candidates": [
@@ -110,6 +111,7 @@ def build_augmentation_audit(candidates: list[AugmentationCandidate]) -> dict[st
                 "name": candidate.name,
                 "class_name": candidate.class_name,
                 "params": _json_ready(candidate.params),
+                "serialized_transform": _serialized_transform(candidate, seed=seed),
             }
             for candidate in candidates
         ],
@@ -119,13 +121,14 @@ def build_augmentation_audit(candidates: list[AugmentationCandidate]) -> dict[st
 def write_augmentation_audit(
     candidates: list[AugmentationCandidate],
     output_path: Path,
+    seed: int,
 ) -> Path:
     """Write a stable registry audit JSON artifact."""
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        json.dumps(build_augmentation_audit(candidates), indent=2, sort_keys=True),
+        json.dumps(build_augmentation_audit(candidates, seed=seed), indent=2, sort_keys=True),
         encoding="utf-8",
     )
     return output_path
@@ -157,3 +160,10 @@ def apply_candidate(
 
 def _json_ready(value: Any) -> Any:
     return json.loads(json.dumps(value, sort_keys=True))
+
+
+def _serialized_transform(candidate: AugmentationCandidate, seed: int) -> dict[str, Any] | None:
+    pipeline = instantiate_candidate(candidate, seed=seed)
+    if pipeline is None:
+        return None
+    return _json_ready(pipeline.to_dict())

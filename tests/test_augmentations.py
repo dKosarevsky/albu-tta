@@ -45,11 +45,12 @@ def test_augmentation_registry_outputs_are_deterministic_with_fixed_seed() -> No
 def test_build_augmentation_audit_is_stable_json_payload() -> None:
     candidates = load_augmentation_registry(REGISTRY_PATH)
 
-    audit = build_augmentation_audit(candidates)
+    audit = build_augmentation_audit(candidates, seed=20260522)
     encoded = json.dumps(audit, sort_keys=True)
 
     assert "aug_000" in encoded
     assert audit["version"] == 1
+    assert audit["seed"] == 20260522
     assert audit["candidate_count"] == 100
     assert audit["identity_id"] == "aug_000"
     assert audit["candidates"][0] == {
@@ -57,6 +58,7 @@ def test_build_augmentation_audit_is_stable_json_payload() -> None:
         "name": "identity",
         "class_name": None,
         "params": {},
+        "serialized_transform": None,
     }
     assert audit["candidates"][19]["id"] == "aug_019"
     assert audit["candidates"][19]["params"] == {
@@ -64,3 +66,8 @@ def test_build_augmentation_audit_is_stable_json_payload() -> None:
         "contrast_range": [0.0, 0.0],
         "p": 1.0,
     }
+    serialized = audit["candidates"][19]["serialized_transform"]
+    assert serialized["transform"]["seed"] == 20260522
+    assert serialized["transform"]["transforms"][0]["__class_fullname__"] == (
+        "RandomBrightnessContrast"
+    )
