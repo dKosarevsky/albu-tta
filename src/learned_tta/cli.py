@@ -17,6 +17,7 @@ from learned_tta.imagenet_split import (
     discover_imagenet_val,
     write_split_manifests,
 )
+from learned_tta.preflight import run_full_run_preflight
 from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
 from learned_tta.selector_training import train_selector_from_config
@@ -56,6 +57,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             config_path=Path(args.config),
             imagenet_val_dir=Path(args.imagenet_val_dir),
             output_dir=output_dir,
+        )
+    elif command == "check-full-run":
+        _cmd_check_full_run(
+            config_path=Path(args.config),
+            imagenet_val_dir=Path(args.imagenet_val_dir),
         )
     elif command == "cache-teacher":
         manifest_path = Path(args.manifest) if args.manifest is not None else None
@@ -223,6 +229,21 @@ def _build_parser() -> argparse.ArgumentParser:
     make_splits.add_argument(
         "--output-dir",
         help="Manifest output directory. Defaults to artifacts.manifests_dir from config.",
+    )
+
+    check_full_run = subparsers.add_parser(
+        "check-full-run",
+        help="Validate full ImageNet-run prerequisites without launching inference.",
+    )
+    check_full_run.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    check_full_run.add_argument(
+        "--imagenet-val-dir",
+        required=True,
+        help="Path to ImageNet validation directory laid out as val/class_name/image.JPEG.",
     )
 
     cache_teacher = subparsers.add_parser(
@@ -435,6 +456,20 @@ def _cmd_make_splits(
     target_dir = output_dir if output_dir is not None else config.artifacts.manifests_dir
     written = write_split_manifests(splits, target_dir)
     print(f"wrote {len(written)} split manifests to {target_dir}")
+
+
+def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:
+    summary = run_full_run_preflight(
+        config_path=config_path,
+        imagenet_val_dir=imagenet_val_dir,
+    )
+    print(
+        "full run preflight ok: "
+        f"classes={summary.class_count}, "
+        f"images={summary.image_count}, "
+        f"candidates={summary.candidate_count}, "
+        f"teacher={summary.teacher_model_name}"
+    )
 
 
 def _cmd_cache_teacher(

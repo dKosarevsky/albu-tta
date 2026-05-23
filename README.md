@@ -149,6 +149,10 @@ uv run python -m learned_tta.cli validate-augmentations \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --audit-output artifacts/augmentation_registry_audit.json
 
+uv run python -m learned_tta.cli check-full-run \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --imagenet-val-dir /path/to/imagenet/val
+
 uv run python -m learned_tta.cli make-splits \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val
