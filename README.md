@@ -30,6 +30,22 @@ This separation makes the article diagnostics cleaner: selection answers which
 AlbumentationsX transforms are useful, while aggregation answers how strongly to
 combine predictions once the TTA views are available.
 
+### Selector Target Formulation
+
+The selector is an augmentation utility predictor: it predicts
+100 augmentation utility scores and is not a 50-bin loss classification task.
+The teacher cache keeps raw true-class NLL for every image and augmentation,
+but the selector target is a relative utility:
+
+```text
+gain = clean_nll - aug_nll
+```
+
+Positive gain means the augmentation increased the teacher probability assigned
+to the correct class compared with clean inference. The deployed decision is
+ranking/top-k TTA selection, so the small CNN has one output per configured
+candidate rather than assigning an image to a discrete loss bin.
+
 The selector is trained on standardized gain targets, but checkpoints persist
 the public-train target mean and std. Inference converts selector outputs back
 to the original gain scale before ranking augmentations for top-k TTA. During
