@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.config import ExperimentConfig, load_experiment_config
 
 
@@ -47,7 +48,8 @@ def inspect_full_run_status(config_path: Path) -> FullRunStatusSummary:
     """Inspect configured full-run artifacts and report the next missing step."""
 
     config = load_experiment_config(config_path)
-    steps = tuple(_build_step_statuses(config))
+    expected_aug_ids = _expected_augmentation_ids(config)
+    steps = tuple(_build_step_statuses(config, expected_aug_ids=expected_aug_ids))
     completed_steps = sum(step.complete for step in steps)
     required_steps = tuple(step for step in steps if step.required)
     completed_required_steps = sum(step.complete for step in required_steps)
@@ -77,7 +79,10 @@ def full_run_status_to_dict(summary: FullRunStatusSummary) -> dict[str, Any]:
     }
 
 
-def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
+def _build_step_statuses(
+    config: ExperimentConfig,
+    expected_aug_ids: tuple[str, ...],
+) -> list[FullRunStepStatus]:
     audit_path = config.artifacts.root / "augmentation_registry_audit.json"
     manifests = tuple(
         config.artifacts.manifests_dir / f"{split}.csv"
@@ -128,8 +133,8 @@ def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
             ),
             complete=lambda: _all_exist(manifests),
         ),
-        _cache_step_spec(config, "public_train"),
-        _cache_step_spec(config, "public_val"),
+        _cache_step_spec(config, "public_train", expected_aug_ids=expected_aug_ids),
+        _cache_step_spec(config, "public_val", expected_aug_ids=expected_aug_ids),
         _StepSpec(
             name="build_targets",
             outputs=(train_targets, val_targets),
@@ -185,7 +190,7 @@ def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
             complete=lambda: xgboost_aggregator.exists() and xgboost_model.exists(),
             required=False,
         ),
-        _cache_step_spec(config, "private"),
+        _cache_step_spec(config, "private", expected_aug_ids=expected_aug_ids),
         _StepSpec(
             name="evaluate_private",
             outputs=(private_metrics, corrections),
@@ -219,15 +224,31 @@ def _build_step_statuses(config: ExperimentConfig) -> list[FullRunStepStatus]:
     ]
 
 
-def _cache_step_spec(config: ExperimentConfig, split: str) -> _StepSpec:
+def _cache_step_spec(
+    config: ExperimentConfig,
+    split: str,
+    expected_aug_ids: tuple[str, ...],
+) -> _StepSpec:
+    outputs = tuple(
+        path
+        for aug_id in expected_aug_ids
+        for path in (
+            config.artifacts.teacher_cache_dir / f"{split}__{aug_id}.parquet",
+            config.artifacts.teacher_cache_dir / f"{split}__{aug_id}.logits.npy",
+        )
+    )
     return _StepSpec(
         name=f"cache_{split}",
-        outputs=(config.artifacts.teacher_cache_dir,),
+        outputs=outputs,
         command=(
             f"uv run python -m learned_tta.cli cache-teacher --split {split} "
             f"--config {config.path} --device cuda"
         ),
-        complete=lambda: _has_complete_teacher_cache(config.artifacts.teacher_cache_dir, split),
+        complete=lambda: _has_complete_teacher_cache(
+            config.artifacts.teacher_cache_dir,
+            split,
+            expected_aug_ids=expected_aug_ids,
+        ),
     )
 
 
@@ -240,14 +261,31 @@ def _aggregator_path(output_dir: Path, split: str, method: str) -> Path:
     return output_dir / f"{split}_{method_slug}_aggregator.json"
 
 
-def _has_complete_teacher_cache(cache_dir: Path, split: str) -> bool:
+def _expected_augmentation_ids(config: ExperimentConfig) -> tuple[str, ...]:
+    if config.augmentations.registry_path.exists():
+        return tuple(
+            candidate.id
+            for candidate in load_augmentation_registry(config.augmentations.registry_path)
+        )
+    return tuple(
+        f"aug_{candidate_idx:03d}"
+        for candidate_idx in range(config.augmentations.candidate_count)
+    )
+
+
+def _has_complete_teacher_cache(
+    cache_dir: Path,
+    split: str,
+    expected_aug_ids: tuple[str, ...],
+) -> bool:
+    if not expected_aug_ids:
+        return False
     parquet_shards = sorted(cache_dir.glob(f"{split}__*.parquet"))
     logits_shards = sorted(cache_dir.glob(f"{split}__*.logits.npy"))
-    if not parquet_shards:
-        return False
     parquet_stems = {path.name.removesuffix(".parquet") for path in parquet_shards}
     logits_stems = {path.name.removesuffix(".logits.npy") for path in logits_shards}
-    return parquet_stems == logits_stems
+    expected_stems = {f"{split}__{aug_id}" for aug_id in expected_aug_ids}
+    return parquet_stems == expected_stems and logits_stems == expected_stems
 
 
 def _step_to_dict(step: FullRunStepStatus) -> dict[str, Any]:
