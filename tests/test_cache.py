@@ -32,6 +32,10 @@ def test_write_and_read_teacher_shard(tmp_path: Path, logits: np.ndarray) -> Non
         image_ids=["image-a", "image-b"],
         class_idxs=np.array([0, 2], dtype=np.int64),
         logits=logits,
+        run_metadata={
+            "seed": 20260522,
+            "teacher": {"model_name": "resnet50.a1_in1k"},
+        },
     )
 
     paths = write_teacher_shard(tmp_path, shard)
@@ -39,7 +43,12 @@ def test_write_and_read_teacher_shard(tmp_path: Path, logits: np.ndarray) -> Non
 
     assert paths.metadata_path.name == "public__aug_001.parquet"
     assert paths.logits_path.name == "public__aug_001.logits.npy"
+    assert paths.run_metadata_path.name == "public__aug_001.run.json"
     assert loaded.logits.dtype == np.float16
+    assert loaded.run_metadata == {
+        "seed": 20260522,
+        "teacher": {"model_name": "resnet50.a1_in1k"},
+    }
     np.testing.assert_allclose(loaded.logits.astype(np.float32), logits, rtol=1e-3)
     assert loaded.metadata["image_id"].to_list() == ["image-a", "image-b"]
     assert loaded.metadata["class_idx"].to_list() == [0, 2]
@@ -66,12 +75,17 @@ def test_shard_is_complete_validates_shape(
     expected_classes: int,
     complete: bool,
 ) -> None:
+    run_metadata = {
+        "seed": 20260522,
+        "teacher": {"model_name": "resnet50.a1_in1k"},
+    }
     shard = TeacherShard(
         split="public",
         aug_id="aug_001",
         image_ids=["image-a", "image-b"],
         class_idxs=np.array([0, 2], dtype=np.int64),
         logits=logits,
+        run_metadata=run_metadata,
     )
     paths = write_teacher_shard(tmp_path, shard)
 
@@ -79,10 +93,42 @@ def test_shard_is_complete_validates_shape(
         shard_is_complete(
             metadata_path=paths.metadata_path,
             logits_path=paths.logits_path,
+            run_metadata_path=paths.run_metadata_path,
             expected_rows=expected_rows,
             expected_classes=expected_classes,
+            expected_run_metadata=run_metadata,
         )
         is complete
+    )
+
+
+def test_shard_is_complete_rejects_run_metadata_mismatch(
+    tmp_path: Path,
+    logits: np.ndarray,
+) -> None:
+    shard = TeacherShard(
+        split="public",
+        aug_id="aug_001",
+        image_ids=["image-a", "image-b"],
+        class_idxs=np.array([0, 2], dtype=np.int64),
+        logits=logits,
+        run_metadata={
+            "seed": 20260522,
+            "teacher": {"model_name": "resnet50.a1_in1k"},
+        },
+    )
+    paths = write_teacher_shard(tmp_path, shard)
+
+    assert not shard_is_complete(
+        metadata_path=paths.metadata_path,
+        logits_path=paths.logits_path,
+        run_metadata_path=paths.run_metadata_path,
+        expected_rows=2,
+        expected_classes=3,
+        expected_run_metadata={
+            "seed": 20260523,
+            "teacher": {"model_name": "resnet50.a1_in1k"},
+        },
     )
 
 

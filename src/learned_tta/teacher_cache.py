@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -58,14 +60,23 @@ def run_teacher_cache(
 
     for candidate in candidates:
         paths = teacher_shard_paths(output_dir, split=split, aug_id=candidate.id)
+        run_metadata = _run_metadata(
+            split=split,
+            candidate=candidate,
+            teacher=teacher,
+            seed=seed,
+            expected_classes=expected_classes,
+        )
         if (
             resume
             and expected_classes is not None
             and shard_is_complete(
                 metadata_path=paths.metadata_path,
                 logits_path=paths.logits_path,
+                run_metadata_path=paths.run_metadata_path,
                 expected_rows=len(records),
                 expected_classes=expected_classes,
+                expected_run_metadata=run_metadata,
             )
         ):
             skipped.append(candidate.id)
@@ -79,6 +90,7 @@ def run_teacher_cache(
             model=model,
             device=torch_device,
             seed=seed,
+            run_metadata=run_metadata,
             batch_size=batch_size,
             num_workers=num_workers,
         )
@@ -139,6 +151,7 @@ def _infer_candidate(
     model: torch.nn.Module,
     device: torch.device,
     seed: int,
+    run_metadata: dict[str, Any],
     batch_size: int,
     num_workers: int,
 ) -> TeacherShard:
@@ -166,6 +179,7 @@ def _infer_candidate(
         image_ids=image_ids,
         class_idxs=np.concatenate(class_idxs),
         logits=np.concatenate(logits, axis=0),
+        run_metadata=run_metadata,
     )
 
 
@@ -185,3 +199,46 @@ def _model_num_classes(model: object) -> int | None:
     if isinstance(value, int):
         return value
     return None
+
+
+def _run_metadata(
+    split: str,
+    candidate: AugmentationCandidate,
+    teacher: TeacherBundle,
+    seed: int,
+    expected_classes: int | None,
+) -> dict[str, Any]:
+    return _json_ready(
+        {
+            "version": 1,
+            "split": split,
+            "aug_id": candidate.id,
+            "seed": seed,
+            "augmentation": {
+                "id": candidate.id,
+                "name": candidate.name,
+                "class_name": candidate.class_name,
+                "params": candidate.params,
+            },
+            "teacher": {
+                "model_name": teacher.model_name,
+                "pretrained": teacher.pretrained,
+                "num_classes": expected_classes,
+                "data_config": teacher.data_config,
+            },
+            "storage": {
+                "logits_dtype": "float16",
+                "metadata_format": "parquet",
+            },
+        }
+    )
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return repr(value)
