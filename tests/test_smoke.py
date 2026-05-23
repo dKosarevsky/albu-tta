@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -14,7 +15,6 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     summary = run_smoke_e2e(
         config_path=CONFIG_PATH,
         output_dir=tmp_path / "smoke",
-        candidate_count=2,
         image_size=16,
         batch_size=2,
         num_workers=0,
@@ -36,7 +36,7 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert (summary.reports_dir / "figures" / "selector_history.svg").exists()
     assert "corrections.csv" in summary.results_md.read_text(encoding="utf-8")
     assert "selector_history.csv" in summary.results_md.read_text(encoding="utf-8")
-    assert summary.candidate_ids == ["aug_000", "aug_001"]
+    assert summary.candidate_ids == ["aug_000", "aug_001", "aug_002"]
     assert {"global_weighted_tta", "class_weighted_tta"} <= set(private_metrics["strategy"])
     assert set(private_metrics["strategy"]) == {
         "clean",
@@ -65,8 +65,6 @@ def test_run_smoke_cli_writes_final_report(
             str(CONFIG_PATH),
             "--output-dir",
             str(output_dir),
-            "--candidate-count",
-            "2",
             "--image-size",
             "16",
             "--batch-size",
@@ -81,3 +79,9 @@ def test_run_smoke_cli_writes_final_report(
 
     assert "smoke run: wrote" in captured.out
     assert (output_dir / "reports" / "results.md").exists()
+    saved_tuning = json.loads(
+        (output_dir / "selector" / "public_val_tta_tuning.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert saved_tuning["predicted_gain_shape"] == [2, 3]
