@@ -257,10 +257,12 @@ locations and print the next missing command without loading ImageNet or GPU
 models. The text output separates required steps from the optional XGBoost
 stacker, and `--format json` exposes the same required/optional status for
 external run scripts.
-The status check requires every configured augmentation candidate to have metadata and logits
-shard files before a teacher-cache split is marked complete. Incomplete steps
-show `missing=` and `extra=` counts in text output; JSON output includes
-`missing_outputs` and `extra_outputs` path lists for resumable run scripts.
+The status check requires every configured augmentation candidate to have
+metadata, logits, and `.run.json` sidecar shard files before a teacher-cache
+split is marked complete. full-run-status treats `.run.json` sidecars as required teacher cache outputs.
+Incomplete steps show `missing=` and `extra=` counts in text output; JSON
+output includes `missing_outputs` and `extra_outputs` path lists for resumable
+run scripts.
 Use `--fail-on-incomplete` when shell scripts should stop unless all required
 full-run steps are complete. Use `--next-command` when a wrapper only needs the
 next required command without parsing the full status report.

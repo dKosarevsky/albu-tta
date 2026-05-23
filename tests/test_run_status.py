@@ -63,6 +63,7 @@ def test_inspect_full_run_status_rejects_partial_teacher_cache(
         cache_dir / "public_train__aug_000.parquet",
         cache_dir / "public_train__aug_000.logits.npy",
         cache_dir / "public_train__aug_999.parquet",
+        cache_dir / "public_train__aug_999.run.json",
     )
 
     summary = inspect_full_run_status(config_path)
@@ -71,9 +72,12 @@ def test_inspect_full_run_status_rejects_partial_teacher_cache(
     assert summary.completed_required_steps == 2
     assert summary.next_step is not None
     assert summary.next_step.name == "cache_public_train"
-    assert len(cache_step.missing_outputs) == 198
-    assert cache_step.missing_outputs[0].name == "public_train__aug_001.parquet"
-    assert cache_step.extra_outputs == (cache_dir / "public_train__aug_999.parquet",)
+    assert len(cache_step.missing_outputs) == 298
+    assert cache_step.missing_outputs[0].name == "public_train__aug_000.run.json"
+    assert cache_step.extra_outputs == (
+        cache_dir / "public_train__aug_999.parquet",
+        cache_dir / "public_train__aug_999.run.json",
+    )
 
 
 def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
@@ -178,4 +182,5 @@ def _touch_teacher_cache(cache_dir: Path, split: str, candidate_count: int) -> N
         _touch(
             cache_dir / f"{split}__{aug_id}.parquet",
             cache_dir / f"{split}__{aug_id}.logits.npy",
+            cache_dir / f"{split}__{aug_id}.run.json",
         )

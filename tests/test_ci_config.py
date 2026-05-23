@@ -135,6 +135,7 @@ def test_implementation_status_documents_split_role_guards(
         "runtime package versions",
         "teacher cache shard writes a `.run.json` sidecar",
         "model name, pretrained flag, timm data config",
+        "full-run-status treats `.run.json` sidecars as required teacher cache outputs",
         "--imagenet-val-dir",
         "cache-teacher --split public_train",
         "cache-teacher --split public_val",
