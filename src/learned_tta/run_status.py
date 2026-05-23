@@ -264,9 +264,13 @@ def _aggregator_path(output_dir: Path, split: str, method: str) -> Path:
 def _expected_augmentation_ids(config: ExperimentConfig) -> tuple[str, ...]:
     if config.augmentations.registry_path.exists():
         return tuple(
-            candidate.id for candidate in load_augmentation_registry(config.augmentations.registry_path)
+            candidate.id
+            for candidate in load_augmentation_registry(config.augmentations.registry_path)
         )
-    return tuple(f"aug_{candidate_idx:03d}" for candidate_idx in range(config.augmentations.candidate_count))
+    return tuple(
+        f"aug_{candidate_idx:03d}"
+        for candidate_idx in range(config.augmentations.candidate_count)
+    )
 
 
 def _has_complete_teacher_cache(
