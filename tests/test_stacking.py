@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ import pytest
 from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.stacking import (
     AggregationArtifact,
+    XGBoostAggregationArtifact,
     load_aggregation_artifact,
     load_xgboost_aggregation_artifact,
     train_aggregator_from_artifacts,
@@ -258,6 +260,29 @@ def test_aggregation_artifact_roundtrips(tmp_path: Path) -> None:
     assert loaded.aug_ids == artifact.aug_ids
     np.testing.assert_allclose(loaded.weights, artifact.weights)
     assert loaded.metrics == artifact.metrics
+
+
+def test_xgboost_artifact_saves_relative_model_path(tmp_path: Path) -> None:
+    model_path = tmp_path / "selector" / "public_val_xgboost_multiclass_aggregator.model.json"
+    model_path.parent.mkdir(parents=True)
+    model_path.write_text("fake xgboost model", encoding="utf-8")
+    artifact_path = tmp_path / "selector" / "public_val_xgboost_multiclass_aggregator.json"
+
+    XGBoostAggregationArtifact(
+        method="xgboost-multiclass",
+        aug_ids=["aug_000"],
+        model_path=model_path,
+        num_classes=2,
+        feature_count=2,
+        feature_importance=np.array([1.0], dtype=np.float32),
+        metrics={"nll": 0.1},
+    ).save(artifact_path)
+
+    raw = json.loads(artifact_path.read_text(encoding="utf-8"))
+    loaded = load_xgboost_aggregation_artifact(artifact_path)
+
+    assert raw["model_path"] == "public_val_xgboost_multiclass_aggregator.model.json"
+    assert loaded.model_path == model_path
 
 
 def _install_fake_xgboost(monkeypatch: pytest.MonkeyPatch) -> None:

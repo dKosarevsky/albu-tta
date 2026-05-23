@@ -64,12 +64,13 @@ class XGBoostAggregationArtifact:
     def save(self, path: Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        model_path = _portable_model_path(self.model_path, path.parent)
         path.write_text(
             json.dumps(
                 {
                     "method": self.method,
                     "aug_ids": self.aug_ids,
-                    "model_path": str(self.model_path),
+                    "model_path": str(model_path),
                     "num_classes": self.num_classes,
                     "feature_count": self.feature_count,
                     "feature_importance": self.feature_importance.astype(float).tolist(),
@@ -80,6 +81,15 @@ class XGBoostAggregationArtifact:
             ),
             encoding="utf-8",
         )
+
+
+def _portable_model_path(model_path: Path, artifact_dir: Path) -> Path:
+    model_path = Path(model_path)
+    artifact_dir = Path(artifact_dir)
+    try:
+        return model_path.relative_to(artifact_dir)
+    except ValueError:
+        return model_path
 
 
 @dataclass(frozen=True, slots=True)

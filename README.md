@@ -72,7 +72,9 @@ the stacker extra with `uv sync --extra stackers` before running
 `--method xgboost-multiclass`.
 When the XGBoost artifact is present, `build-report` writes
 `xgboost_feature_importance.csv` and `xgboost_feature_importance.svg` to show
-which augmentation candidates the stacker uses most.
+which augmentation candidates the stacker uses most. The XGBoost metadata stores
+the model path relative to the artifact file when both files are in the same
+artifact directory, so selector artifacts can be moved as a bundle.
 `corrections.csv` counts where a strategy fixes a clean ResNet50 mistake and
 where it breaks an originally correct clean prediction. This follows the TTA
 diagnostic framing from "Better Aggregation in Test-Time Augmentation": average
