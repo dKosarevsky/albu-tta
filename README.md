@@ -54,6 +54,7 @@ reports/resnet50_a1_in1k/tables/xgboost_feature_importance.csv
 reports/resnet50_a1_in1k/tables/corrections.csv
 reports/resnet50_a1_in1k/tables/selector_history.csv
 reports/resnet50_a1_in1k/tables/transform_class_impact.csv
+reports/resnet50_a1_in1k/tables/transform_class_aggregation.csv
 reports/resnet50_a1_in1k/figures/gain_distribution.svg
 reports/resnet50_a1_in1k/figures/oracle_overlap.svg
 reports/resnet50_a1_in1k/figures/aggregation_weights.svg
@@ -61,6 +62,7 @@ reports/resnet50_a1_in1k/figures/xgboost_feature_importance.svg
 reports/resnet50_a1_in1k/figures/corrections.svg
 reports/resnet50_a1_in1k/figures/selector_history.svg
 reports/resnet50_a1_in1k/figures/transform_class_impact.svg
+reports/resnet50_a1_in1k/figures/transform_class_aggregation.svg
 ```
 
 `aggregation_weights.csv` is the compact table for the article: global weight,
@@ -77,6 +79,9 @@ view of which transform families matter.
 augmentations, learned selector choices, oracle choices, transform classes,
 learned aggregation weights, and XGBoost feature importance, so the main
 article artifact can be reviewed without opening every CSV first.
+`transform_class_aggregation.csv` groups global and class-specific aggregation
+weights by AlbumentationsX transform class, complementing the per-augmentation
+weight table with a family-level view.
 `public_metrics.csv` combines the tuned public-val `learned_topk_uniform` result
 with public-val metrics saved inside the optional learned aggregation artifacts,
 so global, class-specific, and XGBoost stackers can be compared before private
