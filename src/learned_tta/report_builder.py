@@ -39,6 +39,7 @@ class ReportBuildSummary:
     private_metrics_csv: Path
     compute_csv: Path
     augmentation_impact_csv: Path
+    transform_class_impact_csv: Path | None
     aggregation_weights_csv: Path | None
     class_augmentation_weights_csv: Path | None
     xgboost_feature_importance_csv: Path | None
@@ -130,6 +131,7 @@ def build_report_from_artifacts(
         oracle_aug_ids=oracle_aug_ids,
     )
     impact_table = _attach_augmentation_metadata(impact_table, augmentation_metadata)
+    transform_class_impact = _build_transform_class_impact_table(impact_table)
     aggregation_tables = _build_aggregation_tables(
         aug_ids=targets.aug_ids,
         global_aggregator_path=global_aggregator_path,
@@ -159,6 +161,11 @@ def build_report_from_artifacts(
         private_metrics_csv=tables_dir / "private_metrics.csv",
         compute_csv=tables_dir / "compute.csv",
         augmentation_impact_csv=tables_dir / "augmentation_impact.csv",
+        transform_class_impact_csv=(
+            tables_dir / "transform_class_impact.csv"
+            if transform_class_impact is not None
+            else None
+        ),
         aggregation_weights_csv=(
             tables_dir / "aggregation_weights.csv"
             if aggregation_tables.weights is not None
@@ -205,6 +212,8 @@ def build_report_from_artifacts(
         private_metrics=private_metrics,
     ).to_csv(paths.compute_csv, index=False)
     impact_table.to_csv(paths.augmentation_impact_csv, index=False)
+    if paths.transform_class_impact_csv is not None and transform_class_impact is not None:
+        transform_class_impact.to_csv(paths.transform_class_impact_csv, index=False)
     if paths.aggregation_weights_csv is not None and aggregation_tables.weights is not None:
         aggregation_tables.weights.to_csv(paths.aggregation_weights_csv, index=False)
     if (
@@ -264,6 +273,7 @@ def build_report_from_artifacts(
             has_xgboost_importance=xgboost_importance is not None,
             has_corrections=corrections_table is not None,
             has_selector_history=selector_history is not None,
+            has_transform_class_impact=transform_class_impact is not None,
         ),
         encoding="utf-8",
     )
@@ -525,6 +535,31 @@ def _attach_augmentation_metadata(
     return table.merge(metadata, on="aug_id", how="left", validate="many_to_one")
 
 
+def _build_transform_class_impact_table(impact_table: pd.DataFrame) -> pd.DataFrame | None:
+    if "transform_class" not in impact_table.columns:
+        return None
+
+    return (
+        impact_table.groupby("transform_class", as_index=False, sort=True)
+        .agg(
+            candidate_count=("aug_id", "count"),
+            mean_gain=("mean_gain", "mean"),
+            selection_frequency=("selection_frequency", "mean"),
+            oracle_frequency=("oracle_frequency", "mean"),
+        )
+        .loc[
+            :,
+            [
+                "transform_class",
+                "candidate_count",
+                "mean_gain",
+                "selection_frequency",
+                "oracle_frequency",
+            ],
+        ]
+    )
+
+
 def _build_xgboost_feature_importance_table(
     aug_ids: list[str],
     xgboost_aggregator_path: Path | None,
@@ -631,6 +666,7 @@ def _results_markdown(
     has_xgboost_importance: bool,
     has_corrections: bool,
     has_selector_history: bool,
+    has_transform_class_impact: bool,
 ) -> str:
     public_table = build_metrics_table(public_metrics)
     private_table = build_metrics_table(private_metrics)
@@ -669,6 +705,13 @@ def _results_markdown(
         "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
         "",
     ]
+    if has_transform_class_impact:
+        lines.extend(
+            [
+                "- Transform-class table: `tables/transform_class_impact.csv`",
+                "",
+            ]
+        )
     if has_aggregation_weights:
         lines.extend(
             [
