@@ -66,7 +66,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             imagenet_val_dir=Path(args.imagenet_val_dir),
         )
     elif command == "full-run-status":
-        _cmd_full_run_status(config_path=Path(args.config), output_format=str(args.format))
+        _cmd_full_run_status(
+            config_path=Path(args.config),
+            output_format=str(args.format),
+            fail_on_incomplete=bool(args.fail_on_incomplete),
+        )
     elif command == "cache-teacher":
         manifest_path = Path(args.manifest) if args.manifest is not None else None
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
@@ -264,6 +268,11 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["text", "json"],
         default="text",
         help="Output format for the artifact status summary.",
+    )
+    full_run_status.add_argument(
+        "--fail-on-incomplete",
+        action="store_true",
+        help="Exit with code 1 when any required full-run step is incomplete.",
     )
 
     cache_teacher = subparsers.add_parser(
@@ -492,10 +501,16 @@ def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:
     )
 
 
-def _cmd_full_run_status(config_path: Path, output_format: str) -> None:
+def _cmd_full_run_status(
+    config_path: Path,
+    output_format: str,
+    fail_on_incomplete: bool,
+) -> None:
     summary = inspect_full_run_status(config_path)
     if output_format == "json":
         print(json.dumps(full_run_status_to_dict(summary), indent=2, sort_keys=True))
+        if fail_on_incomplete and summary.next_step is not None:
+            raise SystemExit(1)
         return
 
     print(
@@ -518,6 +533,8 @@ def _cmd_full_run_status(config_path: Path, output_format: str) -> None:
     else:
         print(f"next: {summary.next_step.name}")
         print(f"command: {summary.next_step.command}")
+    if fail_on_incomplete and summary.next_step is not None:
+        raise SystemExit(1)
 
 
 def _cmd_cache_teacher(
