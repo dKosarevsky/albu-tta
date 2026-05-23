@@ -37,6 +37,7 @@ class ReportBuildSummary:
     results_md: Path
     public_metrics_csv: Path
     private_metrics_csv: Path
+    private_metric_deltas_csv: Path
     compute_csv: Path
     augmentation_impact_csv: Path
     transform_class_impact_csv: Path | None
@@ -160,11 +161,13 @@ def build_report_from_artifacts(
     selector_history = (
         _read_selector_history_csv(selector_history_path) if selector_history_path else None
     )
+    private_metric_deltas = _build_private_metric_deltas_table(private_metrics)
 
     paths = ReportBuildSummary(
         results_md=report_dir / "results.md",
         public_metrics_csv=tables_dir / "public_metrics.csv",
         private_metrics_csv=tables_dir / "private_metrics.csv",
+        private_metric_deltas_csv=tables_dir / "private_metric_deltas.csv",
         compute_csv=tables_dir / "compute.csv",
         augmentation_impact_csv=tables_dir / "augmentation_impact.csv",
         transform_class_impact_csv=(
@@ -227,6 +230,7 @@ def build_report_from_artifacts(
 
     build_metrics_table(public_metrics).to_csv(paths.public_metrics_csv, index=False)
     build_metrics_table(private_metrics).to_csv(paths.private_metrics_csv, index=False)
+    private_metric_deltas.to_csv(paths.private_metric_deltas_csv, index=False)
     _build_split_compute_table(
         public_split=public_split,
         public_metrics=public_metrics,
@@ -310,6 +314,7 @@ def build_report_from_artifacts(
             public_split=public_split,
             best_k=best_k,
             recall=oracle_selection_recall(selected_aug_ids, oracle_aug_ids, identity_aug_id),
+            private_metric_deltas=private_metric_deltas,
             impact_table=impact_table,
             transform_class_impact=transform_class_impact,
             transform_class_aggregation=transform_class_aggregation,
@@ -720,6 +725,40 @@ def _build_split_compute_table(
     return pd.concat([public_compute, private_compute], ignore_index=True)
 
 
+def _build_private_metric_deltas_table(
+    private_metrics: Mapping[str, Mapping[str, float]],
+) -> pd.DataFrame:
+    if "clean" not in private_metrics:
+        raise ValueError("private metrics must include clean strategy")
+
+    clean_metrics = private_metrics["clean"]
+    rows = []
+    for strategy, metrics in private_metrics.items():
+        rows.append(
+            {
+                "strategy": strategy,
+                "top1_delta_vs_clean": float(metrics["top1"] - clean_metrics["top1"]),
+                "top5_delta_vs_clean": float(metrics["top5"] - clean_metrics["top5"]),
+                "nll_delta_vs_clean": float(metrics["nll"] - clean_metrics["nll"]),
+                "ece_delta_vs_clean": float(metrics["ece"] - clean_metrics["ece"]),
+                "forwards_per_image": float(metrics["forwards_per_image"]),
+                "relative_compute_vs_all": float(metrics["relative_compute_vs_all"]),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "strategy",
+            "top1_delta_vs_clean",
+            "top5_delta_vs_clean",
+            "nll_delta_vs_clean",
+            "ece_delta_vs_clean",
+            "forwards_per_image",
+            "relative_compute_vs_all",
+        ],
+    )
+
+
 def _json_int(value: object) -> int:
     if isinstance(value, int):
         return value
@@ -734,6 +773,7 @@ def _results_markdown(
     public_split: str,
     best_k: int,
     recall: float,
+    private_metric_deltas: pd.DataFrame,
     impact_table: pd.DataFrame,
     transform_class_impact: pd.DataFrame | None,
     transform_class_aggregation: pd.DataFrame | None,
@@ -767,6 +807,12 @@ def _results_markdown(
         "## Private Metrics",
         "",
         _markdown_table(private_table),
+        "",
+        "- Delta table: `tables/private_metric_deltas.csv`",
+        "",
+        "### Private metric deltas vs clean",
+        "",
+        _markdown_table(private_metric_deltas),
         "",
         "## Compute",
         "",
