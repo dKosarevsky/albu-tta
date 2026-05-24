@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
+import tomli
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,10 +22,33 @@ def implementation_status_text() -> str:
 
 
 @pytest.fixture
+def colab_runbook_text() -> str:
+    return (ROOT / "docs" / "colab-run.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def colab_notebook() -> dict[str, Any]:
+    notebook_path = ROOT / "notebooks" / "full_imagenet_run_colab.ipynb"
+    with notebook_path.open(encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+@pytest.fixture
 def ci_workflow() -> dict[str, Any]:
     workflow_path = ROOT / ".github" / "workflows" / "ci.yml"
     with workflow_path.open(encoding="utf-8") as handle:
         loaded = yaml.safe_load(handle)
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+@pytest.fixture
+def pyproject() -> dict[str, Any]:
+    pyproject_path = ROOT / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        loaded = tomli.load(handle)
     assert isinstance(loaded, dict)
     return loaded
 
@@ -54,6 +79,61 @@ def test_readme_badges_do_not_duplicate_ci_workflow_status(readme_text: str) -> 
 
 def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
     assert "pypi" not in readme_text.lower()
+
+
+@pytest.mark.parametrize(
+    "colab_fragment",
+    [
+        "docs/colab-run.md",
+        "notebooks/full_imagenet_run_colab.ipynb",
+        "Google Colab",
+        "full ImageNet run",
+    ],
+)
+def test_readme_links_colab_full_run_entrypoint(
+    readme_text: str,
+    colab_fragment: str,
+) -> None:
+    assert colab_fragment in readme_text
+
+
+@pytest.mark.parametrize(
+    "runbook_fragment",
+    [
+        "Google Colab",
+        "Do not paste API keys",
+        "IMAGENET_VAL_DIR",
+        "Google Drive",
+        "full-run-status --next-command",
+        "cache resume",
+        "artifacts",
+        "reports",
+    ],
+)
+def test_colab_runbook_documents_resumable_gpu_run(
+    colab_runbook_text: str,
+    runbook_fragment: str,
+) -> None:
+    assert runbook_fragment in colab_runbook_text
+
+
+def test_colab_notebook_is_valid_and_uses_status_orchestration(
+    colab_notebook: dict[str, Any],
+) -> None:
+    source = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in colab_notebook.get("cells", [])
+        if isinstance(cell, dict)
+    )
+
+    assert colab_notebook["nbformat"] == 4
+    assert "drive.mount" in source
+    assert "torch.cuda.is_available" in source
+    assert "full-run-status" in source
+    assert "--next-command" in source
+    assert "IMAGENET_VAL_DIR" in source
+    assert "API_KEY" not in source
+    assert "api_key" not in source
 
 
 @pytest.mark.parametrize(
@@ -182,6 +262,10 @@ def test_ci_workflow_has_separate_pytest_ruff_ty_and_coverage_jobs(
     assert jobs["ruff"]["name"] == "ruff"
     assert jobs["ty"]["name"] == "ty"
     assert jobs["coverage"]["name"] == "coverage"
+
+
+def test_ty_excludes_colab_notebooks_from_type_checking(pyproject: dict[str, Any]) -> None:
+    assert pyproject["tool"]["ty"]["src"]["exclude"] == ["notebooks/**"]
 
 
 @pytest.mark.parametrize(

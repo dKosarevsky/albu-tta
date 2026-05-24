@@ -19,6 +19,7 @@ Implemented:
 - Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates and missing/extra artifact diagnostics.
 - Script-friendly full-run status exit mode via `--fail-on-incomplete`.
 - Script-friendly next required command output via `--next-command`.
+- Google Colab runbook and notebook for resumable GPU execution with Drive-backed artifacts and reports.
 
 Not part of the implementation-complete status:
 
