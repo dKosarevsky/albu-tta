@@ -12,6 +12,12 @@ Learned test-time augmentation selector experiments with AlbumentationsX.
 Implementation status for the planned lightweight pipeline is tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).
 
+For a Google Colab full ImageNet run, use
+[`notebooks/full_imagenet_run_colab.ipynb`](notebooks/full_imagenet_run_colab.ipynb)
+and the runbook in [`docs/colab-run.md`](docs/colab-run.md). The notebook is a
+resumable GPU entrypoint for the full ImageNet run and uses Google Drive for
+persistent `artifacts/` and `reports/`.
+
 ## Methods
 
 The project now keeps two TTA learning layers separate.
