@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -160,6 +162,26 @@ def test_cli_full_run_status_can_print_only_next_command(
     assert "--audit-output" in captured.out
     assert "full run status:" not in captured.out
     assert captured.out.count("\n") == 1
+
+
+def test_cli_module_entrypoint_runs() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "learned_tta.cli",
+            "full-run-status",
+            "--config",
+            str(CONFIG_PATH),
+            "--next-command",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stderr == ""
+    assert completed.stdout.startswith("uv run python -m learned_tta.cli")
 
 
 def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int = 50) -> Path:
