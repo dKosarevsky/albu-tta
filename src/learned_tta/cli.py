@@ -801,3 +801,7 @@ def _cmd_build_report(
         device=device,
     )
     print(f"report: wrote {summary.results_md}")
+
+
+if __name__ == "__main__":
+    main()
