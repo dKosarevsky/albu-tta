@@ -153,6 +153,19 @@ def test_colab_notebook_prefers_local_prepared_imagenet(
     assert "jpeg_count == 50_000" in source
 
 
+def test_colab_notebook_uses_colab_safe_teacher_cache_workers(
+    colab_notebook: dict[str, Any],
+) -> None:
+    source = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in colab_notebook.get("cells", [])
+        if isinstance(cell, dict)
+    )
+
+    assert "CACHE_TEACHER_NUM_WORKERS = 2" in source
+    assert "command += f' --num-workers {CACHE_TEACHER_NUM_WORKERS}'" in source
+
+
 @pytest.mark.parametrize(
     "target_fragment",
     [

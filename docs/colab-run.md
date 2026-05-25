@@ -48,6 +48,10 @@ status cell after a disconnect; already complete teacher cache shards are
 skipped by cache resume when parquet, logits, and `.run.json` sidecars match the
 current run metadata.
 
+Colab runs should keep teacher-cache workers conservative. The notebook pins
+`cache-teacher` to `--num-workers 2`, matching the worker limit commonly
+reported by T4 Colab runtimes and avoiding warning spam during long resumes.
+
 ## Recommended Flow
 
 1. Open `notebooks/full_imagenet_run_colab.ipynb` in Google Colab.
@@ -72,5 +76,9 @@ not a blind shell script that hides intermediate status.
   `artifacts` and `reports`, which is what the notebook does.
 - If Colab disconnects during `cache-teacher`, reconnect and re-run the status
   cell. Complete shards should be skipped.
+- If terminal output still shows old red notebook errors, check
+  `full-run-status --next-command` and the count of
+  `artifacts/teacher_cache/*__*.run.json`; stale cell output is not the source
+  of truth.
 - If package installation is interrupted, re-run the setup cell; `uv` will
   reuse its cache where possible.

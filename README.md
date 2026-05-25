@@ -212,11 +212,13 @@ uv run python -m learned_tta.cli make-splits \
 
 uv run python -m learned_tta.cli cache-teacher --split public_train \
   --config configs/experiment/resnet50_a1_in1k.yaml \
-  --device cuda
+  --device cuda \
+  --num-workers 2
 
 uv run python -m learned_tta.cli cache-teacher --split public_val \
   --config configs/experiment/resnet50_a1_in1k.yaml \
-  --device cuda
+  --device cuda \
+  --num-workers 2
 
 uv run python -m learned_tta.cli build-targets \
   --config configs/experiment/resnet50_a1_in1k.yaml
@@ -247,7 +249,8 @@ uv run python -m learned_tta.cli train-aggregator --method xgboost-multiclass \
 
 uv run python -m learned_tta.cli cache-teacher --split private \
   --config configs/experiment/resnet50_a1_in1k.yaml \
-  --device cuda
+  --device cuda \
+  --num-workers 2
 
 uv run python -m learned_tta.cli evaluate-private \
   --config configs/experiment/resnet50_a1_in1k.yaml \
@@ -272,6 +275,10 @@ run scripts.
 Use `--fail-on-incomplete` when shell scripts should stop unless all required
 full-run steps are complete. Use `--next-command` when a wrapper only needs the
 next required command without parsing the full status report.
+Teacher-cache commands printed by `full-run-status --next-command` include
+`--num-workers 2`, which is the safer Colab/T4 default and avoids DataLoader
+worker warnings during long cache resumes. Increase it manually only after
+checking the runtime can handle more workers.
 
 When private evaluation artifacts live outside the report directory, pass
 `--corrections /path/to/corrections.csv` to `build-report`.
