@@ -10,6 +10,8 @@ from typing import Any
 from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.config import ExperimentConfig, load_experiment_config
 
+CACHE_TEACHER_NUM_WORKERS = 2
+
 
 @dataclass(frozen=True, slots=True)
 class FullRunStepStatus:
@@ -244,7 +246,8 @@ def _cache_step_spec(
         outputs=outputs,
         command=(
             f"uv run python -m learned_tta.cli cache-teacher --split {split} "
-            f"--config {config.path} --device cuda"
+            f"--config {config.path} --device cuda "
+            f"--num-workers {CACHE_TEACHER_NUM_WORKERS}"
         ),
         complete=lambda: _has_complete_teacher_cache(
             config.artifacts.teacher_cache_dir,

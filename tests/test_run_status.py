@@ -46,6 +46,7 @@ def test_inspect_full_run_status_advances_past_completed_manifests(
     assert summary.next_step is not None
     assert summary.next_step.name == "cache_public_train"
     assert "cache-teacher --split public_train" in summary.next_step.command
+    assert "--num-workers 2" in summary.next_step.command
 
 
 def test_inspect_full_run_status_rejects_partial_teacher_cache(
