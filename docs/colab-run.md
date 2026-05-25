@@ -16,14 +16,20 @@ cache resume can survive Colab disconnects.
 - ImageNet layout: `val/class_name/image.JPEG`.
 - Enough Google Drive space for `artifacts` and `reports`.
 
-The default notebook paths are:
+The notebook prefers a locally prepared validation folder and falls back to a
+Google Drive copy:
 
 ```text
-IMAGENET_VAL_DIR=/content/drive/MyDrive/datasets/imagenet/val
+LOCAL_IMAGENET_VAL_DIR=/content/imagenet_val_prepare/val
+DRIVE_IMAGENET_VAL_DIR=/content/drive/MyDrive/datasets/imagenet/val
+IMAGENET_VAL_DIR=LOCAL_IMAGENET_VAL_DIR if present, otherwise DRIVE_IMAGENET_VAL_DIR
 DRIVE_RUN_ROOT=/content/drive/MyDrive/albu-tta-runs/resnet50_a1_in1k
 ```
 
-Change these paths in the notebook before launching the expensive steps.
+Keep ImageNet in `/content` when possible; copying 50k small validation files to
+Drive can be much slower than downloading and preparing them locally. Change
+these paths in the notebook before launching the expensive steps if your layout
+differs.
 
 ## Execution Model
 
@@ -60,7 +66,8 @@ not a blind shell script that hides intermediate status.
 ## Troubleshooting
 
 - If GPU is unavailable, change Runtime -> Change runtime type -> GPU.
-- If `check-full-run` fails, fix `IMAGENET_VAL_DIR` first.
+- If `check-full-run` fails, fix `IMAGENET_VAL_DIR` first and verify that it
+  contains exactly 50,000 `*.JPEG` files under class directories.
 - If Drive is slow, keep the repository in `/content` and only persist
   `artifacts` and `reports`, which is what the notebook does.
 - If Colab disconnects during `cache-teacher`, reconnect and re-run the status

@@ -136,6 +136,23 @@ def test_colab_notebook_is_valid_and_uses_status_orchestration(
     assert "api_key" not in source
 
 
+def test_colab_notebook_prefers_local_prepared_imagenet(
+    colab_notebook: dict[str, Any],
+) -> None:
+    source = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in colab_notebook.get("cells", [])
+        if isinstance(cell, dict)
+    )
+
+    assert "LOCAL_IMAGENET_VAL_DIR = Path('/content/imagenet_val_prepare/val')" in source
+    assert "DRIVE_IMAGENET_VAL_DIR = Path('/content/drive/MyDrive/datasets/imagenet/val')" in source
+    assert "IMAGENET_VAL_DIR = (" in source
+    assert "if LOCAL_IMAGENET_VAL_DIR.exists()" in source
+    assert "else DRIVE_IMAGENET_VAL_DIR" in source
+    assert "jpeg_count == 50_000" in source
+
+
 @pytest.mark.parametrize(
     "target_fragment",
     [
