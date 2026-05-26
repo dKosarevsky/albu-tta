@@ -22,6 +22,7 @@ from learned_tta.preflight import run_full_run_preflight
 from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
 from learned_tta.run_status import full_run_status_to_dict, inspect_full_run_status
+from learned_tta.run_supervisor import run_next_full_run_step
 from learned_tta.selector_training import train_selector_from_config
 from learned_tta.smoke import run_smoke_e2e
 from learned_tta.stacking import train_aggregator_from_config
@@ -71,6 +72,15 @@ def main(argv: Sequence[str] | None = None) -> None:
             output_format=str(args.format),
             fail_on_incomplete=bool(args.fail_on_incomplete),
             next_command=bool(args.next_command),
+        )
+    elif command == "resume-full-run":
+        _cmd_resume_full_run(
+            config_path=Path(args.config),
+            imagenet_val_dir=_optional_path(args.imagenet_val_dir),
+            cache_log_dir=_optional_path(args.cache_log_dir),
+            dry_run=bool(args.dry_run),
+            background_cache=not bool(args.foreground_cache),
+            allow_duplicate_cache=bool(args.allow_duplicate_cache),
         )
     elif command == "cache-teacher":
         manifest_path = Path(args.manifest) if args.manifest is not None else None
@@ -279,6 +289,45 @@ def _build_parser() -> argparse.ArgumentParser:
         "--next-command",
         action="store_true",
         help="Print only the next required full-run command, if any.",
+    )
+
+    resume_full_run = subparsers.add_parser(
+        "resume-full-run",
+        help="Run the next missing full-run step with Colab-safe cache supervision.",
+    )
+    resume_full_run.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    resume_full_run.add_argument(
+        "--imagenet-val-dir",
+        help=(
+            "ImageNet validation directory used when the next command is make-splits. "
+            "Required only while split manifests are missing."
+        ),
+    )
+    resume_full_run.add_argument(
+        "--cache-log-dir",
+        help=(
+            "Directory for background cache-teacher logs. Defaults to artifacts/logs "
+            "under the project root."
+        ),
+    )
+    resume_full_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the supervised action without launching it.",
+    )
+    resume_full_run.add_argument(
+        "--foreground-cache",
+        action="store_true",
+        help="Run cache-teacher in the foreground instead of detaching it.",
+    )
+    resume_full_run.add_argument(
+        "--allow-duplicate-cache",
+        action="store_true",
+        help="Start cache-teacher even if another matching cache process is active.",
     )
 
     cache_teacher = subparsers.add_parser(
@@ -549,6 +598,45 @@ def _cmd_full_run_status(
         print(f"command: {summary.next_step.command}")
     if fail_on_incomplete and summary.next_step is not None:
         raise SystemExit(1)
+
+
+def _cmd_resume_full_run(
+    config_path: Path,
+    imagenet_val_dir: Path | None,
+    cache_log_dir: Path | None,
+    dry_run: bool,
+    background_cache: bool,
+    allow_duplicate_cache: bool,
+) -> None:
+    result = run_next_full_run_step(
+        config_path=config_path,
+        imagenet_val_dir=imagenet_val_dir,
+        cache_log_dir=cache_log_dir,
+        dry_run=dry_run,
+        background_cache=background_cache,
+        allow_duplicate_cache=allow_duplicate_cache,
+    )
+
+    if result.status == "complete":
+        print("full run complete: no required steps left")
+    elif result.status == "dry-run":
+        print(f"dry-run: {result.step_name}")
+        print(result.command)
+    elif result.status == "active":
+        print(f"cache already active: {result.step_name}")
+        for process in result.active_processes:
+            print(process)
+        print("not starting a duplicate process")
+    elif result.status == "started":
+        print(f"started background step: {result.step_name}")
+        print(f"pid: {result.pid}")
+        print(f"log: {result.log_path}")
+        print(result.command)
+    elif result.status == "completed":
+        print(f"completed step: {result.step_name}")
+        print(result.command)
+    else:
+        raise ValueError(f"unknown resume result status: {result.status}")
 
 
 def _cmd_cache_teacher(

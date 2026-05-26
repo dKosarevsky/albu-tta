@@ -41,12 +41,16 @@ dependencies with `uv`, and links these repository paths to Google Drive:
 /content/albu-tta/reports   -> DRIVE_RUN_ROOT/reports
 ```
 
-All orchestration goes through `full-run-status --next-command`. The notebook
-asks the repository which command is next, replaces the ImageNet placeholder
-with `IMAGENET_VAL_DIR`, and runs exactly one command at a time. Re-run the
-status cell after a disconnect; already complete teacher cache shards are
-skipped by cache resume when parquet, logits, and `.run.json` sidecars match the
-current run metadata.
+Interactive orchestration goes through `resume-full-run`. The notebook asks the
+repository which command is next, replaces the ImageNet placeholder with
+`IMAGENET_VAL_DIR`, and runs exactly one safe step at a time. Long
+`cache-teacher` steps start in the background, write logs to Drive, and refuse
+to duplicate an already active cache process. Re-run the resume cell after a
+disconnect; already complete teacher cache shards are skipped by cache resume
+when parquet, logits, and `.run.json` sidecars match the current run metadata.
+
+`full-run-status --next-command` remains available for read-only diagnostics
+and external wrappers that only need to print the next command.
 
 Colab runs should keep teacher-cache workers conservative. The notebook pins
 `cache-teacher` to `--num-workers 2`, matching the worker limit commonly
@@ -59,13 +63,13 @@ reported by T4 Colab runtimes and avoiding warning spam during long resumes.
 3. Mount Google Drive.
 4. Set `IMAGENET_VAL_DIR` and `DRIVE_RUN_ROOT`.
 5. Run setup and GPU checks.
-6. Run the next-command cell until it reports `none`.
+6. Run the resume cell until it reports no required steps left.
 7. Inspect `reports/resnet50_a1_in1k/results.md` under `DRIVE_RUN_ROOT`.
 
 The teacher cache is the expensive part. Public and private all-candidate cache
 cover roughly 5,000,000 ResNet50 forwards total. Colab can disconnect, so the
-safe operating mode is one `full-run-status --next-command` step per cell run,
-not a blind shell script that hides intermediate status.
+safe operating mode is one `resume-full-run` step per cell run, not a blind
+shell script that hides intermediate status.
 
 ## Troubleshooting
 
@@ -74,7 +78,7 @@ not a blind shell script that hides intermediate status.
   contains exactly 50,000 `*.JPEG` files under class directories.
 - If Drive is slow, keep the repository in `/content` and only persist
   `artifacts` and `reports`, which is what the notebook does.
-- If Colab disconnects during `cache-teacher`, reconnect and re-run the status
+- If Colab disconnects during `cache-teacher`, reconnect and re-run the resume
   cell. Complete shards should be skipped.
 - If terminal output still shows old red notebook errors, check
   `full-run-status --next-command` and the count of
