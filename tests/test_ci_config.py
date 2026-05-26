@@ -104,7 +104,7 @@ def test_readme_links_colab_full_run_entrypoint(
         "Do not paste API keys",
         "IMAGENET_VAL_DIR",
         "Google Drive",
-        "full-run-status --next-command",
+        "resume-full-run",
         "cache resume",
         "artifacts",
         "reports",
@@ -130,7 +130,8 @@ def test_colab_notebook_is_valid_and_uses_status_orchestration(
     assert "drive.mount" in source
     assert "torch.cuda.is_available" in source
     assert "full-run-status" in source
-    assert "--next-command" in source
+    assert "resume-full-run" in source
+    assert "--cache-log-dir" in source
     assert "IMAGENET_VAL_DIR" in source
     assert "API_KEY" not in source
     assert "api_key" not in source
@@ -162,8 +163,8 @@ def test_colab_notebook_uses_colab_safe_teacher_cache_workers(
         if isinstance(cell, dict)
     )
 
-    assert "CACHE_TEACHER_NUM_WORKERS = 2" in source
-    assert "command += f' --num-workers {CACHE_TEACHER_NUM_WORKERS}'" in source
+    assert "resume-full-run" in source
+    assert "'--cache-log-dir', DRIVE_RUN_ROOT / 'logs'" in source
 
 
 @pytest.mark.parametrize(
@@ -231,6 +232,7 @@ def test_implementation_status_documents_split_role_guards(
         "augmentation_registry_audit.json",
         "check-full-run",
         "full-run-status",
+        "resume-full-run",
         "--format json",
         "--fail-on-incomplete",
         "--next-command",

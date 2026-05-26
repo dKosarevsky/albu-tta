@@ -206,6 +206,11 @@ uv run python -m learned_tta.cli full-run-status \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --next-command
 
+uv run python -m learned_tta.cli resume-full-run \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --imagenet-val-dir /path/to/imagenet/val \
+  --cache-log-dir artifacts/logs
+
 uv run python -m learned_tta.cli make-splits \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val
@@ -275,6 +280,10 @@ run scripts.
 Use `--fail-on-incomplete` when shell scripts should stop unless all required
 full-run steps are complete. Use `--next-command` when a wrapper only needs the
 next required command without parsing the full status report.
+For Colab, prefer `resume-full-run`: it runs the next missing required step,
+starts long `cache-teacher` steps in the background, writes their logs to
+`--cache-log-dir`, and refuses to start a duplicate cache process when one is
+already active.
 Teacher-cache commands printed by `full-run-status --next-command` include
 `--num-workers 2`, which is the safer Colab/T4 default and avoids DataLoader
 worker warnings during long cache resumes. Increase it manually only after

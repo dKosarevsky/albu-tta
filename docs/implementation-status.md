@@ -19,6 +19,10 @@ Implemented:
 - Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates and missing/extra artifact diagnostics.
 - Script-friendly full-run status exit mode via `--fail-on-incomplete`.
 - Script-friendly next required command output via `--next-command`.
+- Supervised `resume-full-run` CLI for Colab reconnects: it runs the next
+  missing required step, starts long `cache-teacher` steps in the background,
+  writes cache logs to a persistent directory, and avoids duplicate active cache
+  jobs.
 - Google Colab runbook and notebook for resumable GPU execution with Drive-backed artifacts and reports.
 
 Not part of the implementation-complete status:
@@ -34,7 +38,8 @@ experiment with `resnet50.a1_in1k`, use `full-run-status` after each expensive
 step to confirm the next missing required artifact, use `--format json` if the
 GPU run is driven by scripts, use `--fail-on-incomplete` when a shell step
 should stop on incomplete required artifacts, use `--next-command` when a
-wrapper needs to dispatch only the next required command, review
+wrapper needs to dispatch only the next required command, prefer
+`resume-full-run` for interactive Colab reconnects, review
 `reports/resnet50_a1_in1k/results.md`, then decide which additional timm
 architectures are worth running for the preprint. The optional XGBoost stacker
 is tracked separately and does not block the required full-run status.

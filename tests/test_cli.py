@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -162,6 +163,57 @@ def test_cli_full_run_status_can_print_only_next_command(
     assert "--audit-output" in captured.out
     assert "full run status:" not in captured.out
     assert captured.out.count("\n") == 1
+
+
+def test_cli_resume_full_run_reports_background_cache_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_run_next_full_run_step(**kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(
+            status="started",
+            step_name="cache_public_train",
+            command="uv run python -m learned_tta.cli cache-teacher --split public_train",
+            log_path=tmp_path / "logs" / "cache_public_train.log",
+            pid=12345,
+            active_processes=(),
+        )
+
+    monkeypatch.setattr(
+        "learned_tta.cli.run_next_full_run_step",
+        fake_run_next_full_run_step,
+    )
+
+    main(
+        [
+            "resume-full-run",
+            "--config",
+            str(CONFIG_PATH),
+            "--imagenet-val-dir",
+            "/content/imagenet_val_prepare/val",
+            "--cache-log-dir",
+            str(tmp_path / "logs"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert "started background step: cache_public_train" in captured.out
+    assert "pid: 12345" in captured.out
+    assert calls == [
+        {
+            "config_path": CONFIG_PATH,
+            "imagenet_val_dir": Path("/content/imagenet_val_prepare/val"),
+            "cache_log_dir": tmp_path / "logs",
+            "dry_run": False,
+            "background_cache": True,
+            "allow_duplicate_cache": False,
+        }
+    ]
 
 
 def test_cli_module_entrypoint_runs() -> None:
