@@ -7,6 +7,8 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dKosarevsky/albu-tta/blob/main/notebooks/full_imagenet_run_colab.ipynb)
+
 Learned test-time augmentation selector experiments with AlbumentationsX.
 
 Implementation status for the planned lightweight pipeline is tracked in
@@ -17,6 +19,11 @@ For a Google Colab full ImageNet run, use
 and the runbook in [`docs/colab-run.md`](docs/colab-run.md). The notebook is a
 resumable GPU entrypoint for the full ImageNet run and uses Google Drive for
 persistent `artifacts/` and `reports/`.
+
+That notebook is the recommended handoff artifact for external GPU workers:
+open it from GitHub, mount Drive, set the ImageNet validation path, run the
+read-only diagnostics cell, and then run `resume-full-run` only from a GPU
+runtime.
 
 ## Methods
 
@@ -181,6 +188,25 @@ artifacts/smoke/reports/results.md
 Run the full experiment only after the smoke run passes. `--imagenet-val-dir`
 must point to an ImageNet validation directory laid out as
 `val/class_name/image.JPEG`.
+
+### GPU Worker Handoff
+
+The Colab notebook is designed to be handed to someone with GPU access:
+
+Before launching expensive work, the worker should verify:
+
+- the runtime has CUDA;
+- ImageNet validation contains exactly 50,000 `*.JPEG` files under class
+  directories;
+- `artifacts/` and `reports/` point to persistent storage;
+- the read-only diagnostics cell shows no active duplicate `cache-teacher`
+  process;
+- `full-run-status --fail-on-incomplete` is the final completion check.
+
+CPU runtimes are useful only for setup and diagnostics: mounting Drive,
+checking paths, counting completed shards, inspecting logs, and running status
+commands. Do not continue the full `cache-teacher` workload on CPU; the full
+public/private all-candidate cache is roughly 5,000,000 ResNet50 forwards.
 
 ```bash
 uv run python -m learned_tta.cli validate-augmentations \
