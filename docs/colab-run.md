@@ -6,6 +6,11 @@ This runbook is for launching the full ImageNet validation experiment from
 Google Colab. Use it with
 `notebooks/full_imagenet_run_colab.ipynb`.
 
+If Colab GPU quota blocks the run, move the same persistent `artifacts/` and
+`reports/` directory to an external GPU worker and follow
+[`docs/gpu-run.md`](gpu-run.md). The external runbook uses the same
+`resume-full-run` supervisor and can continue from completed shards.
+
 Do not paste API keys into the notebook or repository. Ordinary Colab does not
 need a project API key for this workflow. The notebook uses your browser session
 to mount Google Drive, and all long-lived outputs are written under Drive so
@@ -104,7 +109,7 @@ shell script that hides intermediate status.
 - If GPU is unavailable, change Runtime -> Change runtime type -> GPU.
 - If Colab quota blocks GPU allocation, do not continue full teacher caching on
   CPU. Use CPU only for diagnostics, or move the notebook to another GPU
-  provider/runtime.
+  provider/runtime with [`docs/gpu-run.md`](gpu-run.md).
 - If `check-full-run` fails, fix `IMAGENET_VAL_DIR` first and verify that it
   contains exactly 50,000 `*.JPEG` files under class directories.
 - If Drive is slow, keep the repository in `/content` and only persist
