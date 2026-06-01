@@ -20,10 +20,15 @@ and the runbook in [`docs/colab-run.md`](docs/colab-run.md). The notebook is a
 resumable GPU entrypoint for the full ImageNet run and uses Google Drive for
 persistent `artifacts/` and `reports/`.
 
-That notebook is the recommended handoff artifact for external GPU workers:
+That notebook is the recommended handoff artifact for Colab GPU workers:
 open it from GitHub, mount Drive, set the ImageNet validation path, run the
 read-only diagnostics cell, and then run `resume-full-run` only from a GPU
 runtime.
+
+For non-Colab GPU providers or local CUDA machines, use
+[`docs/gpu-run.md`](docs/gpu-run.md). It documents the persistent artifact
+layout, resume commands, recovery checklist, and a conservative automated
+driver for running the same `resume-full-run` pipeline outside a notebook.
 
 ## Methods
 
@@ -188,6 +193,10 @@ artifacts/smoke/reports/results.md
 Run the full experiment only after the smoke run passes. `--imagenet-val-dir`
 must point to an ImageNet validation directory laid out as
 `val/class_name/image.JPEG`.
+
+For a notebook workflow, see [`docs/colab-run.md`](docs/colab-run.md). For
+RunPod, Lambda Labs, a local CUDA server, or any other non-Colab GPU worker, see
+[`docs/gpu-run.md`](docs/gpu-run.md).
 
 ### GPU Worker Handoff
 

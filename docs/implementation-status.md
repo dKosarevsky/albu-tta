@@ -24,6 +24,9 @@ Implemented:
   writes cache logs to a persistent directory, and avoids duplicate active cache
   jobs.
 - Google Colab runbook and notebook for resumable GPU execution with Drive-backed artifacts and reports.
+- External GPU runbook for RunPod, Lambda Labs, local CUDA servers, or other
+  non-Colab workers, including persistent artifact layout, one-step resume,
+  automated driver, and recovery checklist.
 
 Not part of the implementation-complete status:
 
@@ -39,7 +42,8 @@ step to confirm the next missing required artifact, use `--format json` if the
 GPU run is driven by scripts, use `--fail-on-incomplete` when a shell step
 should stop on incomplete required artifacts, use `--next-command` when a
 wrapper needs to dispatch only the next required command, prefer
-`resume-full-run` for interactive Colab reconnects, review
+`resume-full-run` for interactive Colab reconnects or external GPU recovery,
+follow `docs/gpu-run.md` when Colab quota is the blocker, review
 `reports/resnet50_a1_in1k/results.md`, then decide which additional timm
 architectures are worth running for the preprint. The optional XGBoost stacker
 is tracked separately and does not block the required full-run status.
