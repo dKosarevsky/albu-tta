@@ -68,6 +68,30 @@ def test_compute_true_class_nll(
     np.testing.assert_allclose(result.nll_true, -np.log([expected_prob]), rtol=1e-5)
 
 
+@pytest.mark.parametrize(
+    ("logits", "class_idxs", "match"),
+    [
+        (
+            np.array([1.0, 2.0], dtype=np.float32),
+            np.array([0], dtype=np.int64),
+            "logits must have shape",
+        ),
+        (
+            np.zeros((2, 3), dtype=np.float32),
+            np.array([0], dtype=np.int64),
+            "class_idxs must have shape",
+        ),
+    ],
+)
+def test_compute_true_class_nll_rejects_invalid_shapes(
+    logits: np.ndarray,
+    class_idxs: np.ndarray,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        compute_true_class_nll(logits, class_idxs)
+
+
 def test_compute_gain_targets_uses_clean_nll_baseline(
     logits_by_aug: dict[str, np.ndarray],
     class_idxs: np.ndarray,
@@ -80,6 +104,14 @@ def test_compute_gain_targets_uses_clean_nll_baseline(
     assert targets.gain[0, 2] > 0.0
     assert targets.gain[1, 1] > 0.0
     assert targets.gain[1, 2] < 0.0
+
+
+def test_compute_gain_targets_requires_identity_logits(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+) -> None:
+    with pytest.raises(ValueError, match="identity augmentation 'aug_999' is missing"):
+        compute_gain_targets(logits_by_aug, class_idxs, identity_aug_id="aug_999")
 
 
 def test_compute_target_stats_and_standardize_round_trip() -> None:
@@ -100,6 +132,19 @@ def test_compute_target_stats_and_standardize_round_trip() -> None:
     assert stats.std[0] == pytest.approx(1.0)
     np.testing.assert_allclose(standardized.mean(axis=0), np.zeros(3), atol=1e-6)
     np.testing.assert_allclose(standardized[:, 0], np.zeros(3), atol=1e-6)
+
+
+def test_compute_target_stats_rejects_non_matrix_gain() -> None:
+    with pytest.raises(ValueError, match="gain must have shape"):
+        compute_target_stats(np.array([0.0, 1.0], dtype=np.float32))
+
+
+def test_standardize_gain_targets_rejects_non_matrix_gain() -> None:
+    with pytest.raises(ValueError, match="gain must have shape"):
+        standardize_gain_targets(
+            np.array([0.0, 1.0], dtype=np.float32),
+            TargetStats(mean=np.zeros(2, dtype=np.float32), std=np.ones(2, dtype=np.float32)),
+        )
 
 
 def test_standardize_gain_targets_rejects_mismatched_stats() -> None:

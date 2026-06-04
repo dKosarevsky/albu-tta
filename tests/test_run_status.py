@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from learned_tta.run_status import inspect_full_run_status
+from learned_tta.augmentations import AugmentationCandidate
+from learned_tta.config import load_experiment_config
+from learned_tta.run_status import (
+    _contains_subset,
+    _expected_teacher_cache_metadata,
+    _extra_teacher_cache_outputs,
+    _has_complete_teacher_cache,
+    _json_ready,
+    _teacher_cache_metadata_matches,
+    inspect_full_run_status,
+)
 
 
 def test_inspect_full_run_status_reports_first_missing_step(tmp_path: Path) -> None:
@@ -89,6 +100,35 @@ def test_inspect_full_run_status_rejects_partial_teacher_cache(
     )
 
 
+def test_inspect_full_run_status_rejects_stale_teacher_cache_metadata(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_experiment_config(tmp_path)
+    project_root = tmp_path / "project"
+    artifacts_dir = project_root / "artifacts"
+    manifests_dir = artifacts_dir / "manifests"
+    cache_dir = artifacts_dir / "teacher_cache"
+    _touch(artifacts_dir / "augmentation_registry_audit.json")
+    for split in ("public_train", "public_val", "public", "private"):
+        _touch(manifests_dir / f"{split}.csv")
+    _touch(manifests_dir / "class_to_idx.json")
+    _touch_teacher_cache(cache_dir, split="public_val", candidate_count=1)
+    _touch(cache_dir / "public_val__aug_000.clean_baseline.json")
+    _touch_teacher_cache(cache_dir, split="public_train", candidate_count=100)
+    (cache_dir / "public_train__aug_042.run.json").write_text(
+        json.dumps({"version": 1, "split": "public_train", "aug_id": "aug_042", "seed": 999}),
+        encoding="utf-8",
+    )
+
+    summary = inspect_full_run_status(config_path)
+    cache_step = next(step for step in summary.steps if step.name == "cache_public_train")
+
+    assert summary.next_step is not None
+    assert summary.next_step.name == "cache_public_train"
+    assert cache_step.complete is False
+    assert cache_step.missing_outputs == (cache_dir / "public_train__aug_042.run.json",)
+
+
 def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
     tmp_path: Path,
 ) -> None:
@@ -139,6 +179,59 @@ def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
     assert [step.name for step in optional_steps] == ["train_xgboost_aggregator"]
     assert optional_steps[0].complete is False
     assert "xgboost-multiclass" in optional_steps[0].command
+
+
+def test_run_status_teacher_cache_helpers_cover_metadata_edge_cases(tmp_path: Path) -> None:
+    config_path = _write_experiment_config(tmp_path)
+    config = load_experiment_config(config_path)
+    cache_dir = tmp_path / "teacher_cache"
+
+    assert not _has_complete_teacher_cache(
+        config,
+        cache_dir,
+        split="public_train",
+        expected_aug_ids=(),
+    )
+
+    candidate = AugmentationCandidate(
+        id="aug_001",
+        name="custom",
+        class_name="HorizontalFlip",
+        params={"p": 1.0, "limits": (1, 1), "path": Path("local")},
+    )
+    expected = _expected_teacher_cache_metadata(
+        config,
+        split="public_train",
+        aug_id="aug_001",
+        candidate=candidate,
+    )
+    assert expected["augmentation"] == {
+        "id": "aug_001",
+        "name": "custom",
+        "determinism": "fixed",
+        "class_name": "HorizontalFlip",
+        "params": {"p": 1.0, "limits": [1, 1], "path": "PosixPath('local')"},
+    }
+    assert _json_ready({"items": (Path("a"),)}) == {"items": ["PosixPath('a')"]}
+
+    bad_json = tmp_path / "bad.run.json"
+    bad_json.write_text("", encoding="utf-8")
+    assert not _teacher_cache_metadata_matches(bad_json, expected_metadata=expected)
+    not_object = tmp_path / "list.run.json"
+    not_object.write_text("[]", encoding="utf-8")
+    assert not _teacher_cache_metadata_matches(not_object, expected_metadata=expected)
+    assert not _contains_subset({"teacher": "resnet50"}, {"teacher": {"model_name": "x"}})
+
+    _touch(
+        cache_dir / "public_train__aug_999.logits.npy",
+        cache_dir / "public_train__aug_999.parquet",
+        cache_dir / "public_train__aug_999.run.json",
+    )
+    assert cache_dir / "public_train__aug_999.logits.npy" in _extra_teacher_cache_outputs(
+        cache_dir,
+        split="public_train",
+        expected_aug_ids=("aug_000",),
+    )
 
 
 def _write_experiment_config(tmp_path: Path) -> Path:
@@ -200,5 +293,27 @@ def _touch_teacher_cache(cache_dir: Path, split: str, candidate_count: int) -> N
         _touch(
             cache_dir / f"{split}__{aug_id}.parquet",
             cache_dir / f"{split}__{aug_id}.logits.npy",
-            cache_dir / f"{split}__{aug_id}.run.json",
         )
+        (cache_dir / f"{split}__{aug_id}.run.json").write_text(
+            json.dumps(_teacher_cache_run_metadata(split=split, aug_id=aug_id)),
+            encoding="utf-8",
+        )
+
+
+def _teacher_cache_run_metadata(split: str, aug_id: str) -> dict[str, object]:
+    return {
+        "version": 1,
+        "split": split,
+        "aug_id": aug_id,
+        "seed": 20260522,
+        "teacher": {
+            "model_name": "resnet50.a1_in1k",
+            "pretrained": True,
+            "num_classes": 1000,
+            "data_config": {"input_size": [3, 224, 224]},
+        },
+        "storage": {
+            "logits_dtype": "float16",
+            "metadata_format": "parquet",
+        },
+    }

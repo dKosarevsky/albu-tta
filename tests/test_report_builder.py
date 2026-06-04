@@ -9,7 +9,27 @@ import pytest
 import torch
 from PIL import Image
 
-from learned_tta.report_builder import build_report_from_artifacts
+from learned_tta.report_builder import (
+    _aggregation_weight_summary_lines,
+    _aggregation_weights_svg,
+    _attach_augmentation_metadata,
+    _augmentation_impact_summary_lines,
+    _augmentation_metadata_table,
+    _bar_svg,
+    _build_aggregation_tables,
+    _build_private_metric_deltas_table,
+    _build_transform_class_aggregation_table,
+    _build_transform_class_impact_table,
+    _build_xgboost_feature_importance_table,
+    _complete_metrics,
+    _existing_path,
+    _json_int,
+    _public_metrics_from_tuning,
+    _read_corrections_csv,
+    _read_selector_history_csv,
+    _validate_aggregator_aug_ids,
+    build_report_from_artifacts,
+)
 from learned_tta.selector_model import SelectorCNN
 from learned_tta.stacking import AggregationArtifact, XGBoostAggregationArtifact
 from learned_tta.targets import TargetStats, save_selector_targets
@@ -456,6 +476,119 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "figures" / "xgboost_feature_importance.svg").exists()
     assert (report_dir / "figures" / "corrections.svg").exists()
     assert (report_dir / "figures" / "selector_history.svg").exists()
+
+
+def test_report_builder_rejects_malformed_optional_csv_inputs(tmp_path: Path) -> None:
+    bad_corrections = tmp_path / "corrections.csv"
+    pd.DataFrame([{"strategy": "clean"}]).to_csv(bad_corrections, index=False)
+    bad_history = tmp_path / "selector_history.csv"
+    pd.DataFrame([{"epoch": 1}]).to_csv(bad_history, index=False)
+
+    with pytest.raises(ValueError, match="corrections CSV is missing columns"):
+        _read_corrections_csv(bad_corrections)
+    with pytest.raises(ValueError, match="selector history CSV is missing columns"):
+        _read_selector_history_csv(bad_history)
+
+
+def test_report_builder_handles_absent_optional_metadata_and_tables(tmp_path: Path) -> None:
+    assert _build_aggregation_tables(
+        aug_ids=["aug_000"],
+        global_aggregator_path=None,
+        class_aggregator_path=None,
+    ).weights is None
+    assert _augmentation_metadata_table(["aug_000"], registry_path=None) is None
+    table = pd.DataFrame({"aug_id": ["aug_000"], "mean_gain": [0.0]})
+    assert _attach_augmentation_metadata(table, metadata=None).equals(table)
+    assert _build_transform_class_impact_table(table) is None
+    assert _build_transform_class_aggregation_table(None) is None
+    assert _build_transform_class_aggregation_table(pd.DataFrame({"aug_id": ["aug_000"]})) is None
+    assert (
+        _build_xgboost_feature_importance_table(["aug_000"], xgboost_aggregator_path=None)
+        is None
+    )
+    assert _existing_path(tmp_path / "missing") is None
+    existing = tmp_path / "present.txt"
+    existing.write_text("ok", encoding="utf-8")
+    assert _existing_path(existing) == existing
+
+
+def test_report_builder_rejects_aggregator_and_registry_mismatches(tmp_path: Path) -> None:
+    class_aggregator_path = tmp_path / "class_bad.json"
+    AggregationArtifact(
+        method="class-nonnegative",
+        aug_ids=["aug_000", "aug_001"],
+        weights=np.array([0.5, 0.5], dtype=np.float32),
+        active_threshold=1e-6,
+        metrics={"nll": 0.1},
+    ).save(class_aggregator_path)
+    with pytest.raises(ValueError, match="class aggregation weights"):
+        _build_aggregation_tables(
+            aug_ids=["aug_000", "aug_001"],
+            global_aggregator_path=None,
+            class_aggregator_path=class_aggregator_path,
+        )
+
+    with pytest.raises(ValueError, match="augmentation registry is missing ids"):
+        _augmentation_metadata_table(
+            ["aug_missing"],
+            registry_path=Path(__file__).resolve().parents[1]
+            / "configs/augmentations/imagenet100.yaml",
+        )
+    with pytest.raises(ValueError, match="aggregator aug_ids"):
+        _validate_aggregator_aug_ids(["aug_001"], ["aug_000"], tmp_path / "weights.json")
+
+
+def test_report_builder_rejects_bad_tuning_and_metric_payloads(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="results_by_k"):
+        _public_metrics_from_tuning({"best_k": 1, "results_by_k": {}})
+    with pytest.raises(ValueError, match="best_k metrics"):
+        _public_metrics_from_tuning({"best_k": 1, "results_by_k": {"1": []}})
+    with pytest.raises(ValueError, match="expected integer-compatible"):
+        _json_int(1.5)
+    assert _json_int("4") == 4
+
+    with pytest.raises(ValueError, match="metrics are missing columns"):
+        _complete_metrics({"top1": 1.0}, strategy="global_weighted_tta")
+    with pytest.raises(ValueError, match="private metrics must include clean"):
+        _build_private_metric_deltas_table({"learned": {"top1": 1.0}})
+
+
+def test_report_builder_rejects_bad_xgboost_importance_shape(tmp_path: Path) -> None:
+    model_path = tmp_path / "model.json"
+    model_path.write_text("fake", encoding="utf-8")
+    artifact_path = tmp_path / "xgboost.json"
+    XGBoostAggregationArtifact(
+        method="xgboost-multiclass",
+        aug_ids=["aug_000", "aug_001"],
+        model_path=model_path,
+        num_classes=2,
+        feature_count=4,
+        feature_importance=np.array([1.0], dtype=np.float32),
+        metrics={"nll": 0.1},
+    ).save(artifact_path)
+
+    with pytest.raises(ValueError, match="xgboost feature importance"):
+        _build_xgboost_feature_importance_table(["aug_000", "aug_001"], artifact_path)
+
+
+def test_report_builder_summary_and_svg_edge_cases() -> None:
+    assert _augmentation_impact_summary_lines(
+        pd.DataFrame(
+            {
+                "aug_id": ["aug_000"],
+                "mean_gain": [0.0],
+                "selection_frequency": [1.0],
+                "oracle_frequency": [1.0],
+            }
+        ),
+        identity_aug_id="aug_000",
+    ) == []
+    assert _aggregation_weight_summary_lines(pd.DataFrame({"aug_id": ["aug_000"]})) == []
+    assert "Mean Class Aggregation Weights" in _aggregation_weights_svg(
+        pd.DataFrame({"aug_id": ["aug_000"], "class_mean_weight": [0.5]})
+    )
+    assert "Aggregation Weights" in _aggregation_weights_svg(pd.DataFrame({"aug_id": ["aug_000"]}))
+    assert "<svg" in _bar_svg("zero", labels=["a"], values=[0.0], y_label="value")
 
 
 def _write_manifest(root: Path, count: int) -> Path:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,6 +47,47 @@ class SmokeRunSummary:
 
 
 def run_smoke_e2e(
+    config_path: Path,
+    output_dir: Path,
+    candidate_count: int = 3,
+    image_size: int = 16,
+    batch_size: int = 2,
+    num_workers: int = 0,
+    epochs: int = 1,
+    device: str | torch.device = "cpu",
+) -> SmokeRunSummary:
+    """Run a tiny synthetic pipeline from manifests through final report artifacts."""
+
+    with _smoke_cpu_thread_guard(device):
+        return _run_smoke_e2e_impl(
+            config_path=config_path,
+            output_dir=output_dir,
+            candidate_count=candidate_count,
+            image_size=image_size,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            epochs=epochs,
+            device=device,
+        )
+
+
+@contextmanager
+def _smoke_cpu_thread_guard(device: str | torch.device) -> Iterator[None]:
+    """Temporarily cap torch CPU threads during smoke training."""
+
+    if torch.device(device).type != "cpu":
+        yield
+        return
+
+    previous_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        yield
+    finally:
+        torch.set_num_threads(previous_threads)
+
+
+def _run_smoke_e2e_impl(
     config_path: Path,
     output_dir: Path,
     candidate_count: int = 3,

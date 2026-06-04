@@ -327,6 +327,9 @@ augmentation.
 The status check requires every configured augmentation candidate to have
 metadata, logits, and `.run.json` sidecar shard files before a teacher-cache
 split is marked complete. full-run-status treats `.run.json` sidecars as required teacher cache outputs.
+It also validates the sidecar metadata against the current split, augmentation
+id, seed, teacher model, class count, storage format, and registry candidate
+parameters, so stale Drive shards from an older run are not silently skipped.
 Incomplete steps show `missing=` and `extra=` counts in text output; JSON
 output includes `missing_outputs` and `extra_outputs` path lists for resumable
 run scripts.

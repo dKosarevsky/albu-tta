@@ -23,7 +23,8 @@ Implemented:
 - Private evaluation artifacts with metrics, compute, clean-vs-TTA corrections, and metric deltas against clean.
 - Final report builder with tables, SVG plots, top-N markdown summaries, transform-class impact, transform-class aggregation, selector history, XGBoost importance, and result text that avoids SOTA claims.
 - Synthetic smoke run covering manifests, teacher cache, target build, selector training, tuning, aggregation training, private evaluation, and final report generation.
-- Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates and missing/extra artifact diagnostics.
+- Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates, `.run.json` metadata validation, and missing/extra artifact diagnostics.
+- CI coverage gate fixed at 98% minimum for the `learned_tta` package.
 - Script-friendly full-run status exit mode via `--fail-on-incomplete`.
 - Script-friendly next required command output via `--next-command`.
 - Supervised `resume-full-run` CLI for Colab reconnects: it runs the next

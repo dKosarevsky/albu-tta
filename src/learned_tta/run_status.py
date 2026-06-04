@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from learned_tta.augmentations import load_augmentation_registry
+from learned_tta.augmentations import AugmentationCandidate, load_augmentation_registry
 from learned_tta.clean_baseline import clean_baseline_artifact_path
 from learned_tta.config import ExperimentConfig, load_experiment_config
 
@@ -52,6 +53,7 @@ class _StepSpec:
     complete: Callable[[], bool]
     required: bool = True
     extra_outputs: Callable[[], tuple[Path, ...]] = _empty_outputs
+    missing_outputs: Callable[[], tuple[Path, ...]] | None = None
 
 
 def inspect_full_run_status(config_path: Path) -> FullRunStatusSummary:
@@ -275,10 +277,17 @@ def _cache_step_spec(
             f"{' ' + candidate_args if candidate_args else ''}"
         ),
         complete=lambda: _has_complete_teacher_cache(
+            config,
             config.artifacts.teacher_cache_dir,
             split,
             expected_aug_ids=expected_aug_ids,
             allow_extra_outputs=allow_extra_outputs,
+        ),
+        missing_outputs=lambda: _missing_teacher_cache_outputs(
+            config,
+            config.artifacts.teacher_cache_dir,
+            split,
+            expected_aug_ids=expected_aug_ids,
         ),
         extra_outputs=(
             _empty_outputs
@@ -297,13 +306,18 @@ def _all_exist(paths: tuple[Path, ...]) -> bool:
 
 
 def _build_step_status(spec: _StepSpec) -> FullRunStepStatus:
+    missing_outputs = (
+        spec.missing_outputs()
+        if spec.missing_outputs is not None
+        else tuple(path for path in spec.outputs if not path.exists())
+    )
     return FullRunStepStatus(
         name=spec.name,
         complete=spec.complete(),
         outputs=spec.outputs,
         command=spec.command,
         required=spec.required,
-        missing_outputs=tuple(path for path in spec.outputs if not path.exists()),
+        missing_outputs=missing_outputs,
         extra_outputs=spec.extra_outputs(),
     )
 
@@ -326,12 +340,20 @@ def _expected_augmentation_ids(config: ExperimentConfig) -> tuple[str, ...]:
 
 
 def _has_complete_teacher_cache(
+    config: ExperimentConfig,
     cache_dir: Path,
     split: str,
     expected_aug_ids: tuple[str, ...],
     allow_extra_outputs: bool = False,
 ) -> bool:
     if not expected_aug_ids:
+        return False
+    if _missing_teacher_cache_outputs(
+        config,
+        cache_dir,
+        split,
+        expected_aug_ids=expected_aug_ids,
+    ):
         return False
     parquet_shards = sorted(cache_dir.glob(f"{split}__*.parquet"))
     logits_shards = sorted(cache_dir.glob(f"{split}__*.logits.npy"))
@@ -353,6 +375,117 @@ def _has_complete_teacher_cache(
         and logits_stems == expected_stems
         and run_metadata_stems == expected_stems
     )
+
+
+def _missing_teacher_cache_outputs(
+    config: ExperimentConfig,
+    cache_dir: Path,
+    split: str,
+    expected_aug_ids: tuple[str, ...],
+) -> tuple[Path, ...]:
+    candidates_by_id = _candidate_metadata_by_id(config)
+    missing_outputs = []
+    for aug_id in expected_aug_ids:
+        stem = f"{split}__{aug_id}"
+        expected_paths = (
+            cache_dir / f"{stem}.parquet",
+            cache_dir / f"{stem}.logits.npy",
+            cache_dir / f"{stem}.run.json",
+        )
+        missing_outputs.extend(path for path in expected_paths if not path.exists())
+        run_metadata_path = cache_dir / f"{stem}.run.json"
+        if (
+            run_metadata_path.exists()
+            and not _teacher_cache_metadata_matches(
+                run_metadata_path,
+                expected_metadata=_expected_teacher_cache_metadata(
+                    config,
+                    split=split,
+                    aug_id=aug_id,
+                    candidate=candidates_by_id.get(aug_id),
+                ),
+            )
+        ):
+            missing_outputs.append(run_metadata_path)
+    return tuple(missing_outputs)
+
+
+def _candidate_metadata_by_id(
+    config: ExperimentConfig,
+) -> dict[str, AugmentationCandidate]:
+    if not config.augmentations.registry_path.exists():
+        return {}
+    return {
+        candidate.id: candidate
+        for candidate in load_augmentation_registry(config.augmentations.registry_path)
+    }
+
+
+def _expected_teacher_cache_metadata(
+    config: ExperimentConfig,
+    split: str,
+    aug_id: str,
+    candidate: AugmentationCandidate | None,
+) -> dict[str, Any]:
+    expected: dict[str, Any] = {
+        "version": 1,
+        "split": split,
+        "aug_id": aug_id,
+        "seed": config.seed,
+        "teacher": {
+            "model_name": config.teacher.model_name,
+            "pretrained": config.teacher.pretrained,
+            "num_classes": config.dataset.class_count,
+        },
+        "storage": {
+            "logits_dtype": "float16",
+            "metadata_format": "parquet",
+        },
+    }
+    if candidate is not None:
+        expected["augmentation"] = {
+            "id": candidate.id,
+            "name": candidate.name,
+            "determinism": candidate.determinism,
+            "class_name": candidate.class_name,
+            "params": _json_ready(candidate.params),
+        }
+    return expected
+
+
+def _teacher_cache_metadata_matches(
+    path: Path,
+    expected_metadata: Mapping[str, Any],
+) -> bool:
+    try:
+        with path.open(encoding="utf-8") as handle:
+            actual = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(actual, Mapping):
+        return False
+    return _contains_subset(actual, _json_ready(dict(expected_metadata)))
+
+
+def _contains_subset(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, Mapping):
+        if not isinstance(actual, Mapping):
+            return False
+        return all(
+            key in actual and _contains_subset(actual[key], expected_value)
+            for key, expected_value in expected.items()
+        )
+    return actual == expected
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return repr(value)
 
 
 def _extra_teacher_cache_outputs(

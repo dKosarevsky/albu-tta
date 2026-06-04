@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from learned_tta.reporting import (
+    _selection_frequency,
     build_augmentation_impact_table,
     build_compute_table,
     build_correction_table,
@@ -81,6 +82,22 @@ def test_build_correction_table_counts_clean_tta_transitions() -> None:
     assert tta_row["both_wrong"] == 1
 
 
+def test_build_correction_table_rejects_shape_mismatches() -> None:
+    with pytest.raises(ValueError, match="clean_correct and class_idxs"):
+        build_correction_table(
+            clean_correct=np.array([True, False]),
+            predictions_by_strategy={},
+            class_idxs=np.array([0]),
+        )
+
+    with pytest.raises(ValueError, match="predictions for tta must match"):
+        build_correction_table(
+            clean_correct=np.array([True, False]),
+            predictions_by_strategy={"tta": np.array([0])},
+            class_idxs=np.array([0, 1]),
+        )
+
+
 @pytest.mark.parametrize(
     ("selected_aug_ids", "oracle_aug_ids", "expected_selection", "expected_oracle"),
     [
@@ -108,6 +125,50 @@ def test_build_augmentation_impact_table_counts_selection_frequency(
     assert table["mean_gain"].tolist() == pytest.approx([0.0, 2.0, 0.5])
     assert table["selection_frequency"].tolist() == pytest.approx(expected_selection)
     assert table["oracle_frequency"].tolist() == pytest.approx(expected_oracle)
+
+
+@pytest.mark.parametrize(
+    ("gain", "selected_aug_ids", "oracle_aug_ids", "match"),
+    [
+        (
+            np.array([0.0, 1.0], dtype=np.float32),
+            [["aug_000"]],
+            [["aug_000"]],
+            "gain must have shape",
+        ),
+        (
+            np.zeros((2, 2), dtype=np.float32),
+            [["aug_000"]],
+            [["aug_000"], ["aug_000"]],
+            "gain shape must match",
+        ),
+        (
+            np.zeros((2, 2), dtype=np.float32),
+            [["aug_000"], ["aug_000"]],
+            [["aug_000"]],
+            "oracle_aug_ids length",
+        ),
+    ],
+)
+def test_build_augmentation_impact_table_rejects_shape_mismatches(
+    gain: np.ndarray,
+    selected_aug_ids: list[list[str]],
+    oracle_aug_ids: list[list[str]],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        build_augmentation_impact_table(
+            aug_ids=["aug_000", "aug_001"],
+            gain=gain,
+            selected_aug_ids=selected_aug_ids,
+            oracle_aug_ids=oracle_aug_ids,
+        )
+
+
+def test_selection_frequency_handles_empty_selections() -> None:
+    frequency = _selection_frequency(["aug_000", "aug_001"], selected_aug_ids=[])
+
+    assert frequency.tolist() == pytest.approx([0.0, 0.0])
 
 
 def test_build_results_markdown_avoids_state_of_the_art_claims(
