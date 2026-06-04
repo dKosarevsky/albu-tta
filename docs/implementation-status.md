@@ -5,8 +5,13 @@ Status: implementation-complete for the planned lightweight end-to-end pipeline.
 Implemented:
 
 - Project bootstrap, CI, pytest, coverage, Ruff, ty, badges, and artifact policy.
-- Stratified ImageNet-val manifests for `public_train`, `public_val`, `public`, and `private`.
-- AlbumentationsX registry with 100 deterministic single-transform candidates and audit JSON including runtime package versions.
+- Strict ImageNet-val preflight requiring 1,000 WNID classes, 50,000 images,
+  50 images per class, and a configured class index matching `timm-imagenet-1k`.
+- Stratified ImageNet-val manifests for `public_train`, `public_val`,
+  `public`, and `private`, plus `class_to_idx.json` for label-index audit.
+- AlbumentationsX registry with 100 single-transform candidates, explicit
+  `fixed` vs `seeded_stochastic` determinism metadata, range validation for
+  fixed candidates, and audit JSON including runtime package versions.
 - Teacher cache runner for timm ResNet50 preprocessing, fp16 logits, parquet metadata, `.run.json` sidecars, and metadata-aware resume checks.
 - Selector target generation from cached logits with clean-vs-augmentation gain targets.
 - Selector target formulation documented as a 100-score augmentation utility predictor for ranking/top-k TTA selection, not 50-bin loss classification.
@@ -36,7 +41,8 @@ Not part of the implementation-complete status:
 
 Next research step:
 
-Run `check-full-run` against the local ImageNet-val directory, run the full
+Run `check-full-run` against the local ImageNet-val directory, confirm the
+strict class-count/image-count/WNID-mapping checks pass, run the full
 experiment with `resnet50.a1_in1k`, use `full-run-status` after each expensive
 step to confirm the next missing required artifact, use `--format json` if the
 GPU run is driven by scripts, use `--fail-on-incomplete` when a shell step

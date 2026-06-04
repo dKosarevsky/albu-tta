@@ -20,7 +20,8 @@ cache resume can survive Colab disconnects.
 
 - Colab runtime with a GPU selected.
 - ImageNet validation data available inside Colab at `IMAGENET_VAL_DIR`.
-- ImageNet layout: `val/class_name/image.JPEG`.
+- ImageNet layout: `val/WNID/image.JPEG`, using the ImageNet-1k WNID class
+  directories expected by `timm-imagenet-1k`.
 - Enough Google Drive space for `artifacts` and `reports`.
 
 CPU runtimes are supported for setup and diagnostics only. They can mount
@@ -51,7 +52,8 @@ Use this checklist when handing the run to someone with GPU access:
 2. Select a GPU runtime before running the GPU check or `resume-full-run`.
 3. Mount Google Drive and set `IMAGENET_VAL_DIR` and `DRIVE_RUN_ROOT`.
 4. Run setup and the read-only diagnostics cell.
-5. Confirm ImageNet has exactly 50,000 validation JPEG files.
+5. Confirm ImageNet has exactly 1,000 WNID directories and 50,000 validation
+   JPEG files.
 6. Confirm diagnostics show no active duplicate `cache-teacher` process.
 7. Run `resume-full-run`; for long teacher-cache steps it starts a background
    process and writes logs under `DRIVE_RUN_ROOT/logs`.
@@ -111,7 +113,8 @@ shell script that hides intermediate status.
   CPU. Use CPU only for diagnostics, or move the notebook to another GPU
   provider/runtime with [`docs/gpu-run.md`](gpu-run.md).
 - If `check-full-run` fails, fix `IMAGENET_VAL_DIR` first and verify that it
-  contains exactly 50,000 `*.JPEG` files under class directories.
+  contains exactly 1,000 WNID class directories, 50,000 `*.JPEG` files, and no
+  unknown or missing ImageNet-1k class directory names.
 - If Drive is slow, keep the repository in `/content` and only persist
   `artifacts` and `reports`, which is what the notebook does.
 - If Colab disconnects during `cache-teacher`, reconnect and re-run the resume

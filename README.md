@@ -205,8 +205,9 @@ The Colab notebook is designed to be handed to someone with GPU access:
 Before launching expensive work, the worker should verify:
 
 - the runtime has CUDA;
-- ImageNet validation contains exactly 50,000 `*.JPEG` files under class
-  directories;
+- ImageNet validation contains exactly 1,000 WNID class directories and 50,000
+  `*.JPEG` files, with 50 images per class;
+- the WNID directories match the configured `timm-imagenet-1k` class index;
 - `artifacts/` and `reports/` point to persistent storage;
 - the read-only diagnostics cell shows no active duplicate `cache-teacher`
   process;
@@ -306,6 +307,9 @@ locations and print the next missing command without loading ImageNet or GPU
 models. The text output separates required steps from the optional XGBoost
 stacker, and `--format json` exposes the same required/optional status for
 external run scripts.
+`make-splits` writes `artifacts/manifests/class_to_idx.json` alongside the CSV
+manifests. Keep that artifact with the run output; it is the audit trail tying
+manifest labels to the teacher model's ImageNet-1k output indices.
 The status check requires every configured augmentation candidate to have
 metadata, logits, and `.run.json` sidecar shard files before a teacher-cache
 split is marked complete. full-run-status treats `.run.json` sidecars as required teacher cache outputs.
