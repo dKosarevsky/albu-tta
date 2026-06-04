@@ -147,6 +147,31 @@ def test_shard_is_complete_rejects_missing_or_mismatched_files(tmp_path: Path) -
 
 
 @pytest.mark.parametrize(
+    ("metadata_bytes", "logits_bytes"),
+    [
+        (b"not parquet", b"\x93NUMPY"),
+        (b"PAR1", b"not numpy"),
+    ],
+)
+def test_shard_is_complete_rejects_unreadable_files(
+    tmp_path: Path,
+    metadata_bytes: bytes,
+    logits_bytes: bytes,
+) -> None:
+    metadata_path = tmp_path / "public__aug_001.parquet"
+    logits_path = tmp_path / "public__aug_001.logits.npy"
+    metadata_path.write_bytes(metadata_bytes)
+    logits_path.write_bytes(logits_bytes)
+
+    assert not shard_is_complete(
+        metadata_path,
+        logits_path,
+        expected_rows=2,
+        expected_classes=3,
+    )
+
+
+@pytest.mark.parametrize(
     ("logits_value", "class_idxs", "match"),
     [
         (

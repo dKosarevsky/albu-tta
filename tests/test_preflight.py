@@ -67,6 +67,110 @@ def test_run_full_run_preflight_rejects_wrong_images_per_class(tmp_path: Path) -
         )
 
 
+def test_run_full_run_preflight_rejects_selector_output_dim_mismatch(
+    tmp_path: Path,
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=2, images_per_class=50)
+    config_path = _write_test_config(
+        tmp_path,
+        class_count=2,
+        images_per_class=50,
+        selector_output_dim=99,
+    )
+
+    with pytest.raises(ValueError, match="selector output_dim"):
+        run_full_run_preflight(
+            config_path=config_path,
+            imagenet_val_dir=val_root,
+        )
+
+
+def test_run_full_run_preflight_rejects_identity_candidate_mismatch(
+    tmp_path: Path,
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=2, images_per_class=50)
+    config_path = _write_test_config(
+        tmp_path,
+        class_count=2,
+        images_per_class=50,
+        identity_id="aug_001",
+    )
+
+    with pytest.raises(ValueError, match="first augmentation candidate"):
+        run_full_run_preflight(
+            config_path=config_path,
+            imagenet_val_dir=val_root,
+        )
+
+
+def test_run_full_run_preflight_rejects_top_k_grid_at_candidate_count(
+    tmp_path: Path,
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=2, images_per_class=50)
+    config_path = _write_test_config(
+        tmp_path,
+        class_count=2,
+        images_per_class=50,
+        top_k_grid=(1, 100),
+    )
+
+    with pytest.raises(ValueError, match="top_k_grid"):
+        run_full_run_preflight(
+            config_path=config_path,
+            imagenet_val_dir=val_root,
+        )
+
+
+def test_run_full_run_preflight_rejects_empty_imagenet_directory(
+    tmp_path: Path,
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=1, images_per_class=0)
+    config_path = _write_test_config(tmp_path, class_count=1, images_per_class=0)
+
+    with pytest.raises(ValueError, match="contains no images"):
+        run_full_run_preflight(
+            config_path=config_path,
+            imagenet_val_dir=val_root,
+        )
+
+
+def test_run_full_run_preflight_rejects_class_index_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=2, images_per_class=50)
+    config_path = _write_test_config(
+        tmp_path,
+        class_count=2,
+        images_per_class=50,
+        class_index_count=1,
+    )
+
+    with pytest.raises(ValueError, match="class index expected 2 classes, found 1"):
+        run_full_run_preflight(
+            config_path=config_path,
+            imagenet_val_dir=val_root,
+        )
+
+
+def test_run_full_run_preflight_rejects_total_image_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=3, images_per_class=0)
+    for class_idx in range(2):
+        class_dir = val_root / f"n{class_idx:08d}"
+        for image_idx in range(50):
+            (class_dir / f"ILSVRC2012_val_{class_idx:04d}_{image_idx:04d}.JPEG").write_bytes(
+                b""
+            )
+    config_path = _write_test_config(tmp_path, class_count=3, images_per_class=50)
+
+    with pytest.raises(ValueError, match="expected 150 images, found 100"):
+        run_full_run_preflight(
+            config_path=config_path,
+            imagenet_val_dir=val_root,
+        )
+
+
 def _make_fake_imagenet_val(
     root: Path,
     classes: int,
@@ -83,12 +187,24 @@ def _make_fake_imagenet_val(
     return val_root
 
 
-def _write_test_config(tmp_path: Path, class_count: int, images_per_class: int) -> Path:
+def _write_test_config(
+    tmp_path: Path,
+    class_count: int,
+    images_per_class: int,
+    *,
+    selector_output_dim: int = 100,
+    identity_id: str = "aug_000",
+    top_k_grid: tuple[int, ...] = (1, 2, 4),
+    class_index_count: int | None = None,
+) -> Path:
     class_index_path = tmp_path / "class_index.txt"
+    resolved_class_index_count = class_count if class_index_count is None else class_index_count
     class_index_path.write_text(
-        "\n".join(f"n{class_idx:08d}" for class_idx in range(class_count)) + "\n",
+        "\n".join(f"n{class_idx:08d}" for class_idx in range(resolved_class_index_count))
+        + "\n",
         encoding="utf-8",
     )
+    top_k_yaml = "\n".join(f"    - {top_k}" for top_k in top_k_grid)
     config_path = tmp_path / "experiment.yaml"
     config_path.write_text(
         f"""
@@ -112,15 +228,13 @@ dataset:
 augmentations:
   registry_path: {CONFIG_PATH.parents[1] / "augmentations" / "imagenet100.yaml"}
   candidate_count: 100
-  identity_id: aug_000
+  identity_id: {identity_id}
 
 selector:
-  output_dim: 100
+  output_dim: {selector_output_dim}
   max_parameters: 1500000
   top_k_grid:
-    - 1
-    - 2
-    - 4
+{top_k_yaml}
 
 artifacts:
   root: artifacts

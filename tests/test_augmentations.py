@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 import json
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 
 from learned_tta.augmentations import (
     AugmentationCandidate,
+    _package_version,
     apply_candidate,
     build_augmentation_audit,
     load_augmentation_registry,
@@ -230,3 +232,14 @@ def test_build_augmentation_audit_is_stable_json_payload() -> None:
     assert serialized["transform"]["transforms"][0]["__class_fullname__"] == (
         "RandomBrightnessContrast"
     )
+
+
+def test_package_version_reports_missing_distributions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_version(_distribution_name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(importlib.metadata, "version", fake_version)
+
+    assert _package_version("missing-distribution") == "not-installed"

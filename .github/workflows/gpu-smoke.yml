@@ -1,0 +1,59 @@
+name: GPU smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: CUDA device passed to the smoke runner.
+        required: true
+        default: cuda
+      output_dir:
+        description: Directory for smoke artifacts on the runner.
+        required: true
+        default: artifacts/gpu-smoke
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-smoke:
+    name: gpu-smoke
+    runs-on: [self-hosted, linux, x64, gpu]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Check CUDA runtime
+        run: |
+          nvidia-smi
+          uv run --frozen python - <<'PY'
+          import torch
+
+          assert torch.cuda.is_available(), "CUDA is not available on this runner"
+          print(torch.cuda.get_device_name(0))
+          PY
+
+      - name: Run GPU smoke
+        run: |
+          uv run --frozen python -m learned_tta.cli run-smoke \
+            --config configs/experiment/resnet50_a1_in1k.yaml \
+            --output-dir "${{ inputs.output_dir }}" \
+            --device "${{ inputs.device }}" \
+            --image-size 16 \
+            --batch-size 2 \
+            --num-workers 0 \
+            --epochs 1
