@@ -23,6 +23,8 @@ class DatasetConfig:
     """ImageNet validation split shape configuration."""
 
     name: str
+    class_count: int
+    class_index: str
     images_per_class: int
 
 
@@ -96,6 +98,8 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
         ),
         dataset=DatasetConfig(
             name=str(dataset["name"]),
+            class_count=int(dataset["class_count"]),
+            class_index=str(dataset["class_index"]),
             images_per_class=int(dataset["images_per_class"]),
         ),
         split=SplitConfig(

@@ -7,6 +7,8 @@ teacher:
 
 dataset:
   name: imagenet-val
+  class_count: 1000
+  class_index: timm-imagenet-1k
   images_per_class: 50
   public_per_class: 25
   private_per_class: 25
