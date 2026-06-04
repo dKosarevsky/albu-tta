@@ -222,6 +222,7 @@ def test_implementation_status_documents_split_role_guards(
     implementation_status_text: str,
 ) -> None:
     assert "Public/private split-role guards" in implementation_status_text
+    assert "CI coverage gate fixed at 98% minimum" in implementation_status_text
 
 
 @pytest.mark.parametrize(
@@ -248,6 +249,8 @@ def test_implementation_status_documents_split_role_guards(
         "teacher cache shard writes a `.run.json` sidecar",
         "model name, pretrained flag, timm data config",
         "full-run-status treats `.run.json` sidecars as required teacher cache outputs",
+        "validates the sidecar metadata",
+        "stale Drive shards",
         "--imagenet-val-dir",
         "cache-teacher --split public_train",
         "cache-teacher --split public_val",
@@ -310,7 +313,11 @@ def test_ty_excludes_colab_notebooks_from_type_checking(pyproject: dict[str, Any
         ("ty", "uv sync --frozen --extra dev"),
         ("ty", "uv run --frozen ty check"),
         ("coverage", "uv sync --frozen --extra dev"),
-        ("coverage", "uv run --frozen pytest --cov=learned_tta --cov-report=term-missing"),
+        (
+            "coverage",
+            "uv run --frozen pytest --cov=learned_tta "
+            "--cov-report=term-missing --cov-fail-under=98",
+        ),
     ],
 )
 def test_ci_workflow_runs_expected_commands(
