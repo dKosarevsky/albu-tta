@@ -45,6 +45,15 @@ def ci_workflow() -> dict[str, Any]:
 
 
 @pytest.fixture
+def gpu_smoke_workflow() -> dict[Any, Any]:
+    workflow_path = ROOT / ".github" / "workflows" / "gpu-smoke.yml"
+    with workflow_path.open(encoding="utf-8") as handle:
+        loaded = yaml.safe_load(handle)
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+@pytest.fixture
 def pyproject() -> dict[str, Any]:
     pyproject_path = ROOT / "pyproject.toml"
     with pyproject_path.open("rb") as handle:
@@ -137,6 +146,14 @@ def test_colab_notebook_is_valid_and_uses_status_orchestration(
     assert "api_key" not in source
 
 
+def test_colab_notebook_is_clean_for_repo_storage(
+    colab_notebook: dict[str, Any],
+) -> None:
+    for cell in colab_notebook["cells"]:
+        assert cell.get("execution_count") is None
+        assert cell.get("outputs", []) == []
+
+
 def test_colab_notebook_prefers_local_prepared_imagenet(
     colab_notebook: dict[str, Any],
 ) -> None:
@@ -222,7 +239,7 @@ def test_implementation_status_documents_split_role_guards(
     implementation_status_text: str,
 ) -> None:
     assert "Public/private split-role guards" in implementation_status_text
-    assert "CI coverage gate fixed at 98% minimum" in implementation_status_text
+    assert "CI coverage gate fixed at 98.5% minimum" in implementation_status_text
 
 
 @pytest.mark.parametrize(
@@ -316,7 +333,7 @@ def test_ty_excludes_colab_notebooks_from_type_checking(pyproject: dict[str, Any
         (
             "coverage",
             "uv run --frozen pytest --cov=learned_tta "
-            "--cov-report=term-missing --cov-fail-under=98",
+            "--cov-report=term-missing --cov-fail-under=98.5",
         ),
     ],
 )
@@ -332,3 +349,35 @@ def test_ci_workflow_runs_expected_commands(
     ]
 
     assert expected_command in commands
+
+
+def test_pytest_treats_warnings_as_errors(pyproject: dict[str, Any]) -> None:
+    pytest_options = pyproject["tool"]["pytest"]["ini_options"]
+
+    assert pytest_options["filterwarnings"] == ["error"]
+
+
+def test_gpu_smoke_workflow_is_manual_and_requires_gpu_runner(
+    gpu_smoke_workflow: dict[Any, Any],
+) -> None:
+    trigger = gpu_smoke_workflow.get("on", gpu_smoke_workflow.get(True))
+    runs_on = gpu_smoke_workflow["jobs"]["gpu-smoke"]["runs-on"]
+
+    assert "workflow_dispatch" in trigger
+    assert runs_on == ["self-hosted", "linux", "x64", "gpu"]
+
+
+def test_gpu_smoke_workflow_runs_cuda_guard_and_smoke_command(
+    gpu_smoke_workflow: dict[Any, Any],
+) -> None:
+    commands = "\n".join(
+        step["run"]
+        for step in gpu_smoke_workflow["jobs"]["gpu-smoke"]["steps"]
+        if "run" in step
+    )
+
+    assert "nvidia-smi" in commands
+    assert "torch.cuda.is_available()" in commands
+    assert "learned_tta.cli run-smoke" in commands
+    assert "--device" in commands
+    assert "--image-size 16" in commands

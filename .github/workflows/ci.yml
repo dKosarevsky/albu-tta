@@ -108,4 +108,4 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: Run coverage
-        run: uv run --frozen pytest --cov=learned_tta --cov-report=term-missing --cov-fail-under=98
+        run: uv run --frozen pytest --cov=learned_tta --cov-report=term-missing --cov-fail-under=98.5
