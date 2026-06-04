@@ -6,9 +6,35 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from learned_tta import smoke as smoke_module
 from learned_tta.smoke import run_smoke_e2e
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "configs/experiment/resnet50_a1_in1k.yaml"
+
+
+def test_smoke_cpu_thread_guard_limits_threads_and_restores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(smoke_module.torch, "get_num_threads", lambda: 8)
+    monkeypatch.setattr(smoke_module.torch, "set_num_threads", calls.append)
+
+    with smoke_module._smoke_cpu_thread_guard("cpu"):
+        assert calls == [1]
+
+    assert calls == [1, 8]
+
+
+def test_smoke_cpu_thread_guard_leaves_cuda_threads_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(smoke_module.torch, "set_num_threads", calls.append)
+
+    with smoke_module._smoke_cpu_thread_guard("cuda"):
+        pass
+
+    assert calls == []
 
 
 def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
