@@ -6,18 +6,25 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.stacking import (
     AggregationArtifact,
     XGBoostAggregationArtifact,
+    _num_classes_from_logits,
+    _portable_model_path,
+    _prune_and_normalize_weights,
+    _read_split_logits,
+    _xgboost_feature_importance,
     load_aggregation_artifact,
     load_xgboost_aggregation_artifact,
     train_aggregator_from_artifacts,
     train_class_nonnegative_weights,
     train_global_nonnegative_weights,
     train_xgboost_multiclass_stacker,
+    xgboost_multiclass_probabilities,
 )
 
 
@@ -303,6 +310,132 @@ def test_xgboost_artifact_saves_relative_model_path(tmp_path: Path) -> None:
     assert loaded.model_path == model_path
 
 
+def test_portable_model_path_keeps_external_model_path_absolute(tmp_path: Path) -> None:
+    external_model = tmp_path / "external" / "model.json"
+    artifact_dir = tmp_path / "selector"
+
+    assert _portable_model_path(external_model, artifact_dir) == external_model
+
+
+def test_train_xgboost_multiclass_stacker_rejects_out_of_range_class_labels(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_xgboost(monkeypatch)
+
+    with pytest.raises(ValueError, match="class_idxs must be valid"):
+        train_xgboost_multiclass_stacker(
+            logits_by_aug={"aug_000": np.array([[1.0, 0.0]], dtype=np.float32)},
+            class_idxs=np.array([2], dtype=np.int64),
+            aug_ids=["aug_000"],
+            output_path=tmp_path / "xgboost.json",
+            n_estimators=1,
+            learning_rate=0.1,
+        )
+
+
+def test_xgboost_probabilities_reject_feature_and_probability_shape_mismatches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_xgboost(monkeypatch)
+    model_path = tmp_path / "model.json"
+    model_path.write_text("fake", encoding="utf-8")
+    artifact_path = tmp_path / "xgboost.json"
+
+    XGBoostAggregationArtifact(
+        method="xgboost-multiclass",
+        aug_ids=["aug_000"],
+        model_path=model_path,
+        num_classes=2,
+        feature_count=3,
+        feature_importance=np.array([1.0], dtype=np.float32),
+        metrics={"nll": 0.1},
+    ).save(artifact_path)
+    with pytest.raises(ValueError, match="xgboost feature count"):
+        xgboost_multiclass_probabilities(
+            artifact_path,
+            logits_by_aug={"aug_000": np.array([[1.0, 0.0]], dtype=np.float32)},
+        )
+
+    XGBoostAggregationArtifact(
+        method="xgboost-multiclass",
+        aug_ids=["aug_000"],
+        model_path=model_path,
+        num_classes=2,
+        feature_count=2,
+        feature_importance=np.array([1.0], dtype=np.float32),
+        metrics={"nll": 0.1},
+    ).save(artifact_path)
+    with pytest.raises(ValueError, match="xgboost probabilities"):
+        xgboost_multiclass_probabilities(
+            artifact_path,
+            logits_by_aug={"aug_000": np.array([[1.0, 0.0]], dtype=np.float32)},
+        )
+
+
+def test_num_classes_from_logits_rejects_empty_and_inconsistent_inputs() -> None:
+    with pytest.raises(ValueError, match="aug_ids must not be empty"):
+        _num_classes_from_logits(logits_by_aug={}, aug_ids=[])
+    with pytest.raises(ValueError, match="same class count"):
+        _num_classes_from_logits(
+            logits_by_aug={
+                "aug_000": np.zeros((2, 2), dtype=np.float32),
+                "aug_001": np.zeros((2, 3), dtype=np.float32),
+            },
+            aug_ids=["aug_000", "aug_001"],
+        )
+
+
+def test_xgboost_feature_importance_handles_missing_invalid_and_zero_importances() -> None:
+    assert _xgboost_feature_importance(
+        classifier=SimpleNamespace(),
+        aug_count=2,
+        num_classes=3,
+    ).tolist() == pytest.approx([0.0, 0.0])
+    with pytest.raises(ValueError, match="feature importance length"):
+        _xgboost_feature_importance(
+            classifier=SimpleNamespace(feature_importances_=np.array([1.0, 2.0])),
+            aug_count=2,
+            num_classes=3,
+        )
+    assert _xgboost_feature_importance(
+        classifier=SimpleNamespace(feature_importances_=np.zeros(4, dtype=np.float32)),
+        aug_count=2,
+        num_classes=2,
+    ).tolist() == pytest.approx([0.0, 0.0])
+
+
+def test_prune_and_normalize_weights_handles_empty_active_set_and_rejects_bad_shape() -> None:
+    np.testing.assert_allclose(
+        _prune_and_normalize_weights(np.array([0.1, 0.2], dtype=np.float32), active_threshold=0.5),
+        np.array([0.0, 1.0], dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        _prune_and_normalize_weights(
+            np.array([[0.1, 0.2], [0.4, 0.3]], dtype=np.float32),
+            active_threshold=0.5,
+        ),
+        np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32),
+    )
+    with pytest.raises(ValueError, match="weights must have shape"):
+        _prune_and_normalize_weights(np.zeros((1, 2, 3), dtype=np.float32), active_threshold=0.1)
+
+
+def test_read_split_logits_rejects_empty_aug_ids_and_class_order_mismatch(tmp_path: Path) -> None:
+    cache_dir = _write_public_val_cache(tmp_path / "teacher_cache")
+    with pytest.raises(ValueError, match="aug_ids must not be empty"):
+        _read_split_logits(cache_dir, split="public_val", aug_ids=[])
+
+    paths = cache_dir / "public_val__aug_001.parquet"
+    metadata = pd.read_parquet(paths)
+    metadata["class_idx"] = [1, 0]
+    metadata.to_parquet(paths, index=False)
+
+    with pytest.raises(ValueError, match="class_idx order mismatch"):
+        _read_split_logits(cache_dir, split="public_val", aug_ids=["aug_000", "aug_001"])
+
+
 def _install_fake_xgboost(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeXGBClassifier:
         def __init__(self, **kwargs: object) -> None:
@@ -327,6 +460,9 @@ def _install_fake_xgboost(monkeypatch: pytest.MonkeyPatch) -> None:
 
         def save_model(self, path: str | Path) -> None:
             Path(path).write_text("fake xgboost model", encoding="utf-8")
+
+        def load_model(self, _path: str | Path) -> None:
+            self.num_classes = 1
 
     monkeypatch.setitem(
         sys.modules,

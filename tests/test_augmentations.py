@@ -71,6 +71,117 @@ def test_seeded_stochastic_candidates_may_have_non_collapsed_ranges() -> None:
     validate_augmentation_registry(candidates, expected_count=1)
 
 
+@pytest.mark.parametrize(
+    ("candidates", "expected_count", "match"),
+    [
+        (
+            [
+                AugmentationCandidate(
+                    id="aug_000",
+                    name="identity",
+                    class_name=None,
+                ),
+                AugmentationCandidate(
+                    id="aug_001",
+                    name="duplicate",
+                    class_name=None,
+                ),
+            ],
+            1,
+            "expected 1 candidates, found 2",
+        ),
+        (
+            [
+                AugmentationCandidate(
+                    id="aug_000",
+                    name="identity",
+                    class_name=None,
+                ),
+                AugmentationCandidate(
+                    id="aug_000",
+                    name="duplicate",
+                    class_name=None,
+                ),
+            ],
+            2,
+            "augmentation candidate ids must be unique",
+        ),
+        (
+            [
+                AugmentationCandidate(
+                    id="aug_001",
+                    name="identity",
+                    class_name=None,
+                ),
+            ],
+            1,
+            "augmentation candidate ids must be sequential from aug_000",
+        ),
+        (
+            [
+                AugmentationCandidate(
+                    id="aug_000",
+                    name="flip_a",
+                    class_name="HorizontalFlip",
+                    params={"p": 1.0},
+                ),
+                AugmentationCandidate(
+                    id="aug_001",
+                    name="flip_b",
+                    class_name="HorizontalFlip",
+                    params={"p": 1.0},
+                ),
+            ],
+            2,
+            "augmentation transform specs must be unique",
+        ),
+        (
+            [
+                AugmentationCandidate(
+                    id="aug_000",
+                    name="bad_determinism",
+                    class_name=None,
+                    determinism="random",
+                ),
+            ],
+            1,
+            "determinism must be one of",
+        ),
+        (
+            [
+                AugmentationCandidate(
+                    id="aug_000",
+                    name="bad_transform",
+                    class_name="NoSuchTransform",
+                    params={"p": 1.0},
+                ),
+            ],
+            1,
+            "unknown Albumentations transform NoSuchTransform",
+        ),
+        (
+            [
+                AugmentationCandidate(
+                    id="aug_000",
+                    name="missing_p",
+                    class_name="HorizontalFlip",
+                    params={},
+                ),
+            ],
+            1,
+            "aug_000 must set p=1.0",
+        ),
+    ],
+)
+def test_validate_augmentation_registry_rejects_invalid_candidates(
+    candidates: list[AugmentationCandidate],
+    expected_count: int,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        validate_augmentation_registry(candidates, expected_count=expected_count)
+
+
 def test_augmentation_registry_outputs_are_deterministic_with_fixed_seed() -> None:
     candidates = load_augmentation_registry(REGISTRY_PATH)
     image = np.arange(96 * 96 * 3, dtype=np.uint8).reshape(96, 96, 3)

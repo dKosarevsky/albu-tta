@@ -8,6 +8,8 @@ import pytest
 
 from learned_tta.cache import (
     TeacherShard,
+    _default_run_metadata_path,
+    _json_ready,
     read_teacher_shard,
     shard_is_complete,
     write_teacher_shard,
@@ -142,3 +144,118 @@ def test_shard_is_complete_rejects_missing_or_mismatched_files(tmp_path: Path) -
     np.save(logits_path, np.zeros((2, 3), dtype=np.float16))
 
     assert not shard_is_complete(metadata_path, logits_path, expected_rows=2, expected_classes=3)
+
+
+@pytest.mark.parametrize(
+    ("logits_value", "class_idxs", "match"),
+    [
+        (
+            np.array([1.0, 2.0, 3.0], dtype=np.float32),
+            np.array([0], dtype=np.int64),
+            "logits must have shape",
+        ),
+        (
+            np.zeros((2, 3), dtype=np.float32),
+            np.array([0], dtype=np.int64),
+            "row counts must match",
+        ),
+    ],
+)
+def test_write_teacher_shard_rejects_invalid_shapes(
+    tmp_path: Path,
+    logits_value: np.ndarray,
+    class_idxs: np.ndarray,
+    match: str,
+) -> None:
+    shard = TeacherShard(
+        split="public",
+        aug_id="aug_001",
+        image_ids=["image-a"],
+        class_idxs=class_idxs,
+        logits=logits_value,
+    )
+
+    with pytest.raises(ValueError, match=match):
+        write_teacher_shard(tmp_path, shard)
+
+
+def test_shard_is_complete_can_skip_run_metadata_validation(
+    tmp_path: Path,
+    logits: np.ndarray,
+) -> None:
+    shard = TeacherShard(
+        split="public",
+        aug_id="aug_001",
+        image_ids=["image-a", "image-b"],
+        class_idxs=np.array([0, 2], dtype=np.int64),
+        logits=logits,
+    )
+    paths = write_teacher_shard(tmp_path, shard)
+
+    assert shard_is_complete(
+        metadata_path=paths.metadata_path,
+        logits_path=paths.logits_path,
+        expected_rows=2,
+        expected_classes=3,
+    )
+
+
+@pytest.mark.parametrize("metadata_text", ["", "[]"])
+def test_shard_is_complete_rejects_invalid_run_metadata(
+    tmp_path: Path,
+    logits: np.ndarray,
+    metadata_text: str,
+) -> None:
+    shard = TeacherShard(
+        split="public",
+        aug_id="aug_001",
+        image_ids=["image-a", "image-b"],
+        class_idxs=np.array([0, 2], dtype=np.int64),
+        logits=logits,
+        run_metadata={"seed": 1},
+    )
+    paths = write_teacher_shard(tmp_path, shard)
+    paths.run_metadata_path.write_text(metadata_text, encoding="utf-8")
+
+    assert not shard_is_complete(
+        metadata_path=paths.metadata_path,
+        logits_path=paths.logits_path,
+        run_metadata_path=paths.run_metadata_path,
+        expected_rows=2,
+        expected_classes=3,
+        expected_run_metadata={"seed": 1},
+    )
+
+
+def test_shard_is_complete_rejects_missing_run_metadata(
+    tmp_path: Path,
+    logits: np.ndarray,
+) -> None:
+    shard = TeacherShard(
+        split="public",
+        aug_id="aug_001",
+        image_ids=["image-a", "image-b"],
+        class_idxs=np.array([0, 2], dtype=np.int64),
+        logits=logits,
+        run_metadata={"seed": 1},
+    )
+    paths = write_teacher_shard(tmp_path, shard)
+    paths.run_metadata_path.unlink()
+
+    assert not shard_is_complete(
+        metadata_path=paths.metadata_path,
+        logits_path=paths.logits_path,
+        expected_rows=2,
+        expected_classes=3,
+        expected_run_metadata={"seed": 1},
+    )
+
+
+def test_default_run_metadata_path_supports_non_parquet_paths() -> None:
+    assert _default_run_metadata_path(Path("cache/public__aug_000.csv")) == Path(
+        "cache/public__aug_000.run.json"
+    )
+
+
+def test_json_ready_stringifies_unknown_values() -> None:
+    assert _json_ready({"path": Path("artifact")}) == {"path": "PosixPath('artifact')"}

@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 
 from learned_tta.tta_eval import (
+    _mean_selection_size,
     average_probabilities,
+    class_weighted_probabilities,
     evaluate_all_100_uniform,
     evaluate_class_weighted_tta,
     evaluate_clean,
@@ -16,11 +18,13 @@ from learned_tta.tta_eval import (
     evaluate_random_topk,
     evaluate_selected_tta,
     fixed_light_tta_selection,
+    global_weighted_probabilities,
     learned_topk_selection,
     oracle_selection_recall,
     oracle_topk_selection,
     random_topk_selection,
     select_best_k,
+    weighted_average_probabilities,
 )
 
 
@@ -302,3 +306,119 @@ def test_select_best_k_prefers_best_metric_then_lower_compute() -> None:
     }
 
     assert select_best_k(results_by_k, metric="nll", higher_is_better=False) == 2
+
+
+def test_select_best_k_can_maximize_metric_and_rejects_empty_results() -> None:
+    assert select_best_k(
+        {
+            1: {"top1": 0.7},
+            2: {"top1": 0.8},
+            4: {"top1": 0.8},
+        },
+        metric="top1",
+        higher_is_better=True,
+    ) == 2
+    with pytest.raises(ValueError, match="results_by_k must not be empty"):
+        select_best_k({}, metric="nll", higher_is_better=False)
+
+
+@pytest.mark.parametrize(
+    ("scores", "match"),
+    [
+        (np.array([0.0, 1.0], dtype=np.float32), "predicted_gain must have shape"),
+        (np.zeros((3, 4), dtype=np.float32), "predicted_gain shape must match"),
+    ],
+)
+def test_weighted_average_probabilities_rejects_invalid_score_shapes(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    scores: np.ndarray,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        weighted_average_probabilities(
+            logits_by_aug=logits_by_aug,
+            selected_aug_ids=[["aug_000"], ["aug_001"]],
+            aug_ids=aug_ids,
+            predicted_gain=scores,
+        )
+
+
+@pytest.mark.parametrize(
+    ("scores", "match"),
+    [
+        (np.array([0.0, 1.0], dtype=np.float32), "predicted_gain must have shape"),
+        (np.zeros((2, 3), dtype=np.float32), "predicted_gain width must match"),
+    ],
+)
+def test_learned_topk_selection_rejects_invalid_score_shapes(
+    aug_ids: list[str],
+    scores: np.ndarray,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        learned_topk_selection(
+            aug_ids=aug_ids,
+            predicted_gain=scores,
+            identity_aug_id="aug_000",
+            k=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("weights", "match"),
+    [
+        (np.array([1.0, -0.1, 0.0, 0.0], dtype=np.float32), "weights must be non-negative"),
+        (
+            np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            "weights must contain at least one positive value",
+        ),
+        (np.array([1.0, 0.0], dtype=np.float32), "weights must have shape"),
+    ],
+)
+def test_global_weighted_probabilities_rejects_invalid_weights(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    weights: np.ndarray,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        global_weighted_probabilities(logits_by_aug, aug_ids=aug_ids, weights=weights)
+
+
+@pytest.mark.parametrize(
+    ("class_weights", "match"),
+    [
+        (np.ones((3,), dtype=np.float32), "class_weights must have shape"),
+        (np.ones((3, 2), dtype=np.float32), "class_weights must have shape"),
+        (
+            np.array(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, -1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                ],
+                dtype=np.float32,
+            ),
+            "class_weights must be non-negative",
+        ),
+        (np.zeros((3, 4), dtype=np.float32), "each class must have at least one positive"),
+        (np.ones((2, 4), dtype=np.float32), "class_weights class count must match"),
+    ],
+)
+def test_class_weighted_probabilities_rejects_invalid_weights(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    class_weights: np.ndarray,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        class_weighted_probabilities(
+            logits_by_aug=logits_by_aug,
+            aug_ids=aug_ids,
+            class_weights=class_weights,
+        )
+
+
+def test_mean_selection_size_reports_zero_for_empty_selection() -> None:
+    assert _mean_selection_size([]) == pytest.approx(0.0)

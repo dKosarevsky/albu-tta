@@ -6,9 +6,11 @@ from pathlib import Path
 import pytest
 
 from learned_tta.imagenet_split import (
+    TIMM_IMAGENET_1K_CLASS_INDEX,
     SplitConfig,
     build_stratified_splits,
     discover_imagenet_val,
+    load_class_to_idx,
     write_class_mapping,
     write_split_manifests,
 )
@@ -131,3 +133,46 @@ def test_write_class_mapping(tmp_path: Path) -> None:
         '  "n00000000": 1',
         "}",
     ]
+
+
+def test_split_config_rejects_public_subsplit_mismatch() -> None:
+    with pytest.raises(
+        ValueError,
+        match="public_train_per_class \\+ public_val_per_class must equal public_per_class",
+    ):
+        SplitConfig(public_per_class=25, public_train_per_class=19, public_val_per_class=5)
+
+
+def test_load_class_to_idx_reads_json_and_project_relative_lines(tmp_path: Path) -> None:
+    json_path = tmp_path / "classes.json"
+    json_path.write_text('{"n00000010": 1, "n00000001": 0}', encoding="utf-8")
+    lines_path = tmp_path / "classes.txt"
+    lines_path.write_text("\n# comment\nn00000001\nn00000010\n", encoding="utf-8")
+
+    assert load_class_to_idx(str(json_path), project_root=tmp_path) == {
+        "n00000001": 0,
+        "n00000010": 1,
+    }
+    assert load_class_to_idx("classes.txt", project_root=tmp_path) == {
+        "n00000001": 0,
+        "n00000010": 1,
+    }
+
+
+def test_load_class_to_idx_rejects_empty_and_non_sequential_indexes(tmp_path: Path) -> None:
+    empty_path = tmp_path / "empty.txt"
+    empty_path.write_text("\n# only comments\n", encoding="utf-8")
+    sparse_path = tmp_path / "sparse.json"
+    sparse_path.write_text('{"n00000001": 1}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="class index must not be empty"):
+        load_class_to_idx(str(empty_path), project_root=tmp_path)
+    with pytest.raises(ValueError, match="class index values must be sequential from 0"):
+        load_class_to_idx(str(sparse_path), project_root=tmp_path)
+
+
+def test_load_class_to_idx_can_read_timm_imagenet_mapping(tmp_path: Path) -> None:
+    class_to_idx = load_class_to_idx(TIMM_IMAGENET_1K_CLASS_INDEX, project_root=tmp_path)
+
+    assert len(class_to_idx) == 1000
+    assert class_to_idx["n01440764"] == 0

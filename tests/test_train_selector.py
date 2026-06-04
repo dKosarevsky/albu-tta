@@ -39,6 +39,36 @@ def test_pairwise_rank_loss_is_lower_for_correct_order(ranked_targets: torch.Ten
     )
 
 
+@pytest.mark.parametrize(
+    ("predictions", "targets", "match"),
+    [
+        (
+            torch.zeros(2, 3),
+            torch.zeros(2, 2),
+            "predictions and targets must have matching shapes",
+        ),
+        (
+            torch.zeros(3),
+            torch.zeros(3),
+            "predictions and targets must have shape",
+        ),
+    ],
+)
+def test_pairwise_rank_loss_rejects_invalid_shapes(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        pairwise_rank_loss(predictions, targets)
+
+
+def test_pairwise_rank_loss_returns_zero_when_targets_have_no_ordering() -> None:
+    loss = pairwise_rank_loss(torch.zeros(2, 3), torch.zeros(2, 3))
+
+    assert loss.item() == pytest.approx(0.0)
+
+
 def test_selector_loss_combines_smooth_l1_and_rank_loss(ranked_targets: torch.Tensor) -> None:
     predictions = ranked_targets + 0.1
 
@@ -63,6 +93,11 @@ def test_spearman_correlation_reports_rank_direction(
     correlation = spearman_correlation(predictions.float(), targets.float())
 
     assert correlation * expected_sign > 0
+
+
+def test_spearman_correlation_rejects_shape_mismatch() -> None:
+    with pytest.raises(ValueError, match="predictions and targets must have matching shapes"):
+        spearman_correlation(torch.zeros(2, 3), torch.zeros(2, 2))
 
 
 def test_save_checkpoint_if_best_only_updates_on_improvement(tmp_path: Path) -> None:
@@ -137,3 +172,24 @@ def test_evaluate_regression_reports_loss_and_spearman() -> None:
     )
 
     assert set(metrics) == {"loss", "spearman"}
+
+
+def test_train_and_evaluate_return_zero_metrics_for_empty_dataloader() -> None:
+    model = torch.nn.Linear(4, 3)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    empty: list[tuple[torch.Tensor, torch.Tensor]] = []
+
+    train_metrics = train_one_epoch(
+        model=model,
+        dataloader=empty,
+        optimizer=optimizer,
+        device=torch.device("cpu"),
+    )
+    eval_metrics = evaluate_regression(
+        model=model,
+        dataloader=empty,
+        device=torch.device("cpu"),
+    )
+
+    assert train_metrics == {"loss": 0.0}
+    assert eval_metrics == {"loss": 0.0, "spearman": 0.0}
