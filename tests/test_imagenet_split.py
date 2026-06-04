@@ -9,6 +9,7 @@ from learned_tta.imagenet_split import (
     SplitConfig,
     build_stratified_splits,
     discover_imagenet_val,
+    write_class_mapping,
     write_split_manifests,
 )
 
@@ -33,6 +34,32 @@ def test_discover_imagenet_val_records_sorted_classes(tmp_path: Path) -> None:
     assert [record.class_name for record in records[3:]] == ["n00000001"] * 3
     assert {record.class_idx for record in records} == {0, 1}
     assert records[0].image_id == "ILSVRC2012_val_0000_0000"
+
+
+def test_discover_imagenet_val_uses_explicit_class_mapping(tmp_path: Path) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=2, images_per_class=3)
+    class_to_idx = {"n00000001": 0, "n00000000": 1}
+
+    records = discover_imagenet_val(val_root, class_to_idx=class_to_idx)
+
+    assert [record.class_name for record in records[:3]] == ["n00000001"] * 3
+    assert [record.class_name for record in records[3:]] == ["n00000000"] * 3
+    assert {record.class_name: record.class_idx for record in records} == {
+        "n00000001": 0,
+        "n00000000": 1,
+    }
+
+
+def test_discover_imagenet_val_rejects_class_dirs_that_do_not_match_mapping(
+    tmp_path: Path,
+) -> None:
+    val_root = _make_fake_imagenet_val(tmp_path, classes=2, images_per_class=3)
+
+    with pytest.raises(ValueError, match="class directories must match configured class index"):
+        discover_imagenet_val(
+            val_root,
+            class_to_idx={"n00000000": 0, "n00000002": 1},
+        )
 
 
 def test_build_stratified_splits_counts_are_disjoint_and_stable(tmp_path: Path) -> None:
@@ -89,3 +116,18 @@ def test_write_split_manifests(tmp_path: Path) -> None:
     assert len(rows) == 20
     assert set(rows[0]) == {"split", "image_id", "class_idx", "class_name", "path"}
     assert rows[0]["split"] == "public_train"
+
+
+def test_write_class_mapping(tmp_path: Path) -> None:
+    written = write_class_mapping(
+        class_to_idx={"n00000001": 0, "n00000000": 1},
+        output_path=tmp_path / "class_to_idx.json",
+    )
+
+    assert written.name == "class_to_idx.json"
+    assert written.read_text(encoding="utf-8").splitlines() == [
+        "{",
+        '  "n00000001": 0,',
+        '  "n00000000": 1',
+        "}",
+    ]

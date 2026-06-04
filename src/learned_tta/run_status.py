@@ -97,6 +97,7 @@ def _build_step_statuses(
         config.artifacts.manifests_dir / f"{split}.csv"
         for split in ("public_train", "public_val", "public", "private")
     )
+    class_mapping = config.artifacts.manifests_dir / "class_to_idx.json"
     train_targets = config.artifacts.selector_dir / "public_train_targets.npz"
     val_targets = config.artifacts.selector_dir / "public_val_targets.npz"
     selector_checkpoint = config.artifacts.selector_dir / "selector_best.pt"
@@ -135,12 +136,12 @@ def _build_step_statuses(
         ),
         _StepSpec(
             name="make_splits",
-            outputs=manifests,
+            outputs=(*manifests, class_mapping),
             command=(
                 "uv run python -m learned_tta.cli make-splits "
                 f"--config {config.path} --imagenet-val-dir /path/to/imagenet/val"
             ),
-            complete=lambda: _all_exist(manifests),
+            complete=lambda: _all_exist((*manifests, class_mapping)),
         ),
         _cache_step_spec(config, "public_train", expected_aug_ids=expected_aug_ids),
         _cache_step_spec(config, "public_val", expected_aug_ids=expected_aug_ids),

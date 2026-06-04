@@ -16,6 +16,8 @@ from learned_tta.config import load_experiment_config
 from learned_tta.imagenet_split import (
     build_stratified_splits,
     discover_imagenet_val,
+    load_class_to_idx,
+    write_class_mapping,
     write_split_manifests,
 )
 from learned_tta.preflight import run_full_run_preflight
@@ -535,11 +537,13 @@ def _cmd_make_splits(
     output_dir: Path | None,
 ) -> None:
     config = load_experiment_config(config_path)
-    records = discover_imagenet_val(imagenet_val_dir)
+    class_to_idx = load_class_to_idx(config.dataset.class_index, config.project_root)
+    records = discover_imagenet_val(imagenet_val_dir, class_to_idx=class_to_idx)
     splits = build_stratified_splits(records, config.split)
     target_dir = output_dir if output_dir is not None else config.artifacts.manifests_dir
     written = write_split_manifests(splits, target_dir)
-    print(f"wrote {len(written)} split manifests to {target_dir}")
+    mapping_path = write_class_mapping(class_to_idx, Path(target_dir) / "class_to_idx.json")
+    print(f"wrote {len(written)} split manifests to {target_dir}; wrote {mapping_path}")
 
 
 def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:

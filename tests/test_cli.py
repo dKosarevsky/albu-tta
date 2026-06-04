@@ -56,13 +56,14 @@ def test_cli_make_splits_writes_manifests(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     val_root = _make_fake_imagenet_val(tmp_path)
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
     output_dir = tmp_path / "manifests"
 
     main(
         [
             "make-splits",
             "--config",
-            str(CONFIG_PATH),
+            str(config_path),
             "--imagenet-val-dir",
             str(val_root),
             "--output-dir",
@@ -76,6 +77,7 @@ def test_cli_make_splits_writes_manifests(
     assert (output_dir / "public_val.csv").exists()
     assert (output_dir / "public.csv").exists()
     assert (output_dir / "private.csv").exists()
+    assert (output_dir / "class_to_idx.json").exists()
 
 
 def test_cli_check_full_run_reports_preflight_summary(
@@ -83,12 +85,13 @@ def test_cli_check_full_run_reports_preflight_summary(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     val_root = _make_fake_imagenet_val(tmp_path)
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
 
     main(
         [
             "check-full-run",
             "--config",
-            str(CONFIG_PATH),
+            str(config_path),
             "--imagenet-val-dir",
             str(val_root),
         ]
@@ -244,3 +247,55 @@ def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int 
         for image_idx in range(images_per_class):
             (class_dir / f"ILSVRC2012_val_{class_idx:04d}_{image_idx:04d}.JPEG").write_bytes(b"")
     return val_root
+
+
+def _write_test_config(tmp_path: Path, class_count: int, images_per_class: int) -> Path:
+    class_index_path = tmp_path / "class_index.txt"
+    class_index_path.write_text(
+        "\n".join(f"n{class_idx:08d}" for class_idx in range(class_count)) + "\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "experiment.yaml"
+    config_path.write_text(
+        f"""
+project_name: albu-tta
+seed: 20260522
+
+teacher:
+  model_name: resnet50.a1_in1k
+  pretrained: true
+
+dataset:
+  name: imagenet-val
+  class_count: {class_count}
+  class_index: {class_index_path}
+  images_per_class: {images_per_class}
+  public_per_class: 25
+  private_per_class: 25
+  public_train_per_class: 20
+  public_val_per_class: 5
+
+augmentations:
+  registry_path: {ROOT / "configs" / "augmentations" / "imagenet100.yaml"}
+  candidate_count: 100
+  identity_id: aug_000
+
+selector:
+  output_dim: 100
+  max_parameters: 1500000
+  top_k_grid:
+    - 1
+    - 2
+    - 4
+
+artifacts:
+  root: artifacts
+  manifests_dir: artifacts/manifests
+  teacher_cache_dir: artifacts/teacher_cache
+  selector_dir: artifacts/selector
+  reports_dir: reports/resnet50_a1_in1k
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    return config_path

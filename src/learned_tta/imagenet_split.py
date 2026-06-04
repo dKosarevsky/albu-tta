@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import csv
+import importlib.resources
+import json
 import random
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 IMAGE_EXTENSIONS = {".jpeg", ".jpg", ".png"}
+TIMM_IMAGENET_1K_CLASS_INDEX = "timm-imagenet-1k"
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,14 +46,29 @@ class SplitConfig:
         return self.public_per_class + self.private_per_class
 
 
-def discover_imagenet_val(val_root: Path) -> list[ImageRecord]:
+def discover_imagenet_val(
+    val_root: Path,
+    class_to_idx: dict[str, int] | None = None,
+) -> list[ImageRecord]:
     """Discover an ImageNet-val directory laid out as `val/class_name/image.JPEG`."""
 
     val_root = Path(val_root)
     class_dirs = sorted(path for path in val_root.iterdir() if path.is_dir())
     records: list[ImageRecord] = []
+    if class_to_idx is not None:
+        _validate_class_dirs_match_index(class_dirs, class_to_idx)
+        class_dirs = [
+            path
+            for path, _class_idx in sorted(
+                ((path, class_to_idx[path.name]) for path in class_dirs),
+                key=lambda item: item[1],
+            )
+        ]
 
-    for class_idx, class_dir in enumerate(class_dirs):
+    for sorted_class_idx, class_dir in enumerate(class_dirs):
+        class_idx = (
+            class_to_idx[class_dir.name] if class_to_idx is not None else sorted_class_idx
+        )
         image_paths = sorted(
             path for path in class_dir.iterdir() if path.suffix.lower() in IMAGE_EXTENSIONS
         )
@@ -64,6 +83,33 @@ def discover_imagenet_val(val_root: Path) -> list[ImageRecord]:
         )
 
     return records
+
+
+def load_class_to_idx(class_index: str, project_root: Path) -> dict[str, int]:
+    """Load a configured ImageNet class index mapping."""
+
+    if class_index == TIMM_IMAGENET_1K_CLASS_INDEX:
+        return _load_timm_imagenet_1k_class_to_idx()
+
+    path = Path(class_index)
+    if not path.is_absolute():
+        path = Path(project_root) / path
+    if path.suffix.lower() == ".json":
+        return _load_class_to_idx_json(path)
+    return _load_class_to_idx_lines(path)
+
+
+def write_class_mapping(class_to_idx: dict[str, int], output_path: Path) -> Path:
+    """Write a stable class-to-index mapping artifact."""
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    ordered = {
+        class_name: class_idx
+        for class_name, class_idx in sorted(class_to_idx.items(), key=lambda item: item[1])
+    }
+    output_path.write_text(json.dumps(ordered, indent=2), encoding="utf-8")
+    return output_path
 
 
 def build_stratified_splits(
@@ -147,3 +193,64 @@ def write_split_manifests(
         written[split_name] = path
 
     return written
+
+
+def _load_timm_imagenet_1k_class_to_idx() -> dict[str, int]:
+    with importlib.resources.files("timm.data").joinpath(
+        "_info/imagenet_synsets.txt"
+    ).open(encoding="utf-8") as handle:
+        return _class_to_idx_from_lines(handle)
+
+
+def _load_class_to_idx_lines(path: Path) -> dict[str, int]:
+    with Path(path).open(encoding="utf-8") as handle:
+        return _class_to_idx_from_lines(handle)
+
+
+def _load_class_to_idx_json(path: Path) -> dict[str, int]:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    class_to_idx = {str(class_name): int(class_idx) for class_name, class_idx in data.items()}
+    _validate_class_to_idx(class_to_idx)
+    return class_to_idx
+
+
+def _class_to_idx_from_lines(lines: Iterable[str]) -> dict[str, int]:
+    class_names = [
+        line.strip()
+        for line in lines
+        if isinstance(line, str) and line.strip() and not line.lstrip().startswith("#")
+    ]
+    class_to_idx = {class_name: class_idx for class_idx, class_name in enumerate(class_names)}
+    _validate_class_to_idx(class_to_idx)
+    return class_to_idx
+
+
+def _validate_class_to_idx(class_to_idx: dict[str, int]) -> None:
+    if not class_to_idx:
+        raise ValueError("class index must not be empty")
+    if len(class_to_idx) != len(set(class_to_idx)):
+        raise ValueError("class index names must be unique")
+    indexes = sorted(class_to_idx.values())
+    expected = list(range(len(class_to_idx)))
+    if indexes != expected:
+        raise ValueError("class index values must be sequential from 0")
+
+
+def _validate_class_dirs_match_index(
+    class_dirs: list[Path],
+    class_to_idx: dict[str, int],
+) -> None:
+    discovered = {path.name for path in class_dirs}
+    expected = set(class_to_idx)
+    missing = sorted(expected - discovered)
+    extra = sorted(discovered - expected)
+    if missing or extra:
+        details = []
+        if missing:
+            details.append(f"missing={missing[:5]}")
+        if extra:
+            details.append(f"extra={extra[:5]}")
+        raise ValueError(
+            "ImageNet class directories must match configured class index: "
+            + ", ".join(details)
+        )

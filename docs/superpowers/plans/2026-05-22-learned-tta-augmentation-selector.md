@@ -67,9 +67,10 @@ Use exactly 100 candidates:
 - Candidate `aug_000` is identity, meaning the clean image.
 - Candidates `aug_001` through `aug_099` are single AlbumentationsX transforms.
 - No candidate is a composition of multiple transforms.
-- Every candidate is deterministic:
+- Every candidate declares its determinism mode:
   - `p=1.0`.
-  - Numeric ranges are collapsed to a single value, for example `(10, 10)`.
+  - `fixed` candidates collapse numeric ranges to a single value, for example `(10, 10)`.
+  - `seeded_stochastic` candidates are reproducible under `Compose(..., seed=20260522)` but still sample from a valid AlbumentationsX range.
   - AlbumentationsX `Compose(..., seed=20260522)` is still used and serialized for audit.
   - Transforms whose output depends on uncontrolled random placement are excluded from the main candidate set.
 
@@ -77,7 +78,7 @@ Rationale:
 
 - Identity should be included because TTA without the clean prediction can degrade accuracy and makes comparison to no TTA less direct.
 - Single-transform candidates make the learned selector interpretable: each output answers "does this one image benefit from this one transform?"
-- Deterministic candidates make cached logits, selector targets, and article tables reproducible.
+- Explicit determinism metadata makes cached logits, selector targets, and article tables reproducible and auditable.
 
 Candidate family allocation:
 
@@ -91,7 +92,7 @@ Candidate family allocation:
 
 The first implementation must materialize this as `configs/augmentations/imagenet100.yaml`. The config file is the source of truth and must be validated by tests before any expensive inference runs.
 
-Implementation note: AlbumentationsX 2.3 validates `PlanckianJitter` ranges by requiring the range to include its white temperature, `6000K`. The initial registry therefore represents the warm 5000K idea as a deterministic seeded candidate with `temperature_range: [5000, 6000]`, plus adjacent daylight/cool ranges, instead of an invalid point range `[5000, 5000]`.
+Implementation note: AlbumentationsX 2.3 validates `PlanckianJitter` ranges by requiring the range to include its white temperature, `6000K`. The registry therefore represents the warm 5000K idea as a `seeded_stochastic` candidate with `temperature_range: [5000, 6000]`, plus adjacent daylight/cool ranges, instead of an invalid point range `[5000, 5000]`.
 
 ### Augmentation Order
 
@@ -407,7 +408,8 @@ Files:
 
 Steps:
 
-- [x] Implement class-index discovery from ImageNet-val directory layout.
+- [x] Implement class-index discovery from an explicit ImageNet-1k WNID mapping.
+- [x] Emit `class_to_idx.json` as a split-manifest audit artifact.
 - [x] Implement deterministic per-class shuffle with seed `20260522`.
 - [x] Emit four manifests: `public_train`, `public_val`, `public`, `private`.
 - [x] Test that each class has 20 public-train, 5 public-val, 25 public total, and 25 private images.

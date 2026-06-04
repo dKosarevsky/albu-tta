@@ -21,7 +21,8 @@ on CPU: the required cache covers roughly 5,000,000 ResNet50 forwards.
 - Linux machine with an NVIDIA GPU and working CUDA runtime.
 - Python 3.10 or newer.
 - `git`, `uv`, and enough disk space for ImageNet validation plus run artifacts.
-- ImageNet validation data laid out as `val/class_name/image.JPEG`.
+- ImageNet validation data laid out as `val/WNID/image.JPEG`, using the
+  ImageNet-1k WNID class directories expected by `timm-imagenet-1k`.
 - Persistent storage for `artifacts/`, `reports/`, and logs.
 
 The default experiment config is:
@@ -61,6 +62,7 @@ $RUN_ROOT/
   artifacts/
     augmentation_registry_audit.json
     manifests/
+      class_to_idx.json
     selector/
     teacher_cache/
   reports/
@@ -105,8 +107,8 @@ PY
 
 ## ImageNet Validation Check
 
-`IMAGENET_VAL_DIR` must contain class directories directly under the validation
-root:
+`IMAGENET_VAL_DIR` must contain WNID class directories directly under the
+validation root:
 
 ```text
 $IMAGENET_VAL_DIR/n01440764/ILSVRC2012_val_00000293.JPEG
@@ -123,7 +125,9 @@ uv run python -m learned_tta.cli check-full-run \
 ```
 
 The preflight must report 1,000 classes, 50,000 images, 100 candidates, and the
-configured teacher model.
+configured teacher model. It also verifies that the discovered WNID directories
+match the configured `timm-imagenet-1k` class index before any expensive cache
+work starts.
 
 ## Restore Progress From Colab Or Another Worker
 

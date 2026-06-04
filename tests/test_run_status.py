@@ -22,6 +22,9 @@ def test_inspect_full_run_status_reports_first_missing_step(tmp_path: Path) -> N
     )
     assert summary.steps[0].missing_outputs == summary.steps[0].outputs
     assert summary.steps[0].extra_outputs == ()
+    assert summary.steps[1].name == "make_splits"
+    assert len(summary.steps[1].outputs) == 5
+    assert summary.steps[1].outputs[-1].name == "class_to_idx.json"
 
 
 def test_inspect_full_run_status_advances_past_completed_manifests(
@@ -38,6 +41,7 @@ def test_inspect_full_run_status_advances_past_completed_manifests(
     manifests_dir.mkdir()
     for split in ("public_train", "public_val", "public", "private"):
         (manifests_dir / f"{split}.csv").write_text("path,label\n", encoding="utf-8")
+    (manifests_dir / "class_to_idx.json").write_text("{}", encoding="utf-8")
 
     summary = inspect_full_run_status(config_path)
 
@@ -60,6 +64,7 @@ def test_inspect_full_run_status_rejects_partial_teacher_cache(
     _touch(artifacts_dir / "augmentation_registry_audit.json")
     for split in ("public_train", "public_val", "public", "private"):
         _touch(manifests_dir / f"{split}.csv")
+    _touch(manifests_dir / "class_to_idx.json")
     _touch(
         cache_dir / "public_train__aug_000.parquet",
         cache_dir / "public_train__aug_000.logits.npy",
@@ -102,6 +107,7 @@ def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
     _touch(
         artifacts_dir / "augmentation_registry_audit.json",
         *manifest_paths,
+        manifests_dir / "class_to_idx.json",
         selector_dir / "public_train_targets.npz",
         selector_dir / "public_val_targets.npz",
         selector_dir / "selector_best.pt",
@@ -146,6 +152,8 @@ teacher:
   pretrained: true
 dataset:
   name: imagenet-val
+  class_count: 1000
+  class_index: timm-imagenet-1k
   images_per_class: 50
   public_per_class: 25
   private_per_class: 25

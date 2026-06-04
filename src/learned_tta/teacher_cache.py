@@ -217,6 +217,7 @@ def _run_metadata(
             "augmentation": {
                 "id": candidate.id,
                 "name": candidate.name,
+                "determinism": candidate.determinism,
                 "class_name": candidate.class_name,
                 "params": candidate.params,
             },
