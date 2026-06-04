@@ -119,12 +119,15 @@ candidates:
     transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [0.0, 0.0], val_shift_range: [-15.0, -15.0], p: 1.0}}
   - id: aug_032
     name: planckian_5000_6000
+    determinism: seeded_stochastic
     transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [5000, 6000], p: 1.0}}
   - id: aug_033
     name: planckian_5500_6500
+    determinism: seeded_stochastic
     transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [5500, 6500], p: 1.0}}
   - id: aug_034
     name: planckian_6000_7500
+    determinism: seeded_stochastic
     transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [6000, 7500], p: 1.0}}
   - id: aug_035
     name: gray_weighted_average

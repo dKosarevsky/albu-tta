@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from learned_tta.augmentations import (
+    AugmentationCandidate,
     apply_candidate,
     build_augmentation_audit,
     load_augmentation_registry,
@@ -24,10 +26,49 @@ def test_augmentation_registry_has_exactly_100_single_transform_candidates() -> 
     assert len(candidates) == 100
     assert candidates[0].id == "aug_000"
     assert candidates[0].class_name is None
+    assert candidates[0].determinism == "fixed"
     assert [candidate.id for candidate in candidates] == [f"aug_{idx:03d}" for idx in range(100)]
     assert all(
         candidate.params.get("p") == 1.0 for candidate in candidates if not candidate.is_identity
     )
+    assert {
+        candidate.name: candidate.determinism
+        for candidate in candidates
+        if candidate.class_name == "PlanckianJitter"
+    } == {
+        "planckian_5000_6000": "seeded_stochastic",
+        "planckian_5500_6500": "seeded_stochastic",
+        "planckian_6000_7500": "seeded_stochastic",
+    }
+
+
+def test_fixed_augmentation_candidates_must_collapse_range_params() -> None:
+    candidates = [
+        AugmentationCandidate(
+            id="aug_000",
+            name="brightness_range_not_fixed",
+            class_name="RandomBrightnessContrast",
+            params={"brightness_range": [0.1, 0.2], "contrast_range": [0.0, 0.0], "p": 1.0},
+            determinism="fixed",
+        )
+    ]
+
+    with pytest.raises(ValueError, match="aug_000 fixed candidate has non-fixed range"):
+        validate_augmentation_registry(candidates, expected_count=1)
+
+
+def test_seeded_stochastic_candidates_may_have_non_collapsed_ranges() -> None:
+    candidates = [
+        AugmentationCandidate(
+            id="aug_000",
+            name="planckian_seeded",
+            class_name="PlanckianJitter",
+            params={"mode": "blackbody", "temperature_range": [5000, 6000], "p": 1.0},
+            determinism="seeded_stochastic",
+        )
+    ]
+
+    validate_augmentation_registry(candidates, expected_count=1)
 
 
 def test_augmentation_registry_outputs_are_deterministic_with_fixed_seed() -> None:
@@ -62,6 +103,7 @@ def test_build_augmentation_audit_is_stable_json_payload() -> None:
     assert audit["candidates"][0] == {
         "id": "aug_000",
         "name": "identity",
+        "determinism": "fixed",
         "class_name": None,
         "params": {},
         "serialized_transform": None,

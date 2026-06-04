@@ -17,6 +17,10 @@ import yaml
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
 
+FIXED_DETERMINISM = "fixed"
+SEEDED_STOCHASTIC_DETERMINISM = "seeded_stochastic"
+VALID_DETERMINISM = {FIXED_DETERMINISM, SEEDED_STOCHASTIC_DETERMINISM}
+
 
 @dataclass(frozen=True, slots=True)
 class AugmentationCandidate:
@@ -26,6 +30,7 @@ class AugmentationCandidate:
     name: str
     class_name: str | None
     params: dict[str, Any] = field(default_factory=dict)
+    determinism: str = FIXED_DETERMINISM
 
     @property
     def is_identity(self) -> bool:
@@ -35,7 +40,10 @@ class AugmentationCandidate:
     def transform_spec(self) -> tuple[str | None, tuple[tuple[str, str], ...]]:
         return (
             self.class_name,
-            tuple(sorted((key, repr(value)) for key, value in self.params.items())),
+            (
+                ("determinism", self.determinism),
+                *tuple(sorted((key, repr(value)) for key, value in self.params.items())),
+            ),
         )
 
 
@@ -61,6 +69,7 @@ def load_augmentation_registry(path: Path) -> list[AugmentationCandidate]:
                 name=raw_candidate["name"],
                 class_name=class_name,
                 params=params,
+                determinism=str(raw_candidate.get("determinism", FIXED_DETERMINISM)),
             )
         )
 
@@ -90,12 +99,18 @@ def validate_augmentation_registry(
         raise ValueError("augmentation transform specs must be unique")
 
     for candidate in candidates:
+        if candidate.determinism not in VALID_DETERMINISM:
+            raise ValueError(
+                f"{candidate.id} determinism must be one of {sorted(VALID_DETERMINISM)}"
+            )
         if candidate.is_identity:
             continue
         if not hasattr(A, candidate.class_name or ""):
             raise ValueError(f"unknown Albumentations transform {candidate.class_name}")
         if candidate.params.get("p") != 1.0:
             raise ValueError(f"{candidate.id} must set p=1.0")
+        if candidate.determinism == FIXED_DETERMINISM:
+            _validate_fixed_range_params(candidate)
 
 
 def build_augmentation_audit(candidates: list[AugmentationCandidate], seed: int) -> dict[str, Any]:
@@ -112,6 +127,7 @@ def build_augmentation_audit(candidates: list[AugmentationCandidate], seed: int)
             {
                 "id": candidate.id,
                 "name": candidate.name,
+                "determinism": candidate.determinism,
                 "class_name": candidate.class_name,
                 "params": _json_ready(candidate.params),
                 "serialized_transform": _serialized_transform(candidate, seed=seed),
@@ -163,6 +179,26 @@ def apply_candidate(
 
 def _json_ready(value: Any) -> Any:
     return json.loads(json.dumps(value, sort_keys=True))
+
+
+def _validate_fixed_range_params(candidate: AugmentationCandidate) -> None:
+    for path, value in _walk_params(candidate.params):
+        if not path.endswith("_range"):
+            continue
+        if isinstance(value, list | tuple) and len(value) == 2 and value[0] != value[1]:
+            raise ValueError(
+                f"{candidate.id} fixed candidate has non-fixed range {path}={value!r}"
+            )
+
+
+def _walk_params(params: dict[str, Any], prefix: str = "") -> list[tuple[str, Any]]:
+    walked: list[tuple[str, Any]] = []
+    for key, value in params.items():
+        path = f"{prefix}.{key}" if prefix else key
+        walked.append((path, value))
+        if isinstance(value, dict):
+            walked.extend(_walk_params(value, prefix=path))
+    return walked
 
 
 def _serialized_transform(candidate: AugmentationCandidate, seed: int) -> dict[str, Any] | None:
