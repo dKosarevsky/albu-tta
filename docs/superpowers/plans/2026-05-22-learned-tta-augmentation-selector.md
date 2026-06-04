@@ -534,6 +534,8 @@ After implementation, run in this order:
 python -m learned_tta.cli run-smoke --config configs/experiment/resnet50_a1_in1k.yaml --output-dir artifacts/smoke
 python -m learned_tta.cli validate-augmentations --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli make-splits --config configs/experiment/resnet50_a1_in1k.yaml --imagenet-val-dir /path/to/imagenet/val
+python -m learned_tta.cli cache-teacher --split public_val --candidate-id aug_000 --config configs/experiment/resnet50_a1_in1k.yaml
+python -m learned_tta.cli check-clean-baseline --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli cache-teacher --split public_train --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli cache-teacher --split public_val --config configs/experiment/resnet50_a1_in1k.yaml
 python -m learned_tta.cli build-targets --config configs/experiment/resnet50_a1_in1k.yaml

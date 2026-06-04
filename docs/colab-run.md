@@ -82,6 +82,10 @@ repository which command is next, replaces the ImageNet placeholder with
 to duplicate an already active cache process. Re-run the resume cell after a
 disconnect; already complete teacher cache shards are skipped by cache resume
 when parquet, logits, and `.run.json` sidecars match the current run metadata.
+Before the full all-candidate cache, the required status order caches only the
+`public_val` identity shard and runs `check-clean-baseline`. If that sanity
+check fails, fix the ImageNet mapping, labels, or preprocessing before spending
+GPU on the 100-candidate cache.
 
 `full-run-status --next-command` remains available for read-only diagnostics
 and external wrappers that only need to print the next command.

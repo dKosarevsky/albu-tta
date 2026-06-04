@@ -9,6 +9,8 @@ Implemented:
   50 images per class, and a configured class index matching `timm-imagenet-1k`.
 - Stratified ImageNet-val manifests for `public_train`, `public_val`,
   `public`, and `private`, plus `class_to_idx.json` for label-index audit.
+- Clean identity-cache baseline gate on `public_val` before full all-candidate
+  teacher caching, with configurable top-1, top-5, and NLL sanity thresholds.
 - AlbumentationsX registry with 100 single-transform candidates, explicit
   `fixed` vs `seeded_stochastic` determinism metadata, range validation for
   fixed candidates, and audit JSON including runtime package versions.
@@ -42,7 +44,9 @@ Not part of the implementation-complete status:
 Next research step:
 
 Run `check-full-run` against the local ImageNet-val directory, confirm the
-strict class-count/image-count/WNID-mapping checks pass, run the full
+strict class-count/image-count/WNID-mapping checks pass, let
+`resume-full-run` cache `public_val` identity and run `check-clean-baseline`,
+then run the full
 experiment with `resnet50.a1_in1k`, use `full-run-status` after each expensive
 step to confirm the next missing required artifact, use `--format json` if the
 GPU run is driven by scripts, use `--fail-on-incomplete` when a shell step

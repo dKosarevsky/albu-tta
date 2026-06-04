@@ -227,6 +227,10 @@ done
 
 This is intentionally conservative. If a cache process is already active, the
 supervisor prints the active process and exits without starting another copy.
+Before launching full all-candidate teacher caching, the status order first
+caches `public_val` identity (`aug_000`) and runs `check-clean-baseline`. That
+gate checks clean top-1, top-5, and NLL against loose config thresholds so a
+broken ImageNet mapping or preprocessing issue fails early.
 
 ## Manual Commands
 
@@ -249,6 +253,16 @@ uv run python -m learned_tta.cli validate-augmentations \
 uv run python -m learned_tta.cli make-splits \
   --config "$CONFIG" \
   --imagenet-val-dir "$IMAGENET_VAL_DIR"
+
+uv run python -m learned_tta.cli cache-teacher \
+  --split public_val \
+  --config "$CONFIG" \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli check-clean-baseline \
+  --config "$CONFIG"
 
 uv run python -m learned_tta.cli cache-teacher \
   --split public_train \
