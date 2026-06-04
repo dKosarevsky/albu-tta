@@ -15,6 +15,12 @@ dataset:
   public_train_per_class: 20
   public_val_per_class: 5
 
+clean_baseline:
+  split: public_val
+  min_top1: 0.70
+  min_top5: 0.90
+  max_nll: 1.60
+
 augmentations:
   registry_path: configs/augmentations/imagenet100.yaml
   candidate_count: 100

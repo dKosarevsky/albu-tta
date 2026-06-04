@@ -11,9 +11,9 @@ def test_inspect_full_run_status_reports_first_missing_step(tmp_path: Path) -> N
     summary = inspect_full_run_status(config_path)
 
     assert summary.completed_steps == 0
-    assert summary.total_steps == 13
+    assert summary.total_steps == 15
     assert summary.completed_required_steps == 0
-    assert summary.total_required_steps == 12
+    assert summary.total_required_steps == 14
     assert summary.next_step is not None
     assert summary.next_step.name == "validate_augmentations"
     assert summary.steps[0].required is True
@@ -48,8 +48,9 @@ def test_inspect_full_run_status_advances_past_completed_manifests(
     assert summary.completed_steps == 2
     assert summary.completed_required_steps == 2
     assert summary.next_step is not None
-    assert summary.next_step.name == "cache_public_train"
-    assert "cache-teacher --split public_train" in summary.next_step.command
+    assert summary.next_step.name == "cache_public_val_identity"
+    assert "cache-teacher --split public_val" in summary.next_step.command
+    assert "--candidate-id aug_000" in summary.next_step.command
     assert "--num-workers 2" in summary.next_step.command
 
 
@@ -65,6 +66,8 @@ def test_inspect_full_run_status_rejects_partial_teacher_cache(
     for split in ("public_train", "public_val", "public", "private"):
         _touch(manifests_dir / f"{split}.csv")
     _touch(manifests_dir / "class_to_idx.json")
+    _touch_teacher_cache(cache_dir, split="public_val", candidate_count=1)
+    _touch(cache_dir / "public_val__aug_000.clean_baseline.json")
     _touch(
         cache_dir / "public_train__aug_000.parquet",
         cache_dir / "public_train__aug_000.logits.npy",
@@ -75,7 +78,7 @@ def test_inspect_full_run_status_rejects_partial_teacher_cache(
     summary = inspect_full_run_status(config_path)
     cache_step = next(step for step in summary.steps if step.name == "cache_public_train")
 
-    assert summary.completed_required_steps == 2
+    assert summary.completed_required_steps == 4
     assert summary.next_step is not None
     assert summary.next_step.name == "cache_public_train"
     assert len(cache_step.missing_outputs) == 298
@@ -108,6 +111,7 @@ def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
         artifacts_dir / "augmentation_registry_audit.json",
         *manifest_paths,
         manifests_dir / "class_to_idx.json",
+        cache_dir / "public_val__aug_000.clean_baseline.json",
         selector_dir / "public_train_targets.npz",
         selector_dir / "public_val_targets.npz",
         selector_dir / "selector_best.pt",
@@ -126,8 +130,8 @@ def test_inspect_full_run_status_does_not_block_on_optional_xgboost(
 
     summary = inspect_full_run_status(config_path)
 
-    assert summary.completed_steps == 12
-    assert summary.total_steps == 13
+    assert summary.completed_steps == 14
+    assert summary.total_steps == 15
     assert summary.completed_required_steps == summary.total_required_steps
     assert summary.next_step is None
     assert all(step.missing_outputs == () for step in summary.steps if step.required)
@@ -159,6 +163,11 @@ dataset:
   private_per_class: 25
   public_train_per_class: 20
   public_val_per_class: 5
+clean_baseline:
+  split: public_val
+  min_top1: 0.70
+  min_top5: 0.90
+  max_nll: 1.60
 augmentations:
   registry_path: configs/augmentations/imagenet100.yaml
   candidate_count: 100

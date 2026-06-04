@@ -251,6 +251,15 @@ uv run python -m learned_tta.cli make-splits \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val
 
+uv run python -m learned_tta.cli cache-teacher --split public_val \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli check-clean-baseline \
+  --config configs/experiment/resnet50_a1_in1k.yaml
+
 uv run python -m learned_tta.cli cache-teacher --split public_train \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --device cuda \
@@ -310,6 +319,11 @@ external run scripts.
 `make-splits` writes `artifacts/manifests/class_to_idx.json` alongside the CSV
 manifests. Keep that artifact with the run output; it is the audit trail tying
 manifest labels to the teacher model's ImageNet-1k output indices.
+Before the full all-candidate teacher cache, `full-run-status` requires the
+identity `public_val` shard and a `check-clean-baseline` JSON artifact. The
+baseline gate uses loose thresholds from the experiment config to catch broken
+class mapping, labels, or preprocessing before spending GPU on every
+augmentation.
 The status check requires every configured augmentation candidate to have
 metadata, logits, and `.run.json` sidecar shard files before a teacher-cache
 split is marked complete. full-run-status treats `.run.json` sidecars as required teacher cache outputs.

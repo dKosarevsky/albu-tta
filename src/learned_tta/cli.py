@@ -12,6 +12,7 @@ from learned_tta.augmentations import (
     validate_augmentation_registry,
     write_augmentation_audit,
 )
+from learned_tta.clean_baseline import check_clean_baseline_from_config
 from learned_tta.config import load_experiment_config
 from learned_tta.imagenet_split import (
     build_stratified_splits,
@@ -67,6 +68,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         _cmd_check_full_run(
             config_path=Path(args.config),
             imagenet_val_dir=Path(args.imagenet_val_dir),
+        )
+    elif command == "check-clean-baseline":
+        _cmd_check_clean_baseline(
+            config_path=Path(args.config),
+            split=args.split,
+            cache_dir=_optional_path(args.cache_dir),
+            output_path=_optional_path(args.output_path),
+            min_top1=args.min_top1,
+            min_top5=args.min_top5,
+            max_nll=args.max_nll,
         )
     elif command == "full-run-status":
         _cmd_full_run_status(
@@ -266,6 +277,22 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Path to ImageNet validation directory laid out as val/class_name/image.JPEG.",
     )
+
+    check_clean_baseline = subparsers.add_parser(
+        "check-clean-baseline",
+        help="Validate clean identity-cache metrics before full teacher caching.",
+    )
+    check_clean_baseline.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    check_clean_baseline.add_argument("--split")
+    check_clean_baseline.add_argument("--cache-dir")
+    check_clean_baseline.add_argument("--output-path")
+    check_clean_baseline.add_argument("--min-top1", type=float)
+    check_clean_baseline.add_argument("--min-top5", type=float)
+    check_clean_baseline.add_argument("--max-nll", type=float)
 
     full_run_status = subparsers.add_parser(
         "full-run-status",
@@ -557,6 +584,35 @@ def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:
         f"images={summary.image_count}, "
         f"candidates={summary.candidate_count}, "
         f"teacher={summary.teacher_model_name}"
+    )
+
+
+def _cmd_check_clean_baseline(
+    *,
+    config_path: Path,
+    split: str | None,
+    cache_dir: Path | None,
+    output_path: Path | None,
+    min_top1: float | None,
+    min_top5: float | None,
+    max_nll: float | None,
+) -> None:
+    report = check_clean_baseline_from_config(
+        config_path,
+        split=split,
+        cache_dir=cache_dir,
+        output_path=output_path,
+        min_top1=min_top1,
+        min_top5=min_top5,
+        max_nll=max_nll,
+    )
+    print(
+        "clean baseline ok: "
+        f"split={report.split}, "
+        f"images={int(report.metrics['image_count'])}, "
+        f"top1={report.metrics['top1']:.4f}, "
+        f"top5={report.metrics['top5']:.4f}, "
+        f"nll={report.metrics['nll']:.4f}"
     )
 
 
