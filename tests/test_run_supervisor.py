@@ -92,6 +92,46 @@ def test_run_next_full_run_step_does_not_duplicate_active_cache_process(
     assert "123 python" in result.active_processes[0]
 
 
+def test_run_next_full_run_step_can_start_duplicate_cache_when_allowed(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    summary = _summary_with_next_step(
+        command=(
+            "uv run python -m learned_tta.cli cache-teacher --split public_train "
+            "--config cfg.yaml --device cuda --num-workers 2"
+        ),
+        name="cache_public_train",
+    )
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 45678
+
+        def __init__(self, args: list[str], **_kwargs: Any) -> None:
+            popen_calls.append(args)
+
+    monkeypatch.setattr(
+        "learned_tta.run_supervisor.inspect_full_run_status",
+        lambda _config_path: summary,
+    )
+    monkeypatch.setattr(
+        "learned_tta.run_supervisor.find_active_cache_teacher_processes",
+        lambda split=None: ("123 python -m learned_tta.cli cache-teacher --split public_train",),
+    )
+    monkeypatch.setattr("learned_tta.run_supervisor.subprocess.Popen", FakePopen)
+
+    result = run_next_full_run_step(
+        config_path=tmp_path / "experiment.yaml",
+        cache_log_dir=tmp_path / "logs",
+        allow_duplicate_cache=True,
+    )
+
+    assert result.status == "started"
+    assert result.pid == 45678
+    assert popen_calls[0][:5] == ["uv", "run", "python", "-m", "learned_tta.cli"]
+
+
 def test_run_next_full_run_step_can_report_dry_run(
     tmp_path: Path,
     monkeypatch: Any,
@@ -286,6 +326,17 @@ def test_cache_log_path_defaults_to_project_artifacts_logs(tmp_path: Path) -> No
         step_name="cache_public_train",
         config_path=config_path,
     ) == project_root / "artifacts" / "logs" / "cache_public_train.log"
+
+
+def test_cache_log_path_falls_back_to_config_parent_outside_project(tmp_path: Path) -> None:
+    config_path = tmp_path / "configs" / "experiment.yaml"
+    config_path.parent.mkdir(parents=True)
+
+    assert _cache_log_path(
+        cache_log_dir=None,
+        step_name="cache_private",
+        config_path=config_path,
+    ) == config_path.parent / "artifacts" / "logs" / "cache_private.log"
 
 
 def _summary_with_next_step(command: str, name: str) -> FullRunStatusSummary:

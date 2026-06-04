@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -12,7 +13,7 @@ from learned_tta.augmentations import AugmentationCandidate
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.data import ManifestRecord
 from learned_tta.teacher import TeacherBundle
-from learned_tta.teacher_cache import run_teacher_cache
+from learned_tta.teacher_cache import _filter_candidates, _model_num_classes, run_teacher_cache
 
 
 @pytest.fixture
@@ -185,6 +186,28 @@ def test_cache_teacher_cli_uses_manifest_and_candidate_filter(
     assert "teacher cache public: wrote 1 shard, skipped 0 shards" in captured.out
     assert teacher_shard_paths(output_dir, "public", "aug_000").metadata_path.exists()
     assert not teacher_shard_paths(output_dir, "public", "aug_001").metadata_path.exists()
+
+
+def test_filter_candidates_rejects_unknown_candidate_ids(
+    candidates: list[AugmentationCandidate],
+) -> None:
+    with pytest.raises(ValueError, match="unknown augmentation candidate ids: aug_missing"):
+        _filter_candidates(candidates, ["aug_000", "aug_missing"])
+
+
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        (object(), None),
+        (SimpleNamespace(num_classes="1000"), None),
+        (SimpleNamespace(num_classes=1000), 1000),
+    ],
+)
+def test_model_num_classes_returns_only_integer_values(
+    model: object,
+    expected: int | None,
+) -> None:
+    assert _model_num_classes(model) == expected
 
 
 class _FakeTeacher(torch.nn.Module):

@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -165,6 +166,98 @@ def test_cli_full_run_status_can_emit_json(capsys: pytest.CaptureFixture[str]) -
     )
 
 
+def test_cli_full_run_status_json_matches_stable_golden(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main(["full-run-status", "--config", str(CONFIG_PATH), "--format", "json"])
+
+    captured = capsys.readouterr()
+    payload = _normalize_json_paths(json.loads(captured.out))
+
+    assert {
+        "completed_required_steps": payload["completed_required_steps"],
+        "completed_steps": payload["completed_steps"],
+        "config_path": payload["config_path"],
+        "total_required_steps": payload["total_required_steps"],
+        "total_steps": payload["total_steps"],
+    } == {
+        "completed_required_steps": 0,
+        "completed_steps": 0,
+        "config_path": "<repo>/configs/experiment/resnet50_a1_in1k.yaml",
+        "total_required_steps": 14,
+        "total_steps": 15,
+    }
+    assert payload["next_step"] == payload["steps"][0]
+    assert payload["steps"][:3] == [
+        {
+            "command": (
+                "uv run python -m learned_tta.cli validate-augmentations "
+                "--config <repo>/configs/experiment/resnet50_a1_in1k.yaml "
+                "--audit-output <repo>/artifacts/augmentation_registry_audit.json"
+            ),
+            "complete": False,
+            "extra_output_count": 0,
+            "extra_outputs": [],
+            "missing_output_count": 1,
+            "missing_outputs": ["<repo>/artifacts/augmentation_registry_audit.json"],
+            "name": "validate_augmentations",
+            "outputs": ["<repo>/artifacts/augmentation_registry_audit.json"],
+            "required": True,
+        },
+        {
+            "command": (
+                "uv run python -m learned_tta.cli make-splits "
+                "--config <repo>/configs/experiment/resnet50_a1_in1k.yaml "
+                "--imagenet-val-dir /path/to/imagenet/val"
+            ),
+            "complete": False,
+            "extra_output_count": 0,
+            "extra_outputs": [],
+            "missing_output_count": 5,
+            "missing_outputs": [
+                "<repo>/artifacts/manifests/public_train.csv",
+                "<repo>/artifacts/manifests/public_val.csv",
+                "<repo>/artifacts/manifests/public.csv",
+                "<repo>/artifacts/manifests/private.csv",
+                "<repo>/artifacts/manifests/class_to_idx.json",
+            ],
+            "name": "make_splits",
+            "outputs": [
+                "<repo>/artifacts/manifests/public_train.csv",
+                "<repo>/artifacts/manifests/public_val.csv",
+                "<repo>/artifacts/manifests/public.csv",
+                "<repo>/artifacts/manifests/private.csv",
+                "<repo>/artifacts/manifests/class_to_idx.json",
+            ],
+            "required": True,
+        },
+        {
+            "command": (
+                "uv run python -m learned_tta.cli cache-teacher "
+                "--split public_val "
+                "--config <repo>/configs/experiment/resnet50_a1_in1k.yaml "
+                "--device cuda --num-workers 2 --candidate-id aug_000"
+            ),
+            "complete": False,
+            "extra_output_count": 0,
+            "extra_outputs": [],
+            "missing_output_count": 3,
+            "missing_outputs": [
+                "<repo>/artifacts/teacher_cache/public_val__aug_000.parquet",
+                "<repo>/artifacts/teacher_cache/public_val__aug_000.logits.npy",
+                "<repo>/artifacts/teacher_cache/public_val__aug_000.run.json",
+            ],
+            "name": "cache_public_val_identity",
+            "outputs": [
+                "<repo>/artifacts/teacher_cache/public_val__aug_000.parquet",
+                "<repo>/artifacts/teacher_cache/public_val__aug_000.logits.npy",
+                "<repo>/artifacts/teacher_cache/public_val__aug_000.run.json",
+            ],
+            "required": True,
+        },
+    ]
+
+
 def test_cli_full_run_status_can_fail_on_incomplete_required_steps(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -196,6 +289,70 @@ def test_cli_full_run_status_can_print_only_next_command(
     assert "--audit-output" in captured.out
     assert "full run status:" not in captured.out
     assert captured.out.count("\n") == 1
+
+
+def test_cli_full_run_status_next_command_can_fail_on_incomplete(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "full-run-status",
+                "--config",
+                str(CONFIG_PATH),
+                "--next-command",
+                "--fail-on-incomplete",
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 1
+    assert captured.out.startswith("uv run python -m learned_tta.cli validate-augmentations")
+
+
+def test_cli_full_run_status_json_can_fail_on_incomplete(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "full-run-status",
+                "--config",
+                str(CONFIG_PATH),
+                "--format",
+                "json",
+                "--fail-on-incomplete",
+            ]
+        )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exc_info.value.code == 1
+    assert payload["next_step"]["name"] == "validate_augmentations"
+
+
+def test_cli_full_run_status_reports_no_next_step_for_complete_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        "learned_tta.cli.inspect_full_run_status",
+        lambda _config_path: SimpleNamespace(
+            completed_required_steps=14,
+            total_required_steps=14,
+            completed_steps=15,
+            total_steps=15,
+            steps=(),
+            next_step=None,
+        ),
+    )
+
+    main(["full-run-status", "--config", str(CONFIG_PATH)])
+    captured = capsys.readouterr()
+
+    assert "15 total" in captured.out
+    assert "next: none" in captured.out
 
 
 def test_cli_resume_full_run_reports_background_cache_start(
@@ -247,6 +404,99 @@ def test_cli_resume_full_run_reports_background_cache_start(
             "allow_duplicate_cache": False,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("result", "expected_lines"),
+    [
+        (
+            SimpleNamespace(
+                status="complete",
+                step_name=None,
+                command=None,
+                log_path=None,
+                pid=None,
+                active_processes=(),
+            ),
+            ["full run complete: no required steps left"],
+        ),
+        (
+            SimpleNamespace(
+                status="dry-run",
+                step_name="validate_augmentations",
+                command="uv run python -m learned_tta.cli validate-augmentations",
+                log_path=None,
+                pid=None,
+                active_processes=(),
+            ),
+            [
+                "dry-run: validate_augmentations",
+                "uv run python -m learned_tta.cli validate-augmentations",
+            ],
+        ),
+        (
+            SimpleNamespace(
+                status="active",
+                step_name="cache_public_train",
+                command="uv run python -m learned_tta.cli cache-teacher --split public_train",
+                log_path=None,
+                pid=None,
+                active_processes=("123 python -m learned_tta.cli cache-teacher",),
+            ),
+            [
+                "cache already active: cache_public_train",
+                "123 python -m learned_tta.cli cache-teacher",
+                "not starting a duplicate process",
+            ],
+        ),
+        (
+            SimpleNamespace(
+                status="completed",
+                step_name="validate_augmentations",
+                command="uv run python -m learned_tta.cli validate-augmentations",
+                log_path=None,
+                pid=None,
+                active_processes=(),
+            ),
+            [
+                "completed step: validate_augmentations",
+                "uv run python -m learned_tta.cli validate-augmentations",
+            ],
+        ),
+    ],
+)
+def test_cli_resume_full_run_reports_non_started_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    result: SimpleNamespace,
+    expected_lines: list[str],
+) -> None:
+    monkeypatch.setattr("learned_tta.cli.run_next_full_run_step", lambda **_kwargs: result)
+
+    main(["resume-full-run", "--config", str(CONFIG_PATH)])
+    captured = capsys.readouterr()
+
+    for expected_line in expected_lines:
+        assert expected_line in captured.out
+
+
+def test_cli_resume_full_run_rejects_unknown_supervisor_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "learned_tta.cli.run_next_full_run_step",
+        lambda **_kwargs: SimpleNamespace(
+            status="unknown",
+            step_name="mystery",
+            command=None,
+            log_path=None,
+            pid=None,
+            active_processes=(),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unknown resume result status: unknown"):
+        main(["resume-full-run", "--config", str(CONFIG_PATH)])
 
 
 def test_cli_module_entrypoint_runs() -> None:
@@ -335,3 +585,13 @@ artifacts:
         encoding="utf-8",
     )
     return config_path
+
+
+def _normalize_json_paths(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _normalize_json_paths(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_json_paths(item) for item in value]
+    if isinstance(value, str):
+        return value.replace(str(ROOT), "<repo>")
+    return value
