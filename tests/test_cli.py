@@ -6,8 +6,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
+from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -104,6 +106,34 @@ def test_cli_check_full_run_reports_preflight_summary(
     assert "candidates=100" in captured.out
 
 
+def test_cli_check_clean_baseline_writes_default_artifact(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+    cache_dir = tmp_path / "artifacts" / "teacher_cache"
+    write_teacher_shard(
+        cache_dir,
+        TeacherShard(
+            split="public_val",
+            aug_id="aug_000",
+            image_ids=["img_0", "img_1"],
+            class_idxs=np.array([0, 1], dtype=np.int64),
+            logits=np.array([[4.0, 0.0], [0.0, 4.0]], dtype=np.float32),
+        ),
+    )
+
+    main(["check-clean-baseline", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    output_path = cache_dir / "public_val__aug_000.clean_baseline.json"
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert "clean baseline ok" in captured.out
+    assert "top1=1.0000" in captured.out
+    assert payload["passed"] is True
+    assert payload["split"] == "public_val"
+
+
 def test_cli_full_run_status_reports_next_step(capsys: pytest.CaptureFixture[str]) -> None:
     main(["full-run-status", "--config", str(CONFIG_PATH)])
 
@@ -124,7 +154,7 @@ def test_cli_full_run_status_can_emit_json(capsys: pytest.CaptureFixture[str]) -
     payload = json.loads(captured.out)
 
     assert payload["completed_required_steps"] == 0
-    assert payload["total_required_steps"] == 12
+    assert payload["total_required_steps"] == 14
     assert payload["next_step"]["name"] == "validate_augmentations"
     assert payload["steps"][0]["required"] is True
     assert payload["steps"][0]["missing_output_count"] == 1
@@ -274,6 +304,12 @@ dataset:
   private_per_class: 25
   public_train_per_class: 20
   public_val_per_class: 5
+
+clean_baseline:
+  split: public_val
+  min_top1: 0.70
+  min_top5: 0.90
+  max_nll: 1.60
 
 augmentations:
   registry_path: {ROOT / "configs" / "augmentations" / "imagenet100.yaml"}

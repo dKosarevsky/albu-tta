@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from learned_tta.augmentations import load_augmentation_registry
+from learned_tta.clean_baseline import clean_baseline_artifact_path
 from learned_tta.config import ExperimentConfig, load_experiment_config
 
 CACHE_TEACHER_NUM_WORKERS = 2
@@ -98,6 +99,11 @@ def _build_step_statuses(
         for split in ("public_train", "public_val", "public", "private")
     )
     class_mapping = config.artifacts.manifests_dir / "class_to_idx.json"
+    clean_baseline = clean_baseline_artifact_path(
+        cache_dir=config.artifacts.teacher_cache_dir,
+        split=config.clean_baseline.split,
+        identity_aug_id=config.augmentations.identity_id,
+    )
     train_targets = config.artifacts.selector_dir / "public_train_targets.npz"
     val_targets = config.artifacts.selector_dir / "public_val_targets.npz"
     selector_checkpoint = config.artifacts.selector_dir / "selector_best.pt"
@@ -142,6 +148,20 @@ def _build_step_statuses(
                 f"--config {config.path} --imagenet-val-dir /path/to/imagenet/val"
             ),
             complete=lambda: _all_exist((*manifests, class_mapping)),
+        ),
+        _cache_step_spec(
+            config,
+            config.clean_baseline.split,
+            expected_aug_ids=(config.augmentations.identity_id,),
+            name=f"cache_{config.clean_baseline.split}_identity",
+            candidate_args=f"--candidate-id {config.augmentations.identity_id}",
+            allow_extra_outputs=True,
+        ),
+        _StepSpec(
+            name="check_clean_baseline",
+            outputs=(clean_baseline,),
+            command=f"uv run python -m learned_tta.cli check-clean-baseline --config {config.path}",
+            complete=lambda: clean_baseline.exists(),
         ),
         _cache_step_spec(config, "public_train", expected_aug_ids=expected_aug_ids),
         _cache_step_spec(config, "public_val", expected_aug_ids=expected_aug_ids),
@@ -232,6 +252,9 @@ def _cache_step_spec(
     config: ExperimentConfig,
     split: str,
     expected_aug_ids: tuple[str, ...],
+    name: str | None = None,
+    candidate_args: str = "",
+    allow_extra_outputs: bool = False,
 ) -> _StepSpec:
     outputs = tuple(
         path
@@ -243,22 +266,28 @@ def _cache_step_spec(
         )
     )
     return _StepSpec(
-        name=f"cache_{split}",
+        name=name or f"cache_{split}",
         outputs=outputs,
         command=(
             f"uv run python -m learned_tta.cli cache-teacher --split {split} "
             f"--config {config.path} --device cuda "
             f"--num-workers {CACHE_TEACHER_NUM_WORKERS}"
+            f"{' ' + candidate_args if candidate_args else ''}"
         ),
         complete=lambda: _has_complete_teacher_cache(
             config.artifacts.teacher_cache_dir,
             split,
             expected_aug_ids=expected_aug_ids,
+            allow_extra_outputs=allow_extra_outputs,
         ),
-        extra_outputs=lambda: _extra_teacher_cache_outputs(
-            config.artifacts.teacher_cache_dir,
-            split,
-            expected_aug_ids=expected_aug_ids,
+        extra_outputs=(
+            _empty_outputs
+            if allow_extra_outputs
+            else lambda: _extra_teacher_cache_outputs(
+                config.artifacts.teacher_cache_dir,
+                split,
+                expected_aug_ids=expected_aug_ids,
+            )
         ),
     )
 
@@ -300,6 +329,7 @@ def _has_complete_teacher_cache(
     cache_dir: Path,
     split: str,
     expected_aug_ids: tuple[str, ...],
+    allow_extra_outputs: bool = False,
 ) -> bool:
     if not expected_aug_ids:
         return False
@@ -312,6 +342,12 @@ def _has_complete_teacher_cache(
         path.name.removesuffix(".run.json") for path in run_metadata_shards
     }
     expected_stems = {f"{split}__{aug_id}" for aug_id in expected_aug_ids}
+    if allow_extra_outputs:
+        return (
+            expected_stems <= parquet_stems
+            and expected_stems <= logits_stems
+            and expected_stems <= run_metadata_stems
+        )
     return (
         parquet_stems == expected_stems
         and logits_stems == expected_stems

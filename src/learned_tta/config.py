@@ -29,6 +29,16 @@ class DatasetConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class CleanBaselineConfig:
+    """Sanity thresholds for clean teacher identity-cache metrics."""
+
+    split: str
+    min_top1: float
+    min_top5: float
+    max_nll: float
+
+
+@dataclass(frozen=True, slots=True)
 class AugmentationsConfig:
     """Augmentation registry configuration."""
 
@@ -67,6 +77,7 @@ class ExperimentConfig:
     seed: int
     teacher: TeacherConfig
     dataset: DatasetConfig
+    clean_baseline: CleanBaselineConfig
     split: SplitConfig
     augmentations: AugmentationsConfig
     selector: SelectorConfig
@@ -82,6 +93,7 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
         raw = yaml.safe_load(handle)
 
     dataset = raw["dataset"]
+    clean_baseline = raw.get("clean_baseline", {})
     augmentations = raw["augmentations"]
     teacher = raw["teacher"]
     selector = raw["selector"]
@@ -101,6 +113,12 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
             class_count=int(dataset["class_count"]),
             class_index=str(dataset["class_index"]),
             images_per_class=int(dataset["images_per_class"]),
+        ),
+        clean_baseline=CleanBaselineConfig(
+            split=str(clean_baseline.get("split", "public_val")),
+            min_top1=float(clean_baseline.get("min_top1", 0.70)),
+            min_top5=float(clean_baseline.get("min_top5", 0.90)),
+            max_nll=float(clean_baseline.get("max_nll", 1.60)),
         ),
         split=SplitConfig(
             seed=int(raw["seed"]),

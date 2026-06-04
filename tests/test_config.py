@@ -17,6 +17,10 @@ def test_load_experiment_config_resolves_project_relative_paths() -> None:
     assert config.dataset.class_count == 1000
     assert config.dataset.class_index == "timm-imagenet-1k"
     assert config.dataset.images_per_class == 50
+    assert config.clean_baseline.split == "public_val"
+    assert config.clean_baseline.min_top1 == 0.70
+    assert config.clean_baseline.min_top5 == 0.90
+    assert config.clean_baseline.max_nll == 1.60
     assert config.split.public_train_per_class == 20
     assert config.split.public_val_per_class == 5
     assert config.augmentations.registry_path == (
