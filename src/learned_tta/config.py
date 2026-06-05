@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -16,6 +17,7 @@ class TeacherConfig:
 
     model_name: str
     pretrained: bool
+    data_config: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +109,11 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
         teacher=TeacherConfig(
             model_name=str(teacher["model_name"]),
             pretrained=bool(teacher["pretrained"]),
+            data_config=(
+                dict(teacher["data_config"])
+                if isinstance(teacher.get("data_config"), dict)
+                else None
+            ),
         ),
         dataset=DatasetConfig(
             name=str(dataset["name"]),

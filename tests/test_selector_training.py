@@ -53,6 +53,27 @@ def test_make_selector_dataloader_returns_image_target_batches(
     assert targets.dtype == torch.float32
 
 
+def test_make_selector_dataloader_rejects_target_manifest_order_mismatch(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _write_manifest(tmp_path, split="public_train", count=2)
+    targets_path = _write_targets(
+        tmp_path / "public_train_targets.npz",
+        rows=2,
+        image_ids=["public_train-1", "public_train-0"],
+    )
+
+    with pytest.raises(ValueError, match="selector target image_ids must match manifest image_ids"):
+        make_selector_dataloader(
+            manifest_path=manifest_path,
+            targets_path=targets_path,
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+
 def test_train_selector_from_artifacts_saves_best_checkpoint(
     tmp_path: Path,
     selector_training_artifacts: dict[str, Path],
@@ -195,7 +216,7 @@ def _write_manifest(root: Path, split: str, count: int) -> Path:
     return manifest_path
 
 
-def _write_targets(path: Path, rows: int) -> Path:
+def _write_targets(path: Path, rows: int, image_ids: list[str] | None = None) -> Path:
     gain = np.stack(
         [
             np.linspace(0.0, 0.3, rows, dtype=np.float32),
@@ -210,6 +231,8 @@ def _write_targets(path: Path, rows: int) -> Path:
     save_selector_targets(
         path=path,
         aug_ids=["aug_000", "aug_001"],
+        image_ids=image_ids
+        or [f"{path.stem.removesuffix('_targets')}-{index}" for index in range(rows)],
         gain=gain,
         target_z=gain,
         stats=stats,

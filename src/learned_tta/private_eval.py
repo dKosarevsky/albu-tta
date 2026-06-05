@@ -83,6 +83,7 @@ def evaluate_private_from_artifacts(
         checkpoint_path=checkpoint_path,
         records=records,
         output_dim=len(aug_ids),
+        aug_ids=aug_ids,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -279,14 +280,19 @@ def _read_split_logits(
 ) -> tuple[dict[str, np.ndarray], np.ndarray]:
     logits_by_aug: dict[str, np.ndarray] = {}
     reference_class_idxs: np.ndarray | None = None
+    reference_image_ids: list[str] | None = None
     for aug_id in aug_ids:
         paths = teacher_shard_paths(cache_dir, split=split, aug_id=aug_id)
         shard = read_teacher_shard(paths.metadata_path, paths.logits_path)
         class_idxs = shard.metadata["class_idx"].to_numpy(dtype=np.int64)
+        image_ids = [str(image_id) for image_id in shard.metadata["image_id"].tolist()]
         if reference_class_idxs is None:
             reference_class_idxs = class_idxs
+            reference_image_ids = image_ids
         elif not np.array_equal(reference_class_idxs, class_idxs):
             raise ValueError(f"class_idx order mismatch for split {split} and aug {aug_id}")
+        elif reference_image_ids != image_ids:
+            raise ValueError(f"image_id order mismatch for split {split} and aug {aug_id}")
         logits_by_aug[aug_id] = shard.logits.astype(np.float32)
     if reference_class_idxs is None:
         raise ValueError("aug_ids must not be empty")

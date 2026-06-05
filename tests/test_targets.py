@@ -160,15 +160,24 @@ def test_standardize_gain_targets_rejects_mismatched_stats() -> None:
 
 def test_save_and_load_selector_targets(tmp_path) -> None:
     aug_ids = ["aug_000", "aug_001"]
+    image_ids = ["image-0", "image-1"]
     gain = np.array([[0.0, 1.0], [0.0, -1.0]], dtype=np.float32)
     stats = compute_target_stats(gain)
     target_z = standardize_gain_targets(gain, stats)
 
     path = tmp_path / "targets.npz"
-    save_selector_targets(path, aug_ids=aug_ids, gain=gain, target_z=target_z, stats=stats)
+    save_selector_targets(
+        path,
+        aug_ids=aug_ids,
+        image_ids=image_ids,
+        gain=gain,
+        target_z=target_z,
+        stats=stats,
+    )
     loaded = load_selector_targets(path)
 
     assert loaded.aug_ids == aug_ids
+    assert loaded.image_ids == image_ids
     np.testing.assert_array_equal(loaded.gain, gain)
     np.testing.assert_array_equal(loaded.target_z, target_z)
     np.testing.assert_array_equal(loaded.stats.mean, stats.mean)

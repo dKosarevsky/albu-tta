@@ -134,6 +134,7 @@ def test_predict_selector_scores_returns_unstandardized_gain(tmp_path: Path) -> 
         checkpoint_path=checkpoint_path,
         records=load_manifest(manifest_path),
         output_dim=2,
+        aug_ids=["aug_000", "aug_001"],
         image_size=16,
         batch_size=2,
         num_workers=0,
@@ -144,6 +145,30 @@ def test_predict_selector_scores_returns_unstandardized_gain(tmp_path: Path) -> 
         scores,
         np.array([[0.25, -0.5], [0.25, -0.5]], dtype=np.float32),
     )
+
+
+def test_predict_selector_scores_rejects_checkpoint_aug_id_order_mismatch(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _write_manifest(tmp_path, split="public_val", count=2)
+    checkpoint_path = _write_selector_checkpoint(
+        tmp_path / "selector_best.pt",
+        output_dim=2,
+        target_mean=np.array([0.0, 0.0], dtype=np.float32),
+        target_std=np.array([1.0, 1.0], dtype=np.float32),
+    )
+
+    with pytest.raises(ValueError, match="checkpoint aug_ids must match requested aug_ids"):
+        predict_selector_scores(
+            checkpoint_path=checkpoint_path,
+            records=load_manifest(manifest_path),
+            output_dim=2,
+            aug_ids=["aug_001", "aug_000"],
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            device="cpu",
+        )
 
 
 def _write_manifest(root: Path, split: str, count: int) -> Path:
@@ -204,11 +229,11 @@ def _write_selector_checkpoint(
     checkpoint: dict[str, object] = {
         "epoch": 1,
         "val_nll": 0.0,
+        "aug_ids": [f"aug_{index:03d}" for index in range(output_dim)],
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": {},
     }
     if target_mean is not None and target_std is not None:
-        checkpoint["aug_ids"] = [f"aug_{index:03d}" for index in range(output_dim)]
         checkpoint["target_mean"] = target_mean
         checkpoint["target_std"] = target_std
     torch.save(

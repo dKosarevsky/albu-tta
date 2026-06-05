@@ -14,8 +14,8 @@ Implemented:
 - AlbumentationsX registry with 100 single-transform candidates, explicit
   `fixed` vs `seeded_stochastic` determinism metadata, range validation for
   fixed candidates, and audit JSON including runtime package versions.
-- Teacher cache runner for timm ResNet50 preprocessing, fp16 logits, parquet metadata, `.run.json` sidecars, and metadata-aware resume checks.
-- Selector target generation from cached logits with clean-vs-augmentation gain targets.
+- Teacher cache runner for timm ResNet50 preprocessing, fp16 logits, parquet metadata, `.run.json` sidecars, and metadata/shape-aware resume checks.
+- Selector target generation from cached logits with clean-vs-augmentation gain targets and persisted `image_id` lineage.
 - Selector target formulation documented as a 100-score augmentation utility predictor for ranking/top-k TTA selection, not 50-bin loss classification.
 - Public/private split-role guards for target building, selector checkpoint selection, TTA tuning, learned aggregation training, and final private evaluation.
 - Small selector CNN training with standardized targets, SmoothL1, pairwise rank loss, public-val diagnostics, and checkpoint selection by public-val learned TTA NLL.
@@ -23,7 +23,7 @@ Implemented:
 - Private evaluation artifacts with metrics, compute, clean-vs-TTA corrections, and metric deltas against clean.
 - Final report builder with tables, SVG plots, top-N markdown summaries, transform-class impact, transform-class aggregation, selector history, XGBoost importance, and result text that avoids SOTA claims.
 - Synthetic smoke run covering manifests, teacher cache, target build, selector training, tuning, aggregation training, private evaluation, and final report generation.
-- Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates, `.run.json` metadata validation, and missing/extra artifact diagnostics.
+- Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates, `.run.json` metadata validation, row/class-shape validation, and missing/extra artifact diagnostics.
 - CI coverage gate fixed at 98.5% minimum for the `learned_tta` package.
 - Script-friendly full-run status exit mode via `--fail-on-incomplete`.
 - Script-friendly next required command output via `--next-command`.

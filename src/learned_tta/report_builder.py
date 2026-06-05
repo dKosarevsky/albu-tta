@@ -99,6 +99,7 @@ def build_report_from_artifacts(
         checkpoint_path=checkpoint_path,
         records=_load_manifest_records(impact_manifest_path),
         output_dim=len(targets.aug_ids),
+        aug_ids=targets.aug_ids,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,

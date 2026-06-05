@@ -280,6 +280,7 @@ def _write_selector_checkpoint(path: Path, output_dim: int) -> Path:
         {
             "epoch": 1,
             "val_nll": 0.0,
+            "aug_ids": [f"aug_{index:03d}" for index in range(output_dim)],
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": {},
         },

@@ -627,6 +627,7 @@ def _write_targets(path: Path) -> Path:
     save_selector_targets(
         path=path,
         aug_ids=["aug_000", "aug_001", "aug_002"],
+        image_ids=["public_val-0", "public_val-1", "public_val-2"],
         gain=gain,
         target_z=gain,
         stats=stats,
@@ -642,6 +643,7 @@ def _write_selector_checkpoint(path: Path, output_dim: int) -> Path:
         {
             "epoch": 1,
             "val_nll": 0.0,
+            "aug_ids": [f"aug_{index:03d}" for index in range(output_dim)],
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": {},
         },
