@@ -37,6 +37,7 @@ class SavedSelectorTargets:
     """Loaded selector target artifact."""
 
     aug_ids: list[str]
+    image_ids: list[str]
     gain: np.ndarray
     target_z: np.ndarray
     stats: TargetStats
@@ -109,19 +110,32 @@ def standardize_gain_targets(gain: np.ndarray, stats: TargetStats) -> np.ndarray
 def save_selector_targets(
     path: Path,
     aug_ids: list[str],
+    image_ids: list[str],
     gain: np.ndarray,
     target_z: np.ndarray,
     stats: TargetStats,
 ) -> None:
     """Save selector targets and normalization stats as a compressed numpy artifact."""
 
+    gain = np.asarray(gain, dtype=np.float32)
+    target_z = np.asarray(target_z, dtype=np.float32)
+    if gain.ndim != 2:
+        raise ValueError("gain must have shape [num_images, num_augmentations]")
+    if target_z.shape != gain.shape:
+        raise ValueError("target_z shape must match gain shape")
+    if len(image_ids) != gain.shape[0]:
+        raise ValueError("image_ids length must match selector target rows")
+    if len(aug_ids) != gain.shape[1]:
+        raise ValueError("aug_ids length must match selector target columns")
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         path,
         aug_ids=np.asarray(aug_ids),
-        gain=np.asarray(gain, dtype=np.float32),
-        target_z=np.asarray(target_z, dtype=np.float32),
+        image_ids=np.asarray(image_ids),
+        gain=gain,
+        target_z=target_z,
         mean=np.asarray(stats.mean, dtype=np.float32),
         std=np.asarray(stats.std, dtype=np.float32),
     )
@@ -133,6 +147,11 @@ def load_selector_targets(path: Path) -> SavedSelectorTargets:
     with np.load(path) as data:
         return SavedSelectorTargets(
             aug_ids=[str(aug_id) for aug_id in data["aug_ids"].tolist()],
+            image_ids=(
+                [str(image_id) for image_id in data["image_ids"].tolist()]
+                if "image_ids" in data.files
+                else []
+            ),
             gain=np.asarray(data["gain"], dtype=np.float32),
             target_z=np.asarray(data["target_z"], dtype=np.float32),
             stats=TargetStats(
