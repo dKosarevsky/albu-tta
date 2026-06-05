@@ -375,6 +375,9 @@ Use this checklist after a disconnect, preempted cloud instance, or SSH loss:
    validates split, augmentation id, seed, teacher model, timm data config,
    row count, class count, storage format, and registry candidate parameters
    before it marks a teacher-cache shard complete.
+   If a shard is reported incomplete after a code/config update, do not delete
+   the whole cache. Re-run `resume-full-run`; valid shards are skipped and
+   missing, stale, or malformed shards are regenerated.
 
 7. Resume one step:
 
