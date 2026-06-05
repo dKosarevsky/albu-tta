@@ -39,9 +39,14 @@ def test_augmentation_registry_has_exactly_100_single_transform_candidates() -> 
         if candidate.determinism == "seeded_stochastic"
     } == {
         "random_tone_curve_light": "seeded_stochastic",
-        "planckian_warm": "seeded_stochastic",
-        "planckian_daylight": "seeded_stochastic",
-        "planckian_cool": "seeded_stochastic",
+        "random_tone_curve_medium": "seeded_stochastic",
+        "random_tone_curve_strong": "seeded_stochastic",
+        "planckian_warm_blackbody": "seeded_stochastic",
+        "planckian_daylight_blackbody": "seeded_stochastic",
+        "planckian_cool_blackbody": "seeded_stochastic",
+        "planckian_warm_cied": "seeded_stochastic",
+        "planckian_daylight_cied": "seeded_stochastic",
+        "planckian_cool_cied": "seeded_stochastic",
     }
 
 
