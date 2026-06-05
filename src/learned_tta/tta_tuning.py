@@ -55,6 +55,7 @@ def tune_tta_from_artifacts(
         checkpoint_path=checkpoint_path,
         records=records,
         output_dim=len(aug_ids),
+        aug_ids=aug_ids,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -142,6 +143,7 @@ def predict_selector_scores(
     image_size: int,
     batch_size: int,
     num_workers: int,
+    aug_ids: list[str] | None = None,
     device: str | torch.device = "cpu",
 ) -> np.ndarray:
     """Predict per-augmentation selector scores for clean images."""
@@ -161,14 +163,24 @@ def predict_selector_scores(
     for images in dataloader:
         predictions.append(model(images.to(torch_device)).cpu().numpy().astype(np.float32))
     target_z = np.concatenate(predictions, axis=0)
-    return _unstandardize_checkpoint_scores(target_z, checkpoint, output_dim)
+    return _unstandardize_checkpoint_scores(target_z, checkpoint, output_dim, aug_ids=aug_ids)
 
 
 def _unstandardize_checkpoint_scores(
     target_z: np.ndarray,
     checkpoint: dict[str, object],
     output_dim: int,
+    aug_ids: list[str] | None = None,
 ) -> np.ndarray:
+    checkpoint_aug_ids = checkpoint.get("aug_ids")
+    if aug_ids is not None:
+        if checkpoint_aug_ids is None:
+            raise ValueError("checkpoint aug_ids are required when requested aug_ids are provided")
+        if not isinstance(checkpoint_aug_ids, list):
+            raise ValueError("checkpoint aug_ids must be a list")
+        if [str(aug_id) for aug_id in checkpoint_aug_ids] != aug_ids:
+            raise ValueError("checkpoint aug_ids must match requested aug_ids")
+
     if "target_mean" not in checkpoint or "target_std" not in checkpoint:
         return target_z
 
@@ -176,7 +188,6 @@ def _unstandardize_checkpoint_scores(
     std = np.asarray(checkpoint["target_std"], dtype=np.float32)
     if mean.shape != (output_dim,) or std.shape != (output_dim,):
         raise ValueError("checkpoint target stats must match selector output_dim")
-    checkpoint_aug_ids = checkpoint.get("aug_ids")
     if checkpoint_aug_ids is not None and not isinstance(checkpoint_aug_ids, list):
         raise ValueError("checkpoint aug_ids must be a list")
     if checkpoint_aug_ids is not None and len(checkpoint_aug_ids) != output_dim:
@@ -206,14 +217,19 @@ def _read_split_logits(
 ) -> tuple[dict[str, np.ndarray], np.ndarray]:
     logits_by_aug: dict[str, np.ndarray] = {}
     reference_class_idxs: np.ndarray | None = None
+    reference_image_ids: list[str] | None = None
     for aug_id in aug_ids:
         paths = teacher_shard_paths(cache_dir, split=split, aug_id=aug_id)
         shard = read_teacher_shard(paths.metadata_path, paths.logits_path)
         class_idxs = shard.metadata["class_idx"].to_numpy(dtype=np.int64)
+        image_ids = [str(image_id) for image_id in shard.metadata["image_id"].tolist()]
         if reference_class_idxs is None:
             reference_class_idxs = class_idxs
+            reference_image_ids = image_ids
         elif not np.array_equal(reference_class_idxs, class_idxs):
             raise ValueError(f"class_idx order mismatch for split {split} and aug {aug_id}")
+        elif reference_image_ids != image_ids:
+            raise ValueError(f"image_id order mismatch for split {split} and aug {aug_id}")
         logits_by_aug[aug_id] = shard.logits.astype(np.float32)
     if reference_class_idxs is None:
         raise ValueError("aug_ids must not be empty")
