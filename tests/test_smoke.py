@@ -93,8 +93,8 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     assert summary.candidate_ids == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",
-        "horizontal_flip",
-        "vertical_flip",
+        "square_r90",
+        "square_r180",
     ]
     assert {"global_weighted_tta", "class_weighted_tta"} <= set(private_metrics["strategy"])
     assert set(private_metrics["strategy"]) == {

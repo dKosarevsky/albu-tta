@@ -36,11 +36,12 @@ def test_augmentation_registry_has_exactly_100_single_transform_candidates() -> 
     assert {
         candidate.name: candidate.determinism
         for candidate in candidates
-        if candidate.class_name == "PlanckianJitter"
+        if candidate.determinism == "seeded_stochastic"
     } == {
-        "planckian_5000_6000": "seeded_stochastic",
-        "planckian_5500_6500": "seeded_stochastic",
-        "planckian_6000_7500": "seeded_stochastic",
+        "random_tone_curve_light": "seeded_stochastic",
+        "planckian_warm": "seeded_stochastic",
+        "planckian_daylight": "seeded_stochastic",
+        "planckian_cool": "seeded_stochastic",
     }
 
 
@@ -221,13 +222,13 @@ def test_build_augmentation_audit_is_stable_json_payload() -> None:
         "params": {},
         "serialized_transform": None,
     }
-    assert audit["candidates"][19]["id"] == "aug_019"
-    assert audit["candidates"][19]["params"] == {
+    assert audit["candidates"][31]["id"] == "aug_031"
+    assert audit["candidates"][31]["params"] == {
         "brightness_range": [0.1, 0.1],
         "contrast_range": [0.0, 0.0],
         "p": 1.0,
     }
-    serialized = audit["candidates"][19]["serialized_transform"]
+    serialized = audit["candidates"][31]["serialized_transform"]
     assert serialized["transform"]["seed"] == 20260522
     assert serialized["transform"]["transforms"][0]["__class_fullname__"] == (
         "RandomBrightnessContrast"
