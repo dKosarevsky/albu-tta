@@ -71,6 +71,9 @@ training, the best checkpoint is selected by public-validation
 `learned_topk_uniform` TTA NLL when the validation teacher cache is available;
 regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
 written to `selector/selector_history.csv`.
+Selector target artifacts also persist `image_id` order. Training refuses to pair
+a manifest with targets whose rows were generated from a different image order,
+which prevents silent label/target drift after interrupted or moved runs.
 
 ### Split Contract
 
@@ -326,10 +329,14 @@ class mapping, labels, or preprocessing before spending GPU on every
 augmentation.
 The status check requires every configured augmentation candidate to have
 metadata, logits, and `.run.json` sidecar shard files before a teacher-cache
-split is marked complete. full-run-status treats `.run.json` sidecars as required teacher cache outputs.
-It also validates the sidecar metadata against the current split, augmentation
-id, seed, teacher model, class count, storage format, and registry candidate
-parameters, so stale Drive shards from an older run are not silently skipped.
+split is marked complete. `full-run-status` treats `.run.json` sidecars as
+required teacher cache outputs. It also opens the parquet and `.npy` files to
+validate row count and class count, and validates the sidecar metadata against
+the current split, augmentation id, seed, teacher model, timm data config, class
+count, storage format, and registry candidate parameters. Stale or corrupted
+Drive shards from an older run are not silently skipped.
+full-run-status treats `.run.json` sidecars as required teacher cache outputs;
+stale Drive shards and corrupted cache files are reported as incomplete.
 Incomplete steps show `missing=` and `extra=` counts in text output; JSON
 output includes `missing_outputs` and `extra_outputs` path lists for resumable
 run scripts.

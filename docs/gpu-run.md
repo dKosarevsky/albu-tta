@@ -372,9 +372,9 @@ Use this checklist after a disconnect, preempted cloud instance, or SSH loss:
    ```
 
    Treat `.run.json` sidecar mismatches as stale cache. `full-run-status`
-   validates split, augmentation id, seed, teacher model, class count, storage
-   format, and registry candidate parameters before it marks a teacher-cache
-   shard complete.
+   validates split, augmentation id, seed, teacher model, timm data config,
+   row count, class count, storage format, and registry candidate parameters
+   before it marks a teacher-cache shard complete.
 
 7. Resume one step:
 

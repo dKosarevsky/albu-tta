@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from learned_tta.augmentations import AugmentationCandidate, load_augmentation_registry
+from learned_tta.cache import shard_is_complete, teacher_shard_paths
 from learned_tta.clean_baseline import clean_baseline_artifact_path
 from learned_tta.config import ExperimentConfig, load_experiment_config
 
@@ -386,27 +387,31 @@ def _missing_teacher_cache_outputs(
     candidates_by_id = _candidate_metadata_by_id(config)
     missing_outputs = []
     for aug_id in expected_aug_ids:
-        stem = f"{split}__{aug_id}"
-        expected_paths = (
-            cache_dir / f"{stem}.parquet",
-            cache_dir / f"{stem}.logits.npy",
-            cache_dir / f"{stem}.run.json",
-        )
+        paths = teacher_shard_paths(cache_dir, split=split, aug_id=aug_id)
+        expected_paths = (paths.metadata_path, paths.logits_path, paths.run_metadata_path)
         missing_outputs.extend(path for path in expected_paths if not path.exists())
-        run_metadata_path = cache_dir / f"{stem}.run.json"
-        if (
-            run_metadata_path.exists()
-            and not _teacher_cache_metadata_matches(
-                run_metadata_path,
-                expected_metadata=_expected_teacher_cache_metadata(
-                    config,
-                    split=split,
-                    aug_id=aug_id,
-                    candidate=candidates_by_id.get(aug_id),
-                ),
-            )
+        if any(not path.exists() for path in expected_paths):
+            continue
+        expected_metadata = _expected_teacher_cache_metadata(
+            config,
+            split=split,
+            aug_id=aug_id,
+            candidate=candidates_by_id.get(aug_id),
+        )
+        if not _teacher_cache_metadata_matches(
+            paths.run_metadata_path,
+            expected_metadata=expected_metadata,
         ):
-            missing_outputs.append(run_metadata_path)
+            missing_outputs.append(paths.run_metadata_path)
+            continue
+        if not shard_is_complete(
+            metadata_path=paths.metadata_path,
+            logits_path=paths.logits_path,
+            expected_rows=_expected_teacher_cache_rows(config, split),
+            expected_classes=config.dataset.class_count,
+            run_metadata_path=paths.run_metadata_path,
+        ):
+            missing_outputs.extend((paths.metadata_path, paths.logits_path))
     return tuple(missing_outputs)
 
 
@@ -442,6 +447,8 @@ def _expected_teacher_cache_metadata(
             "metadata_format": "parquet",
         },
     }
+    if config.teacher.data_config is not None:
+        expected["teacher"]["data_config"] = _json_ready(config.teacher.data_config)
     if candidate is not None:
         expected["augmentation"] = {
             "id": candidate.id,
@@ -451,6 +458,20 @@ def _expected_teacher_cache_metadata(
             "params": _json_ready(candidate.params),
         }
     return expected
+
+
+def _expected_teacher_cache_rows(config: ExperimentConfig, split: str) -> int:
+    per_class_by_split = {
+        "public_train": config.split.public_train_per_class,
+        "public_val": config.split.public_val_per_class,
+        "public": config.split.public_per_class,
+        "private": config.split.private_per_class,
+    }
+    try:
+        per_class = per_class_by_split[split]
+    except KeyError as error:
+        raise ValueError(f"unknown split {split!r}") from error
+    return config.dataset.class_count * per_class
 
 
 def _teacher_cache_metadata_matches(
