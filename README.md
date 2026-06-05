@@ -74,6 +74,10 @@ written to `selector/selector_history.csv`.
 Selector target artifacts also persist `image_id` order. Training refuses to pair
 a manifest with targets whose rows were generated from a different image order,
 which prevents silent label/target drift after interrupted or moved runs.
+Migration note: selector target `.npz` files produced before `image_id` lineage
+was added are intentionally rejected by training. Rebuild them with
+`uv run python -m learned_tta.cli build-targets --config configs/experiment/resnet50_a1_in1k.yaml`
+before resuming selector training.
 
 ### Split Contract
 
@@ -337,6 +341,9 @@ count, storage format, and registry candidate parameters. Stale or corrupted
 Drive shards from an older run are not silently skipped.
 full-run-status treats `.run.json` sidecars as required teacher cache outputs;
 stale Drive shards and corrupted cache files are reported as incomplete.
+When this happens, keep the valid shards in place and resume normally with
+`resume-full-run` or the printed `full-run-status --next-command`; the cache
+runner will skip valid shards and rewrite missing, stale, or malformed ones.
 Incomplete steps show `missing=` and `extra=` counts in text output; JSON
 output includes `missing_outputs` and `extra_outputs` path lists for resumable
 run scripts.
