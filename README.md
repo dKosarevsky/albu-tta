@@ -29,6 +29,8 @@ For non-Colab GPU providers or local CUDA machines, use
 [`docs/gpu-run.md`](docs/gpu-run.md). It documents the persistent artifact
 layout, resume commands, recovery checklist, and a conservative automated
 driver for running the same `resume-full-run` pipeline outside a notebook.
+For handing the experiment to another GPU worker, use the shorter
+[`docs/gpu-handoff.md`](docs/gpu-handoff.md) checklist.
 
 ## Methods
 

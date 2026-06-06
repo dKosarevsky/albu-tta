@@ -9,6 +9,9 @@ The full run is resumable. Completed teacher-cache shards are skipped when the
 parquet metadata, fp16 logits, and `.run.json` sidecars match the current
 configuration.
 
+For a shorter handoff brief that can be sent directly to a GPU worker, use
+[`docs/gpu-handoff.md`](gpu-handoff.md).
+
 ## When To Use This
 
 Use an external GPU worker when you need the full ImageNet experiment to finish
