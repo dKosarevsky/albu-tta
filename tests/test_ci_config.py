@@ -27,6 +27,11 @@ def colab_runbook_text() -> str:
 
 
 @pytest.fixture
+def gpu_handoff_text() -> str:
+    return (ROOT / "docs" / "gpu-handoff.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
 def colab_notebook() -> dict[str, Any]:
     notebook_path = ROOT / "notebooks" / "full_imagenet_run_colab.ipynb"
     with notebook_path.open(encoding="utf-8") as handle:
@@ -104,6 +109,42 @@ def test_readme_links_colab_full_run_entrypoint(
     colab_fragment: str,
 ) -> None:
     assert colab_fragment in readme_text
+
+
+@pytest.mark.parametrize(
+    "handoff_fragment",
+    [
+        "docs/gpu-handoff.md",
+        "GPU worker",
+    ],
+)
+def test_readme_links_gpu_handoff_checklist(
+    readme_text: str,
+    handoff_fragment: str,
+) -> None:
+    assert handoff_fragment in readme_text
+
+
+@pytest.mark.parametrize(
+    "handoff_fragment",
+    [
+        "GPU Handoff Checklist",
+        "Do not run the full teacher cache on CPU",
+        "check-full-run",
+        "resume-full-run",
+        "full-run-status",
+        "--fail-on-incomplete",
+        "Return the whole `$RUN_ROOT`",
+        "Private oracle rows are diagnostics",
+        "Selector target `.npz` files without `image_id` lineage",
+        "do not delete the whole cache",
+    ],
+)
+def test_gpu_handoff_checklist_has_operational_contract(
+    gpu_handoff_text: str,
+    handoff_fragment: str,
+) -> None:
+    assert handoff_fragment in gpu_handoff_text
 
 
 @pytest.mark.parametrize(

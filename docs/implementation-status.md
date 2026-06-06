@@ -35,6 +35,8 @@ Implemented:
 - External GPU runbook for RunPod, Lambda Labs, local CUDA servers, or other
   non-Colab workers, including persistent artifact layout, one-step resume,
   automated driver, and recovery checklist.
+- GPU handoff checklist for delegating the full ImageNet run to another worker
+  and collecting the resulting artifacts.
 
 Not part of the implementation-complete status:
 
