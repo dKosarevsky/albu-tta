@@ -227,6 +227,40 @@ checking paths, counting completed shards, inspecting logs, and running status
 commands. Do not continue the full `cache-teacher` workload on CPU; the full
 public/private all-candidate cache is roughly 5,000,000 ResNet50 forwards.
 
+For a clean CenterCrop-only baseline over the full ImageNet validation split,
+cache only identity `aug_000` for `public_train`, `public_val`, and `private`,
+then summarize those shards:
+
+```bash
+uv run python -m learned_tta.cli cache-teacher --split public_train \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli cache-teacher --split public_val \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli cache-teacher --split private \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli summarize-clean-baseline \
+  --config configs/experiment/resnet50_a1_in1k.yaml
+```
+
+`aug_000` uses the teacher's standard timm evaluation preprocessing
+(`Resize + CenterCrop + Normalize`) without an extra Albumentations transform.
+The summary is written to
+`reports/resnet50_a1_in1k/tables/clean_center_crop_baseline.json`. Teacher
+cache writes also emit optional `.benchmark.json` sidecars with elapsed time and
+throughput per shard; those sidecars are not part of resume completeness.
+
 ```bash
 uv run python -m learned_tta.cli validate-augmentations \
   --config configs/experiment/resnet50_a1_in1k.yaml \
@@ -333,6 +367,9 @@ identity `public_val` shard and a `check-clean-baseline` JSON artifact. The
 baseline gate uses loose thresholds from the experiment config to catch broken
 class mapping, labels, or preprocessing before spending GPU on every
 augmentation.
+For the article baseline table, `summarize-clean-baseline` combines identity
+shards from `public_train`, `public_val`, and `private` into a full validation
+CenterCrop report without double-counting the aggregate `public` split.
 The status check requires every configured augmentation candidate to have
 metadata, logits, and `.run.json` sidecar shard files before a teacher-cache
 split is marked complete. `full-run-status` treats `.run.json` sidecars as

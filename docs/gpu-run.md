@@ -132,6 +132,52 @@ configured teacher model. It also verifies that the discovered WNID directories
 match the configured `timm-imagenet-1k` class index before any expensive cache
 work starts.
 
+## Clean CenterCrop Baseline Only
+
+Use this when the immediate goal is the standard ResNet50 validation baseline
+without all 100 TTA candidates. Identity `aug_000` applies no AlbumentationsX
+transform; the teacher dataloader still uses timm evaluation preprocessing,
+including resize, CenterCrop, and normalization.
+
+```bash
+uv run python -m learned_tta.cli cache-teacher \
+  --split public_train \
+  --config "$CONFIG" \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli cache-teacher \
+  --split public_val \
+  --config "$CONFIG" \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli cache-teacher \
+  --split private \
+  --config "$CONFIG" \
+  --candidate-id aug_000 \
+  --device cuda \
+  --num-workers 2
+
+uv run python -m learned_tta.cli summarize-clean-baseline \
+  --config "$CONFIG"
+```
+
+The summary goes to:
+
+```text
+$RUN_ROOT/reports/resnet50_a1_in1k/tables/clean_center_crop_baseline.json
+```
+
+The same identity shards are reused by the later full run; `resume-full-run`
+will skip valid shards instead of recomputing them. Each newly written
+teacher-cache shard also writes an optional `.benchmark.json` sidecar with
+backend, device, elapsed time, and throughput. These benchmark sidecars are
+diagnostic only; `.run.json` sidecars remain the source of truth for cache
+resume and completeness.
+
 ## Restore Progress From Colab Or Another Worker
 
 If another worker already produced persistent outputs, restore them into
