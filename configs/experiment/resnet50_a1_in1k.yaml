@@ -37,6 +37,7 @@ selector:
   output_dim: 100
   max_parameters: 1500000
   top_k_grid:
+    - 0
     - 1
     - 2
     - 4

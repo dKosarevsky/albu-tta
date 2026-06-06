@@ -3,11 +3,14 @@ from __future__ import annotations
 import importlib.metadata
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 
 from learned_tta.augmentations import (
+    FIXED_DETERMINISM,
+    SEEDED_STOCHASTIC_DETERMINISM,
     AugmentationCandidate,
     _package_version,
     apply_candidate,
@@ -28,7 +31,7 @@ def test_augmentation_registry_has_exactly_100_single_transform_candidates() -> 
     assert len(candidates) == 100
     assert candidates[0].id == "aug_000"
     assert candidates[0].class_name is None
-    assert candidates[0].determinism == "fixed"
+    assert candidates[0].determinism == FIXED_DETERMINISM
     assert [candidate.id for candidate in candidates] == [f"aug_{idx:03d}" for idx in range(100)]
     assert all(
         candidate.params.get("p") == 1.0 for candidate in candidates if not candidate.is_identity
@@ -36,11 +39,17 @@ def test_augmentation_registry_has_exactly_100_single_transform_candidates() -> 
     assert {
         candidate.name: candidate.determinism
         for candidate in candidates
-        if candidate.class_name == "PlanckianJitter"
+        if candidate.determinism == SEEDED_STOCHASTIC_DETERMINISM
     } == {
-        "planckian_5000_6000": "seeded_stochastic",
-        "planckian_5500_6500": "seeded_stochastic",
-        "planckian_6000_7500": "seeded_stochastic",
+        "random_tone_curve_light": SEEDED_STOCHASTIC_DETERMINISM,
+        "random_tone_curve_medium": SEEDED_STOCHASTIC_DETERMINISM,
+        "random_tone_curve_strong": SEEDED_STOCHASTIC_DETERMINISM,
+        "planckian_warm_blackbody": SEEDED_STOCHASTIC_DETERMINISM,
+        "planckian_daylight_blackbody": SEEDED_STOCHASTIC_DETERMINISM,
+        "planckian_cool_blackbody": SEEDED_STOCHASTIC_DETERMINISM,
+        "planckian_warm_cied": SEEDED_STOCHASTIC_DETERMINISM,
+        "planckian_daylight_cied": SEEDED_STOCHASTIC_DETERMINISM,
+        "planckian_cool_cied": SEEDED_STOCHASTIC_DETERMINISM,
     }
 
 
@@ -51,7 +60,7 @@ def test_fixed_augmentation_candidates_must_collapse_range_params() -> None:
             name="brightness_range_not_fixed",
             class_name="RandomBrightnessContrast",
             params={"brightness_range": [0.1, 0.2], "contrast_range": [0.0, 0.0], "p": 1.0},
-            determinism="fixed",
+            determinism=FIXED_DETERMINISM,
         )
     ]
 
@@ -66,7 +75,7 @@ def test_seeded_stochastic_candidates_may_have_non_collapsed_ranges() -> None:
             name="planckian_seeded",
             class_name="PlanckianJitter",
             params={"mode": "blackbody", "temperature_range": [5000, 6000], "p": 1.0},
-            determinism="seeded_stochastic",
+            determinism=SEEDED_STOCHASTIC_DETERMINISM,
         )
     ]
 
@@ -216,18 +225,18 @@ def test_build_augmentation_audit_is_stable_json_payload() -> None:
     assert audit["candidates"][0] == {
         "id": "aug_000",
         "name": "identity",
-        "determinism": "fixed",
+        "determinism": FIXED_DETERMINISM,
         "class_name": None,
         "params": {},
         "serialized_transform": None,
     }
-    assert audit["candidates"][19]["id"] == "aug_019"
-    assert audit["candidates"][19]["params"] == {
+    candidate = _audit_candidate_by_id(audit, "aug_031")
+    assert candidate["params"] == {
         "brightness_range": [0.1, 0.1],
         "contrast_range": [0.0, 0.0],
         "p": 1.0,
     }
-    serialized = audit["candidates"][19]["serialized_transform"]
+    serialized = candidate["serialized_transform"]
     assert serialized["transform"]["seed"] == 20260522
     assert serialized["transform"]["transforms"][0]["__class_fullname__"] == (
         "RandomBrightnessContrast"
@@ -243,3 +252,10 @@ def test_package_version_reports_missing_distributions(
     monkeypatch.setattr(importlib.metadata, "version", fake_version)
 
     assert _package_version("missing-distribution") == "not-installed"
+
+
+def _audit_candidate_by_id(audit: dict[str, Any], candidate_id: str) -> dict[str, Any]:
+    for candidate in audit["candidates"]:
+        if candidate["id"] == candidate_id:
+            return candidate
+    raise AssertionError(f"audit candidate {candidate_id} not found")

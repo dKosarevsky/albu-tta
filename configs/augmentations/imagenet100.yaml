@@ -1,326 +1,348 @@
 version: 1
-description: 100 deterministic single-transform AlbumentationsX TTA candidates for ImageNet.
+description: 100 repair-oriented single-transform AlbumentationsX TTA candidates for ImageNet.
 candidates:
   - id: aug_000
     name: identity
     transform: null
   - id: aug_001
-    name: horizontal_flip
-    transform: {class_name: HorizontalFlip, params: {p: 1.0}}
+    name: square_r90
+    transform: {class_name: SquareSymmetry, params: {group_element: r90, p: 1.0}}
   - id: aug_002
-    name: vertical_flip
-    transform: {class_name: VerticalFlip, params: {p: 1.0}}
+    name: square_r180
+    transform: {class_name: SquareSymmetry, params: {group_element: r180, p: 1.0}}
   - id: aug_003
-    name: transpose
-    transform: {class_name: Transpose, params: {p: 1.0}}
+    name: square_r270
+    transform: {class_name: SquareSymmetry, params: {group_element: r270, p: 1.0}}
   - id: aug_004
-    name: rotate90
-    transform: {class_name: RandomRotate90, params: {group_element: r90, p: 1.0}}
+    name: square_vertical
+    transform: {class_name: SquareSymmetry, params: {group_element: v, p: 1.0}}
   - id: aug_005
-    name: rotate180
-    transform: {class_name: RandomRotate90, params: {group_element: r180, p: 1.0}}
+    name: square_horizontal
+    transform: {class_name: SquareSymmetry, params: {group_element: h, p: 1.0}}
   - id: aug_006
-    name: rotate270
-    transform: {class_name: RandomRotate90, params: {group_element: r270, p: 1.0}}
-  - id: aug_007
-    name: rotate_plus_10
+    name: rotate_minus_5
     transform:
       class_name: Rotate
-      params: {angle_range: [10.0, 10.0], border_mode: 4, fill: 0, p: 1.0}
+      params: {angle_range: [-5.0, -5.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_007
+    name: rotate_plus_5
+    transform:
+      class_name: Rotate
+      params: {angle_range: [5.0, 5.0], border_mode: 4, fill: 0, p: 1.0}
   - id: aug_008
     name: rotate_minus_10
     transform:
       class_name: Rotate
       params: {angle_range: [-10.0, -10.0], border_mode: 4, fill: 0, p: 1.0}
   - id: aug_009
-    name: safe_rotate_plus_10
+    name: rotate_plus_10
     transform:
-      class_name: SafeRotate
+      class_name: Rotate
       params: {angle_range: [10.0, 10.0], border_mode: 4, fill: 0, p: 1.0}
   - id: aug_010
-    name: safe_rotate_minus_10
+    name: rotate_minus_20
+    transform:
+      class_name: Rotate
+      params: {angle_range: [-20.0, -20.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_011
+    name: rotate_plus_20
+    transform:
+      class_name: Rotate
+      params: {angle_range: [20.0, 20.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_012
+    name: rotate_minus_30
+    transform:
+      class_name: Rotate
+      params: {angle_range: [-30.0, -30.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_013
+    name: rotate_plus_30
+    transform:
+      class_name: Rotate
+      params: {angle_range: [30.0, 30.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_014
+    name: rotate_minus_40
+    transform:
+      class_name: Rotate
+      params: {angle_range: [-40.0, -40.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_015
+    name: rotate_plus_40
+    transform:
+      class_name: Rotate
+      params: {angle_range: [40.0, 40.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_016
+    name: safe_rotate_minus_20
     transform:
       class_name: SafeRotate
-      params: {angle_range: [-10.0, -10.0], border_mode: 4, fill: 0, p: 1.0}
-  - id: aug_011
-    name: translate_x_plus_5pct
-    transform:
-      class_name: Affine
-      params: {translate_percent: {x: [0.05, 0.05], y: [0.0, 0.0]}, border_mode: 4, p: 1.0}
-  - id: aug_012
-    name: translate_x_minus_5pct
-    transform:
-      class_name: Affine
-      params: {translate_percent: {x: [-0.05, -0.05], y: [0.0, 0.0]}, border_mode: 4, p: 1.0}
-  - id: aug_013
-    name: translate_y_plus_5pct
-    transform:
-      class_name: Affine
-      params: {translate_percent: {x: [0.0, 0.0], y: [0.05, 0.05]}, border_mode: 4, p: 1.0}
-  - id: aug_014
-    name: translate_y_minus_5pct
-    transform:
-      class_name: Affine
-      params: {translate_percent: {x: [0.0, 0.0], y: [-0.05, -0.05]}, border_mode: 4, p: 1.0}
-  - id: aug_015
-    name: scale_105
-    transform: {class_name: Affine, params: {scale: [1.05, 1.05], border_mode: 4, p: 1.0}}
-  - id: aug_016
-    name: scale_095
-    transform: {class_name: Affine, params: {scale: [0.95, 0.95], border_mode: 4, p: 1.0}}
+      params: {angle_range: [-20.0, -20.0], border_mode: 4, fill: 0, p: 1.0}
   - id: aug_017
+    name: safe_rotate_plus_20
+    transform:
+      class_name: SafeRotate
+      params: {angle_range: [20.0, 20.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_018
+    name: safe_rotate_minus_40
+    transform:
+      class_name: SafeRotate
+      params: {angle_range: [-40.0, -40.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_019
+    name: safe_rotate_plus_40
+    transform:
+      class_name: SafeRotate
+      params: {angle_range: [40.0, 40.0], border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_020
+    name: scale_080
+    transform: {class_name: Affine, params: {scale: [0.8, 0.8], border_mode: 4, fill: 0, p: 1.0}}
+  - id: aug_021
+    name: scale_090
+    transform: {class_name: Affine, params: {scale: [0.9, 0.9], border_mode: 4, fill: 0, p: 1.0}}
+  - id: aug_022
+    name: scale_095
+    transform: {class_name: Affine, params: {scale: [0.95, 0.95], border_mode: 4, fill: 0, p: 1.0}}
+  - id: aug_023
+    name: scale_105
+    transform: {class_name: Affine, params: {scale: [1.05, 1.05], border_mode: 4, fill: 0, p: 1.0}}
+  - id: aug_024
+    name: scale_110
+    transform: {class_name: Affine, params: {scale: [1.1, 1.1], border_mode: 4, fill: 0, p: 1.0}}
+  - id: aug_025
+    name: scale_120
+    transform: {class_name: Affine, params: {scale: [1.2, 1.2], border_mode: 4, fill: 0, p: 1.0}}
+  - id: aug_026
+    name: shear_x_minus_5
+    transform:
+      class_name: Affine
+      params: {shear: {x: [-5.0, -5.0], y: [0.0, 0.0]}, border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_027
     name: shear_x_plus_5
     transform:
       class_name: Affine
-      params: {shear: {x: [5.0, 5.0], y: [0.0, 0.0]}, border_mode: 4, p: 1.0}
-  - id: aug_018
+      params: {shear: {x: [5.0, 5.0], y: [0.0, 0.0]}, border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_028
+    name: shear_y_minus_5
+    transform:
+      class_name: Affine
+      params: {shear: {x: [0.0, 0.0], y: [-5.0, -5.0]}, border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_029
     name: shear_y_plus_5
     transform:
       class_name: Affine
-      params: {shear: {x: [0.0, 0.0], y: [5.0, 5.0]}, border_mode: 4, p: 1.0}
-  - id: aug_019
-    name: brightness_plus_10
-    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.1, 0.1], contrast_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_020
+      params: {shear: {x: [0.0, 0.0], y: [5.0, 5.0]}, border_mode: 4, fill: 0, p: 1.0}
+  - id: aug_030
     name: brightness_minus_10
     transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [-0.1, -0.1], contrast_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_021
-    name: contrast_plus_10
-    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.0, 0.0], contrast_range: [0.1, 0.1], p: 1.0}}
-  - id: aug_022
-    name: contrast_minus_10
-    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.0, 0.0], contrast_range: [-0.1, -0.1], p: 1.0}}
-  - id: aug_023
-    name: brightness_contrast_plus_10
-    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.1, 0.1], contrast_range: [0.1, 0.1], p: 1.0}}
-  - id: aug_024
-    name: gamma_90
-    transform: {class_name: RandomGamma, params: {gamma_range: [90.0, 90.0], p: 1.0}}
-  - id: aug_025
-    name: gamma_110
-    transform: {class_name: RandomGamma, params: {gamma_range: [110.0, 110.0], p: 1.0}}
-  - id: aug_026
-    name: hue_plus_5
-    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [5.0, 5.0], sat_shift_range: [0.0, 0.0], val_shift_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_027
-    name: hue_minus_5
-    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [-5.0, -5.0], sat_shift_range: [0.0, 0.0], val_shift_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_028
-    name: saturation_plus_15
-    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [15.0, 15.0], val_shift_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_029
-    name: saturation_minus_15
-    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [-15.0, -15.0], val_shift_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_030
-    name: value_plus_15
-    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [0.0, 0.0], val_shift_range: [15.0, 15.0], p: 1.0}}
   - id: aug_031
-    name: value_minus_15
-    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [0.0, 0.0], val_shift_range: [-15.0, -15.0], p: 1.0}}
+    name: brightness_plus_10
+    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.1, 0.1], contrast_range: [0.0, 0.0], p: 1.0}}
   - id: aug_032
-    name: planckian_5000_6000
-    determinism: seeded_stochastic
-    transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [5000, 6000], p: 1.0}}
-  - id: aug_033
-    name: planckian_5500_6500
-    determinism: seeded_stochastic
-    transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [5500, 6500], p: 1.0}}
-  - id: aug_034
-    name: planckian_6000_7500
-    determinism: seeded_stochastic
-    transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [6000, 7500], p: 1.0}}
-  - id: aug_035
-    name: gray_weighted_average
-    transform: {class_name: ToGray, params: {method: weighted_average, num_output_channels: 3, p: 1.0}}
-  - id: aug_036
-    name: gray_average
-    transform: {class_name: ToGray, params: {method: average, num_output_channels: 3, p: 1.0}}
-  - id: aug_037
-    name: gray_desaturation
-    transform: {class_name: ToGray, params: {method: desaturation, num_output_channels: 3, p: 1.0}}
-  - id: aug_038
-    name: sepia
-    transform: {class_name: ToSepia, params: {p: 1.0}}
-  - id: aug_039
-    name: clahe_clip_2
-    transform: {class_name: CLAHE, params: {clip_range: [2.0, 2.0], tile_grid_size: [8, 8], p: 1.0}}
-  - id: aug_040
-    name: clahe_clip_4
-    transform: {class_name: CLAHE, params: {clip_range: [4.0, 4.0], tile_grid_size: [8, 8], p: 1.0}}
-  - id: aug_041
-    name: equalize_cv_channels
-    transform: {class_name: Equalize, params: {mode: cv, by_channels: true, p: 1.0}}
-  - id: aug_042
-    name: equalize_cv_luma
-    transform: {class_name: Equalize, params: {mode: cv, by_channels: false, p: 1.0}}
-  - id: aug_043
-    name: equalize_pil_channels
-    transform: {class_name: Equalize, params: {mode: pil, by_channels: true, p: 1.0}}
-  - id: aug_044
-    name: autocontrast_cdf
-    transform: {class_name: AutoContrast, params: {method: cdf, cutoff: 0.0, p: 1.0}}
-  - id: aug_045
-    name: autocontrast_pil_cutoff_1
-    transform: {class_name: AutoContrast, params: {method: pil, cutoff: 1.0, p: 1.0}}
-  - id: aug_046
-    name: solarize_050
-    transform: {class_name: Solarize, params: {threshold_range: [0.5, 0.5], p: 1.0}}
-  - id: aug_047
-    name: solarize_070
-    transform: {class_name: Solarize, params: {threshold_range: [0.7, 0.7], p: 1.0}}
-  - id: aug_048
-    name: posterize_6
-    transform: {class_name: Posterize, params: {num_bits: [6, 6], p: 1.0}}
-  - id: aug_049
-    name: posterize_5
-    transform: {class_name: Posterize, params: {num_bits: [5, 5], p: 1.0}}
-  - id: aug_050
-    name: brightness_plus_20
-    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.2, 0.2], contrast_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_051
-    name: contrast_plus_20
-    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.0, 0.0], contrast_range: [0.2, 0.2], p: 1.0}}
-  - id: aug_052
     name: brightness_minus_20
     transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [-0.2, -0.2], contrast_range: [0.0, 0.0], p: 1.0}}
-  - id: aug_053
+  - id: aug_033
+    name: brightness_plus_20
+    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.2, 0.2], contrast_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_034
+    name: contrast_minus_10
+    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.0, 0.0], contrast_range: [-0.1, -0.1], p: 1.0}}
+  - id: aug_035
+    name: contrast_plus_10
+    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.0, 0.0], contrast_range: [0.1, 0.1], p: 1.0}}
+  - id: aug_036
     name: contrast_minus_20
     transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.0, 0.0], contrast_range: [-0.2, -0.2], p: 1.0}}
+  - id: aug_037
+    name: contrast_plus_20
+    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.0, 0.0], contrast_range: [0.2, 0.2], p: 1.0}}
+  - id: aug_038
+    name: brightness_contrast_minus_10
+    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [-0.1, -0.1], contrast_range: [-0.1, -0.1], p: 1.0}}
+  - id: aug_039
+    name: brightness_contrast_plus_10
+    transform: {class_name: RandomBrightnessContrast, params: {brightness_range: [0.1, 0.1], contrast_range: [0.1, 0.1], p: 1.0}}
+  - id: aug_040
+    name: gamma_80
+    transform: {class_name: RandomGamma, params: {gamma_range: [80.0, 80.0], p: 1.0}}
+  - id: aug_041
+    name: gamma_90
+    transform: {class_name: RandomGamma, params: {gamma_range: [90.0, 90.0], p: 1.0}}
+  - id: aug_042
+    name: gamma_110
+    transform: {class_name: RandomGamma, params: {gamma_range: [110.0, 110.0], p: 1.0}}
+  - id: aug_043
+    name: gamma_120
+    transform: {class_name: RandomGamma, params: {gamma_range: [120.0, 120.0], p: 1.0}}
+  - id: aug_044
+    name: random_tone_curve_light
+    determinism: seeded_stochastic
+    transform: {class_name: RandomToneCurve, params: {scale: 0.05, per_channel: false, p: 1.0}}
+  - id: aug_045
+    name: random_tone_curve_medium
+    determinism: seeded_stochastic
+    transform: {class_name: RandomToneCurve, params: {scale: 0.1, per_channel: false, p: 1.0}}
+  - id: aug_046
+    name: random_tone_curve_strong
+    determinism: seeded_stochastic
+    transform: {class_name: RandomToneCurve, params: {scale: 0.2, per_channel: false, p: 1.0}}
+  - id: aug_047
+    name: autocontrast_cdf
+    transform: {class_name: AutoContrast, params: {method: cdf, cutoff: 0.0, p: 1.0}}
+  - id: aug_048
+    name: autocontrast_pil_cutoff_1
+    transform: {class_name: AutoContrast, params: {method: pil, cutoff: 1.0, p: 1.0}}
+  - id: aug_049
+    name: clahe_clip_2
+    transform: {class_name: CLAHE, params: {clip_range: [2.0, 2.0], tile_grid_size: [8, 8], p: 1.0}}
+  - id: aug_050
+    name: clahe_clip_4
+    transform: {class_name: CLAHE, params: {clip_range: [4.0, 4.0], tile_grid_size: [8, 8], p: 1.0}}
+  - id: aug_051
+    name: equalize_luma
+    transform: {class_name: Equalize, params: {mode: cv, by_channels: false, p: 1.0}}
+  - id: aug_052
+    name: hue_minus_5
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [-5.0, -5.0], sat_shift_range: [0.0, 0.0], val_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_053
+    name: hue_plus_5
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [5.0, 5.0], sat_shift_range: [0.0, 0.0], val_shift_range: [0.0, 0.0], p: 1.0}}
   - id: aug_054
+    name: saturation_minus_15
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [-15.0, -15.0], val_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_055
+    name: saturation_plus_15
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [15.0, 15.0], val_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_056
+    name: saturation_minus_30
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [-30.0, -30.0], val_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_057
+    name: saturation_plus_30
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [30.0, 30.0], val_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_058
+    name: value_minus_15
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [0.0, 0.0], val_shift_range: [-15.0, -15.0], p: 1.0}}
+  - id: aug_059
+    name: value_plus_15
+    transform: {class_name: HueSaturationValue, params: {hue_shift_range: [0.0, 0.0], sat_shift_range: [0.0, 0.0], val_shift_range: [15.0, 15.0], p: 1.0}}
+  - id: aug_060
+    name: rgb_red_minus_10
+    transform: {class_name: RGBShift, params: {r_shift_range: [-10.0, -10.0], g_shift_range: [0.0, 0.0], b_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_061
+    name: rgb_red_plus_10
+    transform: {class_name: RGBShift, params: {r_shift_range: [10.0, 10.0], g_shift_range: [0.0, 0.0], b_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_062
+    name: rgb_green_minus_10
+    transform: {class_name: RGBShift, params: {r_shift_range: [0.0, 0.0], g_shift_range: [-10.0, -10.0], b_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_063
+    name: rgb_green_plus_10
+    transform: {class_name: RGBShift, params: {r_shift_range: [0.0, 0.0], g_shift_range: [10.0, 10.0], b_shift_range: [0.0, 0.0], p: 1.0}}
+  - id: aug_064
+    name: rgb_blue_minus_10
+    transform: {class_name: RGBShift, params: {r_shift_range: [0.0, 0.0], g_shift_range: [0.0, 0.0], b_shift_range: [-10.0, -10.0], p: 1.0}}
+  - id: aug_065
+    name: rgb_blue_plus_10
+    transform: {class_name: RGBShift, params: {r_shift_range: [0.0, 0.0], g_shift_range: [0.0, 0.0], b_shift_range: [10.0, 10.0], p: 1.0}}
+  - id: aug_066
+    name: planckian_warm_blackbody
+    determinism: seeded_stochastic
+    transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [4500, 6000], p: 1.0}}
+  - id: aug_067
+    name: planckian_daylight_blackbody
+    determinism: seeded_stochastic
+    transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [5000, 6500], p: 1.0}}
+  - id: aug_068
+    name: planckian_cool_blackbody
+    determinism: seeded_stochastic
+    transform: {class_name: PlanckianJitter, params: {mode: blackbody, temperature_range: [6000, 9000], p: 1.0}}
+  - id: aug_069
+    name: planckian_warm_cied
+    determinism: seeded_stochastic
+    transform: {class_name: PlanckianJitter, params: {mode: cied, temperature_range: [4500, 6000], p: 1.0}}
+  - id: aug_070
+    name: planckian_daylight_cied
+    determinism: seeded_stochastic
+    transform: {class_name: PlanckianJitter, params: {mode: cied, temperature_range: [5000, 6500], p: 1.0}}
+  - id: aug_071
+    name: planckian_cool_cied
+    determinism: seeded_stochastic
+    transform: {class_name: PlanckianJitter, params: {mode: cied, temperature_range: [6000, 9000], p: 1.0}}
+  - id: aug_072
+    name: gray_weighted
+    transform: {class_name: ToGray, params: {method: weighted_average, num_output_channels: 3, p: 1.0}}
+  - id: aug_073
     name: blur_3
     transform: {class_name: Blur, params: {blur_range: [3, 3], p: 1.0}}
-  - id: aug_055
+  - id: aug_074
     name: blur_5
     transform: {class_name: Blur, params: {blur_range: [5, 5], p: 1.0}}
-  - id: aug_056
+  - id: aug_075
     name: gaussian_blur_sigma_05
     transform: {class_name: GaussianBlur, params: {blur_range: [0, 0], sigma_range: [0.5, 0.5], p: 1.0}}
-  - id: aug_057
+  - id: aug_076
     name: gaussian_blur_sigma_10
     transform: {class_name: GaussianBlur, params: {blur_range: [0, 0], sigma_range: [1.0, 1.0], p: 1.0}}
-  - id: aug_058
+  - id: aug_077
     name: gaussian_blur_sigma_15
     transform: {class_name: GaussianBlur, params: {blur_range: [0, 0], sigma_range: [1.5, 1.5], p: 1.0}}
-  - id: aug_059
+  - id: aug_078
     name: median_blur_3
     transform: {class_name: MedianBlur, params: {blur_range: [3, 3], p: 1.0}}
-  - id: aug_060
+  - id: aug_079
     name: median_blur_5
     transform: {class_name: MedianBlur, params: {blur_range: [5, 5], p: 1.0}}
-  - id: aug_061
+  - id: aug_080
     name: motion_blur_3_horizontal
     transform: {class_name: MotionBlur, params: {blur_range: [3, 3], angle_range: [0.0, 0.0], direction_range: [0.0, 0.0], allow_shifted: false, p: 1.0}}
-  - id: aug_062
+  - id: aug_081
     name: motion_blur_5_horizontal
     transform: {class_name: MotionBlur, params: {blur_range: [5, 5], angle_range: [0.0, 0.0], direction_range: [0.0, 0.0], allow_shifted: false, p: 1.0}}
-  - id: aug_063
+  - id: aug_082
     name: motion_blur_5_diagonal
     transform: {class_name: MotionBlur, params: {blur_range: [5, 5], angle_range: [45.0, 45.0], direction_range: [0.0, 0.0], allow_shifted: false, p: 1.0}}
-  - id: aug_064
+  - id: aug_083
     name: defocus_radius_3
     transform: {class_name: Defocus, params: {radius_range: [3, 3], alias_blur_range: [0.1, 0.1], p: 1.0}}
-  - id: aug_065
+  - id: aug_084
     name: defocus_radius_5
     transform: {class_name: Defocus, params: {radius_range: [5, 5], alias_blur_range: [0.2, 0.2], p: 1.0}}
-  - id: aug_066
+  - id: aug_085
     name: sharpen_light
     transform: {class_name: Sharpen, params: {alpha_range: [0.2, 0.2], lightness_range: [0.8, 0.8], p: 1.0}}
-  - id: aug_067
+  - id: aug_086
     name: sharpen_medium
     transform: {class_name: Sharpen, params: {alpha_range: [0.4, 0.4], lightness_range: [1.0, 1.0], p: 1.0}}
-  - id: aug_068
+  - id: aug_087
     name: unsharp_mask_light
     transform: {class_name: UnsharpMask, params: {blur_range: [3, 3], sigma_range: [0.0, 0.0], alpha_range: [0.2, 0.2], threshold: 10, p: 1.0}}
-  - id: aug_069
-    name: emboss_light
-    transform: {class_name: Emboss, params: {alpha_range: [0.2, 0.2], strength_range: [0.2, 0.2], p: 1.0}}
-  - id: aug_070
-    name: gauss_noise_002
-    transform: {class_name: GaussNoise, params: {std_range: [0.02, 0.02], mean_range: [0.0, 0.0], per_channel: false, p: 1.0}}
-  - id: aug_071
-    name: gauss_noise_005
-    transform: {class_name: GaussNoise, params: {std_range: [0.05, 0.05], mean_range: [0.0, 0.0], per_channel: false, p: 1.0}}
-  - id: aug_072
-    name: gauss_noise_per_channel_002
-    transform: {class_name: GaussNoise, params: {std_range: [0.02, 0.02], mean_range: [0.0, 0.0], per_channel: true, p: 1.0}}
-  - id: aug_073
-    name: iso_noise_light
-    transform: {class_name: ISONoise, params: {color_shift_range: [0.01, 0.01], intensity_range: [0.1, 0.1], p: 1.0}}
-  - id: aug_074
-    name: shot_noise_light
-    transform: {class_name: ShotNoise, params: {scale_range: [0.1, 0.1], p: 1.0}}
-  - id: aug_075
-    name: multiplicative_noise_095
-    transform: {class_name: MultiplicativeNoise, params: {multiplier: [0.95, 0.95], per_channel: false, elementwise: false, p: 1.0}}
-  - id: aug_076
-    name: multiplicative_noise_105
-    transform: {class_name: MultiplicativeNoise, params: {multiplier: [1.05, 1.05], per_channel: false, elementwise: false, p: 1.0}}
-  - id: aug_077
-    name: salt_and_pepper_001
-    transform: {class_name: SaltAndPepper, params: {amount_range: [0.01, 0.01], salt_vs_pepper_range: [0.5, 0.5], p: 1.0}}
-  - id: aug_078
-    name: jpeg_quality_95
-    transform: {class_name: ImageCompression, params: {compression_type: jpeg, quality_range: [95, 95], p: 1.0}}
-  - id: aug_079
-    name: jpeg_quality_85
-    transform: {class_name: ImageCompression, params: {compression_type: jpeg, quality_range: [85, 85], p: 1.0}}
-  - id: aug_080
-    name: webp_quality_90
-    transform: {class_name: ImageCompression, params: {compression_type: webp, quality_range: [90, 90], p: 1.0}}
-  - id: aug_081
-    name: webp_quality_80
-    transform: {class_name: ImageCompression, params: {compression_type: webp, quality_range: [80, 80], p: 1.0}}
-  - id: aug_082
-    name: downscale_090_nearest
-    transform: {class_name: Downscale, params: {scale_range: [0.9, 0.9], interpolation_pair: {downscale: 0, upscale: 0}, p: 1.0}}
-  - id: aug_083
-    name: downscale_090_linear
-    transform: {class_name: Downscale, params: {scale_range: [0.9, 0.9], interpolation_pair: {downscale: 1, upscale: 1}, p: 1.0}}
-  - id: aug_084
-    name: downscale_090_cubic
-    transform: {class_name: Downscale, params: {scale_range: [0.9, 0.9], interpolation_pair: {downscale: 2, upscale: 2}, p: 1.0}}
-  - id: aug_085
-    name: downscale_080_nearest
-    transform: {class_name: Downscale, params: {scale_range: [0.8, 0.8], interpolation_pair: {downscale: 0, upscale: 0}, p: 1.0}}
-  - id: aug_086
-    name: downscale_080_linear
-    transform: {class_name: Downscale, params: {scale_range: [0.8, 0.8], interpolation_pair: {downscale: 1, upscale: 1}, p: 1.0}}
-  - id: aug_087
-    name: downscale_080_cubic
-    transform: {class_name: Downscale, params: {scale_range: [0.8, 0.8], interpolation_pair: {downscale: 2, upscale: 2}, p: 1.0}}
   - id: aug_088
-    name: downscale_070_nearest
-    transform: {class_name: Downscale, params: {scale_range: [0.7, 0.7], interpolation_pair: {downscale: 0, upscale: 0}, p: 1.0}}
+    name: enhance_detail_light
+    transform: {class_name: Enhance, params: {mode: detail, alpha_range: [0.5, 0.5], p: 1.0}}
   - id: aug_089
-    name: downscale_070_linear
-    transform: {class_name: Downscale, params: {scale_range: [0.7, 0.7], interpolation_pair: {downscale: 1, upscale: 1}, p: 1.0}}
+    name: jpeg_quality_70
+    transform: {class_name: ImageCompression, params: {compression_type: jpeg, quality_range: [70, 70], p: 1.0}}
   - id: aug_090
-    name: downscale_070_cubic
-    transform: {class_name: Downscale, params: {scale_range: [0.7, 0.7], interpolation_pair: {downscale: 2, upscale: 2}, p: 1.0}}
+    name: jpeg_quality_50
+    transform: {class_name: ImageCompression, params: {compression_type: jpeg, quality_range: [50, 50], p: 1.0}}
   - id: aug_091
-    name: downscale_080_area_lanczos
-    transform: {class_name: Downscale, params: {scale_range: [0.8, 0.8], interpolation_pair: {downscale: 3, upscale: 4}, p: 1.0}}
+    name: jpeg_quality_30
+    transform: {class_name: ImageCompression, params: {compression_type: jpeg, quality_range: [30, 30], p: 1.0}}
   - id: aug_092
-    name: channel_dropout_zero
-    transform: {class_name: ChannelDropout, params: {channel_drop_range: [1, 1], fill: 0.0, p: 1.0}}
+    name: jpeg_quality_15
+    transform: {class_name: ImageCompression, params: {compression_type: jpeg, quality_range: [15, 15], p: 1.0}}
   - id: aug_093
-    name: channel_dropout_midgray
-    transform: {class_name: ChannelDropout, params: {channel_drop_range: [1, 1], fill: 127.0, p: 1.0}}
+    name: webp_quality_25
+    transform: {class_name: ImageCompression, params: {compression_type: webp, quality_range: [25, 25], p: 1.0}}
   - id: aug_094
-    name: channel_shuffle_bgr
-    transform: {class_name: ChannelShuffle, params: {channel_order: [2, 1, 0], p: 1.0}}
+    name: webp_quality_10
+    transform: {class_name: ImageCompression, params: {compression_type: webp, quality_range: [10, 10], p: 1.0}}
   - id: aug_095
-    name: dithering_ordered_16
-    transform: {class_name: Dithering, params: {method: ordered, n_colors: 16, color_mode: per_channel, bayer_matrix_size: 8, p: 1.0}}
+    name: downscale_050_area_linear
+    transform: {class_name: Downscale, params: {scale_range: [0.5, 0.5], interpolation_pair: {downscale: 3, upscale: 1}, p: 1.0}}
   - id: aug_096
-    name: dithering_error_diffusion_4
-    transform: {class_name: Dithering, params: {method: error_diffusion, n_colors: 4, color_mode: grayscale, error_diffusion_algorithm: floyd_steinberg, p: 1.0}}
+    name: downscale_040_area_linear
+    transform: {class_name: Downscale, params: {scale_range: [0.4, 0.4], interpolation_pair: {downscale: 3, upscale: 1}, p: 1.0}}
   - id: aug_097
-    name: halftone_light
-    transform: {class_name: Halftone, params: {dot_size_range: [4, 4], blend_range: [0.25, 0.25], p: 1.0}}
+    name: downscale_033_area_linear
+    transform: {class_name: Downscale, params: {scale_range: [0.33, 0.33], interpolation_pair: {downscale: 3, upscale: 1}, p: 1.0}}
   - id: aug_098
-    name: invert
-    transform: {class_name: InvertImg, params: {p: 1.0}}
+    name: downscale_025_area_linear
+    transform: {class_name: Downscale, params: {scale_range: [0.25, 0.25], interpolation_pair: {downscale: 3, upscale: 1}, p: 1.0}}
   - id: aug_099
     name: ringing_overshoot_light
     transform: {class_name: RingingOvershoot, params: {blur_range: [7, 7], cutoff_range: [1.0, 1.0], p: 1.0}}

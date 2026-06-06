@@ -281,13 +281,13 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert impact["aug_id"].tolist() == ["aug_000", "aug_001", "aug_002"]
     assert impact["augmentation_name"].tolist() == [
         "identity",
-        "horizontal_flip",
-        "vertical_flip",
+        "square_r90",
+        "square_r180",
     ]
     assert impact["transform_class"].tolist() == [
         "identity",
-        "HorizontalFlip",
-        "VerticalFlip",
+        "SquareSymmetry",
+        "SquareSymmetry",
     ]
     assert public_metrics["strategy"].tolist() == [
         "learned_topk_uniform",
@@ -334,8 +334,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert aggregation_weights["global_weight"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert aggregation_weights["augmentation_name"].tolist() == [
         "identity",
-        "horizontal_flip",
-        "vertical_flip",
+        "square_r90",
+        "square_r180",
     ]
     assert set(class_weights.columns) == {
         "class_idx",
@@ -347,8 +347,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert xgboost_importance["feature_importance"].tolist() == pytest.approx([0.1, 0.7, 0.2])
     assert xgboost_importance["augmentation_name"].tolist() == [
         "identity",
-        "horizontal_flip",
-        "vertical_flip",
+        "square_r90",
+        "square_r180",
     ]
     assert transform_class_impact.columns.tolist() == [
         "transform_class",
@@ -358,11 +358,10 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "oracle_frequency",
     ]
     assert transform_class_impact["transform_class"].tolist() == [
-        "HorizontalFlip",
-        "VerticalFlip",
+        "SquareSymmetry",
         "identity",
     ]
-    assert transform_class_impact["candidate_count"].tolist() == [1, 1, 1]
+    assert transform_class_impact["candidate_count"].tolist() == [2, 1]
     assert transform_class_aggregation.columns.tolist() == [
         "transform_class",
         "candidate_count",
@@ -372,12 +371,11 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "class_active_frequency",
     ]
     assert transform_class_aggregation["transform_class"].tolist() == [
-        "HorizontalFlip",
-        "VerticalFlip",
+        "SquareSymmetry",
         "identity",
     ]
     assert transform_class_aggregation["mean_global_weight"].tolist() == pytest.approx(
-        [0.7, 0.2, 0.1]
+        [0.45, 0.1]
     )
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
@@ -398,9 +396,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "Top class-mean aggregation weights" in markdown
     assert "Top class-active aggregation weights" in markdown
     assert "Top XGBoost feature importance" in markdown
-    assert "| aug_002 | vertical_flip | VerticalFlip |" in markdown
-    assert "| aug_001 | horizontal_flip | HorizontalFlip | 0.7 |" in markdown
-    assert "| VerticalFlip | 1 |" in markdown
+    assert "| aug_002 | square_r180 | SquareSymmetry |" in markdown
+    assert "| aug_001 | square_r90 | SquareSymmetry | 0.7 |" in markdown
+    assert "| SquareSymmetry | 2 |" in markdown
     assert "aggregation_weights.csv" in markdown
     assert "private_metric_deltas.csv" in markdown
     assert "Private metric deltas vs clean" in markdown
