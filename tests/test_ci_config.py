@@ -32,6 +32,11 @@ def gpu_handoff_text() -> str:
 
 
 @pytest.fixture
+def gpu_runbook_text() -> str:
+    return (ROOT / "docs" / "gpu-run.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
 def colab_notebook() -> dict[str, Any]:
     notebook_path = ROOT / "notebooks" / "full_imagenet_run_colab.ipynb"
     with notebook_path.open(encoding="utf-8") as handle:
@@ -234,6 +239,11 @@ def test_colab_notebook_uses_colab_safe_teacher_cache_workers(
         "raw true-class NLL",
         "gain = clean_nll - aug_nll",
         "ranking/top-k TTA selection",
+        "The current primary baseline is the 100-output gain predictor",
+        "planned ablations after the full 5M teacher",
+        "100 binary helpfulness labels",
+        "softmax-weight distillation",
+        "weights should remain non-negative",
     ],
 )
 def test_readme_documents_selector_target_formulation(
@@ -281,6 +291,30 @@ def test_implementation_status_documents_split_role_guards(
 ) -> None:
     assert "Public/private split-role guards" in implementation_status_text
     assert "CI coverage gate fixed at 98.5% minimum" in implementation_status_text
+    assert "Producing the full 5M teacher logits cache" in implementation_status_text
+    assert "current primary" in implementation_status_text
+    assert "100-output gain predictor" in implementation_status_text
+    assert "ablations after the 5M logits cache exists" in implementation_status_text
+
+
+@pytest.mark.parametrize(
+    "gpu_run_fragment",
+    [
+        "full teacher cache means 5M teacher",
+        "public_train: 20,000 images * 100 augmentations",
+        "public_val:    5,000 images * 100 augmentations",
+        "private:      25,000 images * 100 augmentations",
+        "300 complete teacher-cache shards",
+        "100 for `public_train`, 100",
+        "for `public_val`, and 100 for `private`",
+        "full-run-status --fail-on-incomplete",
+    ],
+)
+def test_gpu_runbook_documents_full_logits_cache_requirements(
+    gpu_runbook_text: str,
+    gpu_run_fragment: str,
+) -> None:
+    assert gpu_run_fragment in gpu_runbook_text
 
 
 @pytest.mark.parametrize(

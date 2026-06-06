@@ -214,6 +214,22 @@ Each split is complete only when it has one matching parquet file, one
 `logits.npy` file, and one `.run.json` sidecar for every configured augmentation
 candidate.
 
+For the default ResNet50 experiment, the full teacher cache means 5M teacher
+predictions:
+
+```text
+public_train: 20,000 images * 100 augmentations = 2,000,000 predictions
+public_val:    5,000 images * 100 augmentations =   500,000 predictions
+private:      25,000 images * 100 augmentations = 2,500,000 predictions
+```
+
+On disk that is 300 complete teacher-cache shards: 100 for `public_train`, 100
+for `public_val`, and 100 for `private`. Each shard must have the parquet
+metadata, fp16 logits, and `.run.json` metadata sidecar. Optional
+`.benchmark.json` sidecars help estimate throughput but do not count toward
+cache completeness. Use `full-run-status --fail-on-incomplete` as the final
+source of truth instead of relying only on file counts.
+
 ## One-Step Resume
 
 For interactive use, run one supervised step at a time:
