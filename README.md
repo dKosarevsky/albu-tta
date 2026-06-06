@@ -73,6 +73,18 @@ training, the best checkpoint is selected by public-validation
 `learned_topk_uniform` TTA NLL when the validation teacher cache is available;
 regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
 written to `selector/selector_history.csv`.
+
+The current primary baseline is the 100-output gain predictor. Other target
+heads and second-level models are planned ablations after the full 5M teacher
+logits cache is available, not assumptions baked into the main claim. Planned
+ablations include 100 binary helpfulness labels (`gain > 0`), listwise or
+pairwise ranking heads, softmax-weight distillation from public-train oracle
+utilities, clean-logits/tabular selectors, global non-negative aggregation,
+class-specific aggregation, and XGBoost stacking. Selector utility scores may be
+negative because they represent predicted gain, but deployed probability TTA
+weights should remain non-negative, for example uniform top-k or softmax over
+selected utilities.
+
 Selector target artifacts also persist `image_id` order. Training refuses to pair
 a manifest with targets whose rows were generated from a different image order,
 which prevents silent label/target drift after interrupted or moved runs.

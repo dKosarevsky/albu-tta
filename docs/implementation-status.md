@@ -44,8 +44,14 @@ Implemented:
 Not part of the implementation-complete status:
 
 - Running the full ImageNet validation experiment.
+- Producing the full 5M teacher logits cache.
 - Producing paper-ready numeric claims.
 - Claiming SOTA or cross-architecture generality.
+- Deciding the final best second-level target formulation. The current primary
+  baseline remains the 100-output gain predictor; multi-head helpfulness,
+  ranking, softmax-weight, clean-logits/tabular selector, global aggregation,
+  class-specific aggregation, and XGBoost stacking variants are planned
+  ablations after the 5M logits cache exists.
 
 Next research step:
 
@@ -53,14 +59,15 @@ Run `check-full-run` against the local ImageNet-val directory, confirm the
 strict class-count/image-count/WNID-mapping checks pass, let
 `resume-full-run` cache `public_val` identity and run `check-clean-baseline`,
 optionally run the clean CenterCrop-only baseline commands from
-`docs/gpu-run.md`, then run the full
-experiment with `resnet50.a1_in1k`, use `full-run-status` after each expensive
-step to confirm the next missing required artifact, use `--format json` if the
-GPU run is driven by scripts, use `--fail-on-incomplete` when a shell step
-should stop on incomplete required artifacts, use `--next-command` when a
-wrapper needs to dispatch only the next required command, prefer
-`resume-full-run` for interactive Colab reconnects or external GPU recovery,
-follow `docs/gpu-run.md` when Colab quota is the blocker, review
+`docs/gpu-run.md`, then produce the full 5M logits cache with 300 complete
+teacher-cache shards: 100 for `public_train`, 100 for `public_val`, and 100 for
+`private`. Use `full-run-status` after each expensive step to confirm the next
+missing required artifact, use `--format json` if the GPU run is driven by
+scripts, use `--fail-on-incomplete` when a shell step should stop on incomplete
+required artifacts, use `--next-command` when a wrapper needs to dispatch only
+the next required command, prefer `resume-full-run` for interactive Colab
+reconnects or external GPU recovery, follow `docs/gpu-run.md` when Colab quota
+is the blocker, review
 `reports/resnet50_a1_in1k/results.md`, then decide which additional timm
 architectures are worth running for the preprint. The optional XGBoost stacker
 is tracked separately and does not block the required full-run status.
