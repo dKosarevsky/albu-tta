@@ -12,7 +12,10 @@ from learned_tta.augmentations import (
     validate_augmentation_registry,
     write_augmentation_audit,
 )
-from learned_tta.clean_baseline import check_clean_baseline_from_config
+from learned_tta.clean_baseline import (
+    check_clean_baseline_from_config,
+    summarize_clean_center_crop_baseline_from_config,
+)
 from learned_tta.config import load_experiment_config
 from learned_tta.imagenet_split import (
     build_stratified_splits,
@@ -78,6 +81,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             min_top1=args.min_top1,
             min_top5=args.min_top5,
             max_nll=args.max_nll,
+        )
+    elif command == "summarize-clean-baseline":
+        _cmd_summarize_clean_baseline(
+            config_path=Path(args.config),
+            splits=args.split,
+            cache_dir=_optional_path(args.cache_dir),
+            output_path=_optional_path(args.output_path),
         )
     elif command == "full-run-status":
         _cmd_full_run_status(
@@ -293,6 +303,26 @@ def _build_parser() -> argparse.ArgumentParser:
     check_clean_baseline.add_argument("--min-top1", type=float)
     check_clean_baseline.add_argument("--min-top5", type=float)
     check_clean_baseline.add_argument("--max-nll", type=float)
+
+    summarize_clean_baseline = subparsers.add_parser(
+        "summarize-clean-baseline",
+        help="Summarize clean CenterCrop metrics over identity-cache validation shards.",
+    )
+    summarize_clean_baseline.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    summarize_clean_baseline.add_argument(
+        "--split",
+        action="append",
+        help=(
+            "Split to include. Repeatable. Defaults to public_train, public_val, "
+            "and private, which covers ImageNet-val once."
+        ),
+    )
+    summarize_clean_baseline.add_argument("--cache-dir")
+    summarize_clean_baseline.add_argument("--output-path")
 
     full_run_status = subparsers.add_parser(
         "full-run-status",
@@ -613,6 +643,30 @@ def _cmd_check_clean_baseline(
         f"top1={report.metrics['top1']:.4f}, "
         f"top5={report.metrics['top5']:.4f}, "
         f"nll={report.metrics['nll']:.4f}"
+    )
+
+
+def _cmd_summarize_clean_baseline(
+    *,
+    config_path: Path,
+    splits: list[str] | None,
+    cache_dir: Path | None,
+    output_path: Path | None,
+) -> None:
+    summary = summarize_clean_center_crop_baseline_from_config(
+        config_path,
+        splits=splits,
+        cache_dir=cache_dir,
+        output_path=output_path,
+    )
+    print(
+        "clean center-crop baseline: "
+        f"splits={','.join(summary.splits)}, "
+        f"images={int(summary.overall['image_count'])}, "
+        f"top1={summary.overall['top1']:.4f}, "
+        f"top5={summary.overall['top5']:.4f}, "
+        f"nll={summary.overall['nll']:.4f}, "
+        f"wrote {summary.output_path}"
     )
 
 
