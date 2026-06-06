@@ -85,6 +85,45 @@ def test_learned_topk_selection_always_includes_identity() -> None:
     ]
 
 
+def test_learned_topk_zero_selects_identity_only(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+) -> None:
+    class_idxs = np.array([0, 2], dtype=np.int64)
+
+    selected = learned_topk_selection(
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        k=0,
+    )
+    uniform = evaluate_learned_topk_uniform(
+        logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        k=0,
+    )
+    weighted = evaluate_learned_topk_softmax_weighted(
+        logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        k=0,
+    )
+    clean = evaluate_clean(logits_by_aug, class_idxs=class_idxs, identity_aug_id="aug_000")
+
+    assert selected == [["aug_000"], ["aug_000"]]
+    assert uniform["forwards_per_image"] == pytest.approx(1.0)
+    assert weighted["forwards_per_image"] == pytest.approx(1.0)
+    for key, value in clean.items():
+        assert uniform[key] == pytest.approx(value)
+        assert weighted[key] == pytest.approx(value)
+
+
 def test_fixed_and_random_selection_are_reproducible(aug_ids: list[str]) -> None:
     fixed = fixed_light_tta_selection(aug_ids, identity_aug_id="aug_000", k=2)
     first = random_topk_selection(
