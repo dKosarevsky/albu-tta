@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,6 +84,7 @@ def run_teacher_cache(
             skipped.append(candidate.id)
             continue
 
+        started_at = time.perf_counter()
         shard = _infer_candidate(
             split=split,
             records=records,
@@ -94,7 +97,18 @@ def run_teacher_cache(
             batch_size=batch_size,
             num_workers=num_workers,
         )
-        write_teacher_shard(output_dir, shard)
+        elapsed_seconds = time.perf_counter() - started_at
+        written_paths = write_teacher_shard(output_dir, shard)
+        _write_benchmark_sidecar(
+            path=written_paths.benchmark_path,
+            split=split,
+            aug_id=candidate.id,
+            device=torch_device,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            image_count=len(shard.image_ids),
+            elapsed_seconds=elapsed_seconds,
+        )
         written.append(candidate.id)
 
     return TeacherCacheRunSummary(
@@ -233,6 +247,33 @@ def _run_metadata(
             },
         }
     )
+
+
+def _write_benchmark_sidecar(
+    *,
+    path: Path,
+    split: str,
+    aug_id: str,
+    device: torch.device,
+    batch_size: int,
+    num_workers: int,
+    image_count: int,
+    elapsed_seconds: float,
+) -> None:
+    safe_elapsed = max(float(elapsed_seconds), 1e-12)
+    payload = {
+        "version": 1,
+        "split": split,
+        "aug_id": aug_id,
+        "backend": "pytorch",
+        "device": str(device),
+        "batch_size": int(batch_size),
+        "num_workers": int(num_workers),
+        "image_count": int(image_count),
+        "elapsed_seconds": float(elapsed_seconds),
+        "images_per_second": float(image_count) / safe_elapsed if image_count else 0.0,
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _json_ready(value: Any) -> Any:

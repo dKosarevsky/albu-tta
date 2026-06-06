@@ -31,6 +31,7 @@ class TeacherShardPaths:
     metadata_path: Path
     logits_path: Path
     run_metadata_path: Path
+    benchmark_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +52,7 @@ def teacher_shard_paths(output_dir: Path, split: str, aug_id: str) -> TeacherSha
         metadata_path=output_dir / f"{filename_prefix}.parquet",
         logits_path=output_dir / f"{filename_prefix}.logits.npy",
         run_metadata_path=output_dir / f"{filename_prefix}.run.json",
+        benchmark_path=output_dir / f"{filename_prefix}.benchmark.json",
     )
 
 
