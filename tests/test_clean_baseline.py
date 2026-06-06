@@ -7,8 +7,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from learned_tta.cache import TeacherShard, write_teacher_shard
-from learned_tta.clean_baseline import check_clean_baseline
+from learned_tta.cache import TeacherShard, teacher_shard_paths, write_teacher_shard
+from learned_tta.clean_baseline import (
+    _weighted_metrics,
+    check_clean_baseline,
+    summarize_clean_center_crop_baseline,
+)
 
 
 def test_check_clean_baseline_writes_metrics_artifact(tmp_path: Path) -> None:
@@ -39,6 +43,192 @@ def test_check_clean_baseline_writes_metrics_artifact(tmp_path: Path) -> None:
         "min_top5": 1.0,
         "max_nll": 1.0,
     }
+
+
+def test_summarize_clean_center_crop_baseline_combines_full_validation_splits(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "teacher_cache"
+    output_path = tmp_path / "clean_center_crop_baseline.json"
+    _write_identity_shard(
+        cache_dir,
+        split="public_train",
+        image_ids=["public_train_0", "public_train_1"],
+        class_idxs=np.array([0, 1], dtype=np.int64),
+        logits=np.array([[4.0, 0.0, 0.0], [0.0, 3.0, 0.0]], dtype=np.float32),
+        elapsed_seconds=2.0,
+    )
+    _write_identity_shard(
+        cache_dir,
+        split="private",
+        image_ids=["private_0", "private_1"],
+        class_idxs=np.array([2, 1], dtype=np.int64),
+        logits=np.array([[2.0, 0.0, 3.0], [2.0, 1.0, 0.0]], dtype=np.float32),
+        elapsed_seconds=4.0,
+    )
+
+    summary = summarize_clean_center_crop_baseline(
+        cache_dir=cache_dir,
+        splits=["public_train", "private"],
+        identity_aug_id="aug_000",
+        output_path=output_path,
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert summary.overall["image_count"] == 4.0
+    assert summary.overall["top1"] == pytest.approx(0.75)
+    assert summary.overall["top5"] == pytest.approx(1.0)
+    assert payload["splits"] == ["public_train", "private"]
+    assert payload["identity_aug_id"] == "aug_000"
+    assert payload["by_split"]["public_train"]["top1"] == pytest.approx(1.0)
+    assert payload["by_split"]["private"]["top1"] == pytest.approx(0.5)
+    assert payload["overall"]["nll"] == pytest.approx(summary.overall["nll"])
+    assert payload["benchmark"] == {
+        "available_shards": 2,
+        "missing_shards": [],
+        "backend": "pytorch",
+        "device": "cpu",
+        "elapsed_seconds": 6.0,
+        "images_per_second": pytest.approx(4.0 / 6.0),
+        "forwards_per_image": 1.0,
+        "candidate_count": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("splits", "match"),
+    [
+        ([], "requires at least one split"),
+        (["public_val", "public_val"], "splits must be unique"),
+    ],
+)
+def test_summarize_clean_center_crop_baseline_rejects_invalid_split_lists(
+    tmp_path: Path,
+    splits: list[str],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        summarize_clean_center_crop_baseline(
+            cache_dir=tmp_path / "teacher_cache",
+            splits=splits,
+            identity_aug_id="aug_000",
+            output_path=tmp_path / "baseline.json",
+        )
+
+
+def test_summarize_clean_center_crop_baseline_rejects_empty_identity_shard(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "teacher_cache"
+    cache_dir.mkdir()
+    pd.DataFrame(
+        {
+            "split": [],
+            "aug_id": [],
+            "image_id": [],
+            "class_idx": [],
+            "prob_true": [],
+            "nll_true": [],
+            "is_top1": [],
+            "is_top5": [],
+        }
+    ).to_parquet(cache_dir / "public_train__aug_000.parquet", index=False)
+    np.save(cache_dir / "public_train__aug_000.logits.npy", np.zeros((0, 3), dtype=np.float16))
+
+    with pytest.raises(ValueError, match="contains no rows"):
+        summarize_clean_center_crop_baseline(
+            cache_dir=cache_dir,
+            splits=["public_train"],
+            identity_aug_id="aug_000",
+            output_path=tmp_path / "baseline.json",
+        )
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "match"),
+    [
+        ("split", "private", "shard split does not match"),
+        ("aug_id", "aug_001", "shard aug_id does not match"),
+    ],
+)
+def test_summarize_clean_center_crop_baseline_rejects_mismatched_metadata(
+    tmp_path: Path,
+    column: str,
+    value: str,
+    match: str,
+) -> None:
+    cache_dir = tmp_path / "teacher_cache"
+    _write_identity_shard(cache_dir, split="public_train")
+    metadata_path = cache_dir / "public_train__aug_000.parquet"
+    metadata = pd.read_parquet(metadata_path)
+    metadata[column] = value
+    metadata.to_parquet(metadata_path, index=False)
+
+    with pytest.raises(ValueError, match=match):
+        summarize_clean_center_crop_baseline(
+            cache_dir=cache_dir,
+            splits=["public_train"],
+            identity_aug_id="aug_000",
+            output_path=tmp_path / "baseline.json",
+        )
+
+
+def test_summarize_clean_center_crop_baseline_rejects_non_object_benchmark_sidecar(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "teacher_cache"
+    _write_identity_shard(cache_dir, split="public_train")
+    teacher_shard_paths(cache_dir, "public_train", "aug_000").benchmark_path.write_text(
+        "[]",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="benchmark sidecar must be a JSON object"):
+        summarize_clean_center_crop_baseline(
+            cache_dir=cache_dir,
+            splits=["public_train"],
+            identity_aug_id="aug_000",
+            output_path=tmp_path / "baseline.json",
+        )
+
+
+def test_summarize_clean_center_crop_baseline_reports_missing_and_mixed_benchmarks(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "teacher_cache"
+    _write_identity_shard(
+        cache_dir,
+        split="public_train",
+        elapsed_seconds=2.0,
+        backend="pytorch",
+        device="cuda",
+    )
+    _write_identity_shard(
+        cache_dir,
+        split="public_val",
+        elapsed_seconds=3.0,
+        backend="onnxruntime",
+        device="cpu",
+    )
+    _write_identity_shard(cache_dir, split="private")
+
+    summary = summarize_clean_center_crop_baseline(
+        cache_dir=cache_dir,
+        splits=["public_train", "public_val", "private"],
+        identity_aug_id="aug_000",
+        output_path=tmp_path / "baseline.json",
+    )
+
+    assert summary.benchmark["available_shards"] == 2
+    assert summary.benchmark["missing_shards"] == ["private"]
+    assert summary.benchmark["backend"] == ["onnxruntime", "pytorch"]
+    assert summary.benchmark["device"] == ["cpu", "cuda"]
+    assert summary.benchmark["elapsed_seconds"] == pytest.approx(5.0)
+
+
+def test_weighted_metrics_rejects_zero_total_images() -> None:
+    with pytest.raises(ValueError, match="contains no images"):
+        _weighted_metrics({"empty": {"image_count": 0.0, "top1": 0.0, "top5": 0.0, "nll": 0.0}})
 
 
 def test_check_clean_baseline_rejects_low_top1_without_writing_artifact(
@@ -139,22 +329,65 @@ def test_check_clean_baseline_rejects_top5_and_nll_threshold_failures(
         )
 
 
-def _write_identity_shard(cache_dir: Path) -> None:
+def _write_identity_shard(
+    cache_dir: Path,
+    *,
+    split: str = "public_val",
+    image_ids: list[str] | None = None,
+    class_idxs: np.ndarray | None = None,
+    logits: np.ndarray | None = None,
+    elapsed_seconds: float | None = None,
+    backend: str = "pytorch",
+    device: str = "cpu",
+) -> None:
+    image_ids = image_ids or ["img_0", "img_1", "img_2", "img_3"]
+    class_idxs = (
+        class_idxs
+        if class_idxs is not None
+        else np.array([0, 1, 2, 1], dtype=np.int64)
+    )
+    logits = (
+        logits
+        if logits is not None
+        else np.array(
+            [
+                [4.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0],
+                [2.0, 0.0, 3.0],
+                [2.0, 1.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+    )
     write_teacher_shard(
         cache_dir,
         TeacherShard(
-            split="public_val",
+            split=split,
             aug_id="aug_000",
-            image_ids=["img_0", "img_1", "img_2", "img_3"],
-            class_idxs=np.array([0, 1, 2, 1], dtype=np.int64),
-            logits=np.array(
-                [
-                    [4.0, 0.0, 0.0],
-                    [0.0, 3.0, 0.0],
-                    [2.0, 0.0, 3.0],
-                    [2.0, 1.0, 0.0],
-                ],
-                dtype=np.float32,
-            ),
+            image_ids=image_ids,
+            class_idxs=class_idxs,
+            logits=logits,
         ),
     )
+    if elapsed_seconds is not None:
+        benchmark_path = teacher_shard_paths(cache_dir, split, "aug_000").benchmark_path
+        benchmark_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "split": split,
+                    "aug_id": "aug_000",
+                    "backend": backend,
+                    "device": device,
+                    "batch_size": len(image_ids),
+                    "num_workers": 0,
+                    "image_count": len(image_ids),
+                    "elapsed_seconds": elapsed_seconds,
+                    "images_per_second": len(image_ids) / elapsed_seconds,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )

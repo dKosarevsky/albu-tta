@@ -135,6 +135,59 @@ def test_cli_check_clean_baseline_writes_default_artifact(
     assert payload["split"] == "public_val"
 
 
+def test_cli_summarize_clean_baseline_writes_full_val_summary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+    cache_dir = tmp_path / "artifacts" / "teacher_cache"
+    for split, image_ids, class_idxs, logits in [
+        (
+            "public_train",
+            ["public_train_0", "public_train_1"],
+            np.array([0, 1], dtype=np.int64),
+            np.array([[4.0, 0.0], [0.0, 4.0]], dtype=np.float32),
+        ),
+        (
+            "public_val",
+            ["public_val_0"],
+            np.array([0], dtype=np.int64),
+            np.array([[4.0, 0.0]], dtype=np.float32),
+        ),
+        (
+            "private",
+            ["private_0", "private_1"],
+            np.array([0, 1], dtype=np.int64),
+            np.array([[4.0, 0.0], [4.0, 0.0]], dtype=np.float32),
+        ),
+    ]:
+        write_teacher_shard(
+            cache_dir,
+            TeacherShard(
+                split=split,
+                aug_id="aug_000",
+                image_ids=image_ids,
+                class_idxs=class_idxs,
+                logits=logits,
+            ),
+        )
+
+    main(["summarize-clean-baseline", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    output_path = (
+        tmp_path / "reports" / "resnet50_a1_in1k" / "tables" / "clean_center_crop_baseline.json"
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert "clean center-crop baseline:" in captured.out
+    assert "splits=public_train,public_val,private" in captured.out
+    assert "images=5" in captured.out
+    assert "top1=0.8000" in captured.out
+    assert payload["splits"] == ["public_train", "public_val", "private"]
+    assert payload["overall"]["image_count"] == 5.0
+    assert payload["overall"]["top1"] == pytest.approx(0.8)
+
+
 def test_cli_full_run_status_reports_next_step(capsys: pytest.CaptureFixture[str]) -> None:
     main(["full-run-status", "--config", str(CONFIG_PATH)])
 

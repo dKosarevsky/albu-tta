@@ -46,6 +46,7 @@ def test_write_and_read_teacher_shard(tmp_path: Path, logits: np.ndarray) -> Non
     assert paths.metadata_path.name == "public__aug_001.parquet"
     assert paths.logits_path.name == "public__aug_001.logits.npy"
     assert paths.run_metadata_path.name == "public__aug_001.run.json"
+    assert paths.benchmark_path.name == "public__aug_001.benchmark.json"
     assert loaded.logits.dtype == np.float16
     assert loaded.run_metadata == {
         "seed": 20260522,

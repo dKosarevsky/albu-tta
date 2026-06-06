@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -97,6 +98,17 @@ def test_run_teacher_cache_writes_and_resumes_complete_shards(
     assert loaded.run_metadata["teacher"]["model_name"] == "fake_resnet"
     assert loaded.run_metadata["teacher"]["pretrained"] is False
     assert loaded.run_metadata["teacher"]["data_config"]["input_size"] == [3, 8, 8]
+    benchmark = json.loads(paths.benchmark_path.read_text(encoding="utf-8"))
+    assert benchmark["version"] == 1
+    assert benchmark["split"] == "public"
+    assert benchmark["aug_id"] == "aug_000"
+    assert benchmark["backend"] == "pytorch"
+    assert benchmark["device"] == "cpu"
+    assert benchmark["batch_size"] == 2
+    assert benchmark["num_workers"] == 0
+    assert benchmark["image_count"] == 2
+    assert benchmark["elapsed_seconds"] >= 0.0
+    assert benchmark["images_per_second"] > 0.0
 
 
 def test_run_teacher_cache_resume_recomputes_when_run_metadata_changes(

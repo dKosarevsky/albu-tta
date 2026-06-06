@@ -104,6 +104,10 @@ find "$RUN_ROOT/artifacts/teacher_cache" -name 'private__*.run.json' | wc -l
 
 Use the matching log file for the active split:
 `cache_public_train.log`, `cache_public_val.log`, or `cache_private.log`.
+For a clean CenterCrop-only baseline before the full TTA cache, run
+`cache-teacher --candidate-id aug_000` on `public_train`, `public_val`, and
+`private`, then run `summarize-clean-baseline`. That report reuses the same
+identity shards that the full run will later skip.
 
 ## Success Criteria
 
@@ -119,6 +123,7 @@ Expected final artifacts:
 
 ```text
 $RUN_ROOT/reports/resnet50_a1_in1k/results.md
+$RUN_ROOT/reports/resnet50_a1_in1k/tables/clean_center_crop_baseline.json
 $RUN_ROOT/reports/resnet50_a1_in1k/tables/private_metrics.csv
 $RUN_ROOT/reports/resnet50_a1_in1k/tables/private_metric_deltas.csv
 $RUN_ROOT/reports/resnet50_a1_in1k/tables/augmentation_impact.csv
