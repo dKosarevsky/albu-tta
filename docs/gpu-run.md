@@ -229,6 +229,10 @@ uv run python -m learned_tta.cli full-run-status \
 uv run python -m learned_tta.cli teacher-cache-plan \
   --config "$CONFIG"
 
+uv run python -m learned_tta.cli teacher-cache-diagnostics \
+  --config "$CONFIG" \
+  --split public_val
+
 uv run python -m learned_tta.cli teacher-backend-plan \
   --device cuda
 ```
@@ -269,6 +273,10 @@ documents planned accelerators: TensorRT for CUDA, ONNXRuntime as a portable
 exported-model runtime, and OpenVINO for CPU. Do not pass these planned backend
 names to `cache-teacher`; the CLI fails early until their inference paths are
 implemented and tested.
+After a split cache is complete, run `teacher-cache-diagnostics` for a cheap
+metadata-only impact readout before training selector ablations. It reports the
+clean baseline, helpful/harmful augmentation fractions, best non-identity single
+augmentation, oracle best per-image gain, and a compact top augmentation table.
 
 ## One-Step Resume
 

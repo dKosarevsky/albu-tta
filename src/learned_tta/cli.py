@@ -40,6 +40,10 @@ from learned_tta.stacking import train_aggregator_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.targets import TRAINABLE_SELECTOR_TARGET_KINDS
 from learned_tta.teacher_cache import cache_teacher_from_config
+from learned_tta.teacher_cache_diagnostics import (
+    summarize_teacher_cache_diagnostics,
+    teacher_cache_diagnostics_to_dict,
+)
 from learned_tta.teacher_cache_plan import (
     build_teacher_cache_plan,
     teacher_cache_plan_to_dict,
@@ -126,6 +130,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     elif command == "teacher-backend-plan":
         _cmd_teacher_backend_plan(
             device=str(args.device),
+            output_format=str(args.format),
+        )
+    elif command == "teacher-cache-diagnostics":
+        _cmd_teacher_cache_diagnostics(
+            config_path=Path(args.config),
+            split=str(args.split),
+            cache_dir=_optional_path(args.cache_dir),
+            candidate_ids=args.candidate_id,
+            top_n=int(args.top_n),
+            output_path=_optional_path(args.output),
             output_format=str(args.format),
         )
     elif command == "resume-full-run":
@@ -459,6 +473,34 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["text", "json"],
         default="text",
         help="Output format for the teacher backend plan.",
+    )
+
+    teacher_cache_diagnostics = subparsers.add_parser(
+        "teacher-cache-diagnostics",
+        help="Summarize completed teacher-cache metadata for a split without loading logits.",
+    )
+    teacher_cache_diagnostics.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    teacher_cache_diagnostics.add_argument("--split", default="public_val")
+    teacher_cache_diagnostics.add_argument(
+        "--cache-dir",
+        help="Teacher cache directory. Defaults to artifacts.teacher_cache_dir.",
+    )
+    teacher_cache_diagnostics.add_argument(
+        "--candidate-id",
+        action="append",
+        help="Augmentation candidate id to include. May be passed more than once.",
+    )
+    teacher_cache_diagnostics.add_argument("--top-n", type=int, default=10)
+    teacher_cache_diagnostics.add_argument("--output", help="Optional JSON output path.")
+    teacher_cache_diagnostics.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for diagnostics.",
     )
 
     resume_full_run = subparsers.add_parser(
@@ -930,6 +972,55 @@ def _cmd_teacher_backend_plan(*, device: str, output_format: str) -> None:
             f"- {backend.name}: status={backend.status}, "
             f"device={backend.device}, role={backend.role}"
         )
+
+
+def _cmd_teacher_cache_diagnostics(
+    *,
+    config_path: Path,
+    split: str,
+    cache_dir: Path | None,
+    candidate_ids: list[str] | None,
+    top_n: int,
+    output_path: Path | None,
+    output_format: str,
+) -> None:
+    config = load_experiment_config(config_path)
+    aug_ids = candidate_ids
+    if aug_ids is None:
+        aug_ids = [
+            candidate.id
+            for candidate in load_augmentation_registry(config.augmentations.registry_path)
+        ]
+    summary = summarize_teacher_cache_diagnostics(
+        cache_dir=cache_dir or config.artifacts.teacher_cache_dir,
+        split=split,
+        aug_ids=aug_ids,
+        identity_aug_id=config.augmentations.identity_id,
+        top_n=top_n,
+    )
+    payload = teacher_cache_diagnostics_to_dict(summary)
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    if output_format == "json":
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    print(
+        "teacher cache diagnostics: "
+        f"split={summary.split}, "
+        f"images={summary.image_count:,}, "
+        f"candidates={summary.candidate_count}, "
+        f"clean_top1={summary.clean_top1:.4f}, "
+        f"clean_top5={summary.clean_top5:.4f}, "
+        f"clean_nll={summary.clean_nll:.4f}, "
+        f"best_single={summary.best_single_aug_id} "
+        f"gain={summary.best_single_aug_mean_gain:.6g}, "
+        f"oracle_gain={summary.oracle_best_mean_gain:.6g}"
+    )
+    if output_path is not None:
+        print(f"wrote {output_path}")
 
 
 def _format_bytes(value: int) -> str:

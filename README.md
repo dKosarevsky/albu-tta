@@ -334,6 +334,10 @@ uv run python -m learned_tta.cli full-run-status \
 uv run python -m learned_tta.cli teacher-cache-plan \
   --config configs/experiment/resnet50_a1_in1k.yaml
 
+uv run python -m learned_tta.cli teacher-cache-diagnostics \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --split public_val
+
 uv run python -m learned_tta.cli resume-full-run \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val \
@@ -424,6 +428,12 @@ planned accelerators for future throughput work: TensorRT for CUDA,
 ONNXRuntime as a portable exported-model runtime, and OpenVINO for CPU. Passing
 a planned backend to `cache-teacher` fails early instead of silently running
 PyTorch under a misleading backend name.
+After a split cache is complete, `teacher-cache-diagnostics` reads only parquet
+metadata and reports clean NLL/top-1/top-5, helpful and harmful augmentation
+fractions, best non-identity single augmentation by mean gain, oracle best
+per-image mean gain, and a top augmentation table. This is the first cheap
+post-logits check before deciding which selector target or aggregation ablation
+is worth training.
 `make-splits` writes `artifacts/manifests/class_to_idx.json` alongside the CSV
 manifests. Keep that artifact with the run output; it is the audit trail tying
 manifest labels to the teacher model's ImageNet-1k output indices.

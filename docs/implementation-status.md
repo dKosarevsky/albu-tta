@@ -22,6 +22,9 @@ Implemented:
 - Teacher backend planning CLI and explicit `cache-teacher --backend pytorch`
   guard. TensorRT, ONNXRuntime, and OpenVINO are documented as planned
   accelerators and fail early if requested before implementation.
+- Metadata-only teacher-cache diagnostics for completed splits: clean NLL/top-1/top-5,
+  helpful/harmful augmentation fractions, best non-identity single augmentation,
+  oracle best per-image gain, and top augmentation summaries.
 - AlbumentationsX registry with 100 single-transform candidates, explicit
   `fixed` vs `seeded_stochastic` determinism metadata, range validation for
   fixed candidates, and audit JSON including runtime package versions.
