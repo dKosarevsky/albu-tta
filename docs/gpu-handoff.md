@@ -10,6 +10,9 @@ with a stable NVIDIA GPU machine. The detailed runbook is
 - Branch: `main`
 - Config: `configs/experiment/resnet50_a1_in1k.yaml`
 - ImageNet validation directory in `val/WNID/image.JPEG` layout.
+  If this layout is not prepared yet, provide local official archives
+  `ILSVRC2012_img_val.tar` and `ILSVRC2012_devkit_t12.tar.gz`; the worker can
+  run `prepare-imagenet-val` on CPU before GPU inference.
 - Persistent storage for `artifacts/`, `reports/`, and logs.
 - NVIDIA GPU with CUDA, Python 3.10+, `git`, and `uv`.
 

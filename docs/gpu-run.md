@@ -117,6 +117,31 @@ validation root:
 $IMAGENET_VAL_DIR/n01440764/ILSVRC2012_val_00000293.JPEG
 ```
 
+Preparing that layout does not require a GPU. Use official ImageNet access,
+then copy these local files to the worker:
+
+```text
+ILSVRC2012_img_val.tar
+ILSVRC2012_devkit_t12.tar.gz
+```
+
+The project command streams the validation tar and reads
+`ILSVRC2012_validation_ground_truth.txt` from the devkit:
+
+```bash
+uv run python -m learned_tta.cli prepare-imagenet-val \
+  --config "$CONFIG" \
+  --val-tar /path/to/ILSVRC2012_img_val.tar \
+  --devkit /path/to/ILSVRC2012_devkit_t12.tar.gz \
+  --output-dir "$IMAGENET_VAL_DIR"
+```
+
+It writes `val/WNID/*.JPEG` plus `_preparation_audit.json`. It refuses to write
+into a non-empty output directory unless `--overwrite` is passed. If the devkit
+has already been extracted, pass the extracted devkit directory to `--devkit`;
+if only `ILSVRC2012_validation_ground_truth.txt` is available, pass it with
+`--ground-truth`.
+
 Verify the count and run the project preflight:
 
 ```bash

@@ -215,6 +215,35 @@ Run the full experiment only after the smoke run passes. `--imagenet-val-dir`
 must point to an ImageNet validation directory laid out as
 `val/class_name/image.JPEG`.
 
+ImageNet preparation is CPU-only. Get the validation archive through an
+official ImageNet access path, such as the ImageNet download page
+(`https://www.image-net.org/download.php`) or the Kaggle challenge linked from
+that page, then place these local files on the worker:
+
+```text
+ILSVRC2012_img_val.tar
+ILSVRC2012_devkit_t12.tar.gz
+```
+
+Prepare the validation layout before GPU inference:
+
+```bash
+uv run python -m learned_tta.cli prepare-imagenet-val \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --val-tar /path/to/ILSVRC2012_img_val.tar \
+  --devkit /path/to/ILSVRC2012_devkit_t12.tar.gz \
+  --output-dir /path/to/imagenet/val
+
+uv run python -m learned_tta.cli check-full-run \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --imagenet-val-dir /path/to/imagenet/val
+```
+
+`prepare-imagenet-val` does not download ImageNet and does not require CUDA. It
+streams the official validation tar, reads
+`ILSVRC2012_validation_ground_truth.txt` from the devkit, writes
+`val/WNID/*.JPEG`, and emits `_preparation_audit.json`.
+
 For a notebook workflow, see [`docs/colab-run.md`](docs/colab-run.md). For
 RunPod, Lambda Labs, a local CUDA server, or any other non-Colab GPU worker, see
 [`docs/gpu-run.md`](docs/gpu-run.md).

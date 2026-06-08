@@ -143,6 +143,9 @@ def test_readme_links_gpu_handoff_checklist(
         "Private oracle rows are diagnostics",
         "Selector target `.npz` files without `image_id` lineage",
         "do not delete the whole cache",
+        "prepare-imagenet-val",
+        "ILSVRC2012_img_val.tar",
+        "ILSVRC2012_devkit_t12.tar.gz",
     ],
 )
 def test_gpu_handoff_checklist_has_operational_contract(
@@ -163,6 +166,10 @@ def test_gpu_handoff_checklist_has_operational_contract(
         "cache resume",
         "artifacts",
         "reports",
+        "prepare-imagenet-val",
+        "ILSVRC2012_img_val.tar",
+        "ILSVRC2012_devkit_t12.tar.gz",
+        "does not require CUDA",
     ],
 )
 def test_colab_runbook_documents_resumable_gpu_run(
@@ -254,6 +261,25 @@ def test_readme_documents_selector_target_formulation(
 
 
 @pytest.mark.parametrize(
+    "prepare_fragment",
+    [
+        "ImageNet preparation is CPU-only",
+        "ILSVRC2012_img_val.tar",
+        "ILSVRC2012_devkit_t12.tar.gz",
+        "prepare-imagenet-val",
+        "does not download ImageNet",
+        "does not require CUDA",
+        "ILSVRC2012_validation_ground_truth.txt",
+    ],
+)
+def test_readme_documents_cpu_only_imagenet_preparation(
+    readme_text: str,
+    prepare_fragment: str,
+) -> None:
+    assert prepare_fragment in readme_text
+
+
+@pytest.mark.parametrize(
     "status_fragment",
     [
         "100-score augmentation utility predictor",
@@ -290,6 +316,7 @@ def test_implementation_status_documents_split_role_guards(
     implementation_status_text: str,
 ) -> None:
     assert "Public/private split-role guards" in implementation_status_text
+    assert "CPU-only `prepare-imagenet-val` CLI" in implementation_status_text
     assert "CI coverage gate fixed at 98.5% minimum" in implementation_status_text
     assert "Producing the full 5M teacher logits cache" in implementation_status_text
     assert "current primary" in implementation_status_text
@@ -300,6 +327,13 @@ def test_implementation_status_documents_split_role_guards(
 @pytest.mark.parametrize(
     "gpu_run_fragment",
     [
+        "Preparing that layout does not require a GPU",
+        "prepare-imagenet-val",
+        "ILSVRC2012_img_val.tar",
+        "ILSVRC2012_devkit_t12.tar.gz",
+        "ILSVRC2012_validation_ground_truth.txt",
+        "--ground-truth",
+        "--overwrite",
         "full teacher cache means 5M teacher",
         "public_train: 20,000 images * 100 augmentations",
         "public_val:    5,000 images * 100 augmentations",
