@@ -35,6 +35,7 @@ from learned_tta.smoke import run_smoke_e2e
 from learned_tta.stacking import train_aggregator_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.teacher_cache import cache_teacher_from_config
+from learned_tta.teacher_cache_plan import build_teacher_cache_plan, teacher_cache_plan_to_dict
 from learned_tta.tta_tuning import tune_tta_from_config
 
 
@@ -106,6 +107,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             output_format=str(args.format),
             fail_on_incomplete=bool(args.fail_on_incomplete),
             next_command=bool(args.next_command),
+        )
+    elif command == "teacher-cache-plan":
+        _cmd_teacher_cache_plan(
+            config_path=Path(args.config),
+            cache_dir=_optional_path(args.cache_dir),
+            splits=tuple(args.split) if args.split is not None else None,
+            output_format=str(args.format),
         )
     elif command == "resume-full-run":
         _cmd_resume_full_run(
@@ -392,6 +400,34 @@ def _build_parser() -> argparse.ArgumentParser:
         "--next-command",
         action="store_true",
         help="Print only the next required full-run command, if any.",
+    )
+
+    teacher_cache_plan = subparsers.add_parser(
+        "teacher-cache-plan",
+        help="Summarize expected teacher-cache logits work and current shard progress.",
+    )
+    teacher_cache_plan.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    teacher_cache_plan.add_argument(
+        "--cache-dir",
+        help="Teacher cache directory. Defaults to artifacts.teacher_cache_dir.",
+    )
+    teacher_cache_plan.add_argument(
+        "--split",
+        action="append",
+        help=(
+            "Split to include. Repeatable. Defaults to public_train, public_val, "
+            "and private, which covers the 5M logits run once."
+        ),
+    )
+    teacher_cache_plan.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the teacher-cache plan.",
     )
 
     resume_full_run = subparsers.add_parser(
@@ -786,6 +822,60 @@ def _cmd_full_run_status(
         print(f"command: {summary.next_step.command}")
     if fail_on_incomplete and summary.next_step is not None:
         raise SystemExit(1)
+
+
+def _cmd_teacher_cache_plan(
+    *,
+    config_path: Path,
+    cache_dir: Path | None,
+    splits: tuple[str, ...] | None,
+    output_format: str,
+) -> None:
+    plan = build_teacher_cache_plan(
+        config_path=config_path,
+        cache_dir=cache_dir,
+        splits=splits if splits is not None else ("public_train", "public_val", "private"),
+    )
+    if output_format == "json":
+        print(json.dumps(teacher_cache_plan_to_dict(plan), indent=2, sort_keys=True))
+        return
+
+    print(
+        "teacher cache plan: "
+        f"predictions={plan.total_predictions:,}, "
+        f"shards={plan.complete_shards}/{plan.expected_shards}, "
+        f"missing_files={plan.missing_files}, "
+        f"stale_or_malformed={plan.stale_or_malformed_shards}, "
+        f"logits={_format_bytes(plan.completed_logits_bytes)}/"
+        f"{_format_bytes(plan.logits_bytes_estimate)}"
+    )
+    for split in plan.splits:
+        marker = "x" if split.complete else " "
+        print(
+            f"[{marker}] {split.split}: "
+            f"images={split.expected_images:,}, "
+            f"predictions={split.expected_predictions:,}, "
+            f"shards={split.complete_shards}/{split.expected_shards}, "
+            f"missing_files={split.missing_files}, "
+            f"stale_or_malformed={split.stale_or_malformed_shards}, "
+            f"logits={_format_bytes(split.completed_logits_bytes)}/"
+            f"{_format_bytes(split.logits_bytes_estimate)}"
+        )
+        if split.next_command is not None:
+            print(f"next {split.split}: {split.next_command}")
+
+
+def _format_bytes(value: int) -> str:
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    size = float(value)
+    unit = units[0]
+    for unit in units:
+        if abs(size) < 1024.0 or unit == units[-1]:
+            break
+        size /= 1024.0
+    if unit == "B":
+        return f"{int(size)} {unit}"
+    return f"{size:.2f} {unit}"
 
 
 def _cmd_resume_full_run(

@@ -263,6 +263,38 @@ def test_cli_full_run_status_can_emit_json(capsys: pytest.CaptureFixture[str]) -
     )
 
 
+def test_cli_teacher_cache_plan_can_emit_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+    cache_dir = tmp_path / "teacher-cache"
+
+    main(
+        [
+            "teacher-cache-plan",
+            "--config",
+            str(config_path),
+            "--cache-dir",
+            str(cache_dir),
+            "--format",
+            "json",
+        ]
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert payload["cache_dir"] == str(cache_dir)
+    assert payload["total_predictions"] == 10_000
+    assert payload["expected_shards"] == 300
+    assert payload["complete_shards"] == 0
+    assert payload["logits_bytes_estimate"] == 40_000
+    assert payload["splits"][0]["split"] == "public_train"
+    assert payload["splits"][0]["expected_images"] == 40
+    assert payload["splits"][0]["missing_files"] == 300
+    assert "cache-teacher --split public_train" in payload["splits"][0]["next_command"]
+
+
 def test_cli_full_run_status_json_matches_stable_golden(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
