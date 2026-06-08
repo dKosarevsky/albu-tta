@@ -142,6 +142,22 @@ def test_compute_selector_target_matrices_exposes_trainable_ablation_targets(
     )
 
 
+def test_compute_selector_target_matrices_rejects_invalid_inputs(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+) -> None:
+    with pytest.raises(ValueError, match="identity augmentation 'aug_999' is missing"):
+        compute_selector_target_matrices(logits_by_aug, class_idxs, identity_aug_id="aug_999")
+
+    with pytest.raises(ValueError, match="softmax_temperature must be positive"):
+        compute_selector_target_matrices(
+            logits_by_aug,
+            class_idxs,
+            identity_aug_id="aug_000",
+            softmax_temperature=0.0,
+        )
+
+
 @pytest.mark.parametrize(
     "target_kind",
     ["gain", "negative_nll", "helpfulness", "rank", "softmax_weight", "true_logit"],
@@ -174,6 +190,20 @@ def test_select_selector_target_matrix_rejects_raw_nll_for_training(
 
     with pytest.raises(ValueError, match="raw nll is diagnostic-only"):
         select_selector_target_matrix(matrices, "nll")
+
+
+def test_select_selector_target_matrix_rejects_unknown_kind(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+) -> None:
+    matrices = compute_selector_target_matrices(
+        logits_by_aug,
+        class_idxs,
+        identity_aug_id="aug_000",
+    )
+
+    with pytest.raises(ValueError, match="unknown selector target kind"):
+        select_selector_target_matrix(matrices, "mystery")
 
 
 def test_compute_target_stats_and_standardize_round_trip() -> None:
@@ -268,3 +298,68 @@ def test_save_and_load_selector_targets_preserves_target_kind(tmp_path) -> None:
 
     assert loaded.target_kind == "softmax_weight"
     assert loaded.higher_is_better is True
+
+
+@pytest.mark.parametrize(
+    ("gain", "target_z", "image_ids", "aug_ids", "match"),
+    [
+        (
+            np.zeros(2, dtype=np.float32),
+            np.zeros((2, 2), dtype=np.float32),
+            ["image-0", "image-1"],
+            ["aug_000", "aug_001"],
+            "gain must have shape",
+        ),
+        (
+            np.zeros((2, 2), dtype=np.float32),
+            np.zeros((2, 1), dtype=np.float32),
+            ["image-0", "image-1"],
+            ["aug_000", "aug_001"],
+            "target_z shape must match",
+        ),
+        (
+            np.zeros((2, 2), dtype=np.float32),
+            np.zeros((2, 2), dtype=np.float32),
+            ["image-0"],
+            ["aug_000", "aug_001"],
+            "image_ids length",
+        ),
+        (
+            np.zeros((2, 2), dtype=np.float32),
+            np.zeros((2, 2), dtype=np.float32),
+            ["image-0", "image-1"],
+            ["aug_000"],
+            "aug_ids length",
+        ),
+    ],
+)
+def test_save_selector_targets_rejects_invalid_shapes(
+    tmp_path,
+    gain: np.ndarray,
+    target_z: np.ndarray,
+    image_ids: list[str],
+    aug_ids: list[str],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        save_selector_targets(
+            tmp_path / "targets.npz",
+            aug_ids=aug_ids,
+            image_ids=image_ids,
+            gain=gain,
+            target_z=target_z,
+            stats=TargetStats(
+                mean=np.zeros(2, dtype=np.float32),
+                std=np.ones(2, dtype=np.float32),
+            ),
+        )
+
+
+def test_compute_selector_target_matrices_handles_single_candidate() -> None:
+    matrices = compute_selector_target_matrices(
+        {"aug_000": np.array([[1.0, 0.0]], dtype=np.float32)},
+        np.array([0], dtype=np.int64),
+        identity_aug_id="aug_000",
+    )
+
+    np.testing.assert_allclose(matrices.rank, np.ones((1, 1), dtype=np.float32))

@@ -55,6 +55,37 @@ def test_build_teacher_cache_plan_counts_complete_and_stale_shards(
     assert public_train.complete is False
 
 
+def test_build_teacher_cache_plan_counts_stale_run_metadata(tmp_path: Path) -> None:
+    config_path = _write_experiment_config(tmp_path)
+    cache_dir = tmp_path / "project" / "artifacts" / "teacher_cache"
+    _write_complete_teacher_shard(cache_dir, split="public_train", aug_id="aug_000")
+    (cache_dir / "public_train__aug_000.run.json").write_text(
+        json.dumps({"version": 1, "split": "public_train", "aug_id": "aug_000", "seed": 999}),
+        encoding="utf-8",
+    )
+
+    plan = build_teacher_cache_plan(config_path)
+    public_train = plan.splits_by_name["public_train"]
+
+    assert public_train.complete_shards == 0
+    assert public_train.stale_or_malformed_shards == 1
+
+
+def test_build_teacher_cache_plan_ignores_corrupted_completed_logits_bytes(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_experiment_config(tmp_path)
+    cache_dir = tmp_path / "project" / "artifacts" / "teacher_cache"
+    _write_complete_teacher_shard(cache_dir, split="public_train", aug_id="aug_000")
+    (cache_dir / "public_train__aug_000.logits.npy").write_bytes(b"not a numpy file")
+
+    plan = build_teacher_cache_plan(config_path)
+    public_train = plan.splits_by_name["public_train"]
+
+    assert public_train.complete_shards == 0
+    assert public_train.completed_logits_bytes == 0
+
+
 def test_teacher_cache_plan_to_dict_is_json_serializable(tmp_path: Path) -> None:
     config_path = _write_experiment_config(tmp_path)
     cache_dir = tmp_path / "cache"

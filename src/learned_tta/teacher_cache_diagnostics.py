@@ -41,10 +41,10 @@ def summarize_teacher_cache_diagnostics(
 ) -> TeacherCacheDiagnostics:
     """Summarize completed teacher-cache metadata for one split."""
 
-    if identity_aug_id not in aug_ids:
-        raise ValueError(f"identity augmentation {identity_aug_id!r} is missing from aug_ids")
     if not aug_ids:
         raise ValueError("aug_ids must not be empty")
+    if identity_aug_id not in aug_ids:
+        raise ValueError(f"identity augmentation {identity_aug_id!r} is missing from aug_ids")
 
     metadata_by_aug = {
         aug_id: _read_metadata(cache_dir=cache_dir, split=split, aug_id=aug_id)

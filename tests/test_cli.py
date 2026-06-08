@@ -295,6 +295,32 @@ def test_cli_teacher_cache_plan_can_emit_json(
     assert "cache-teacher --split public_train" in payload["splits"][0]["next_command"]
 
 
+def test_cli_teacher_cache_plan_text_reports_next_commands(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
+    main(["teacher-cache-plan", "--config", str(config_path), "--split", "public_val"])
+    captured = capsys.readouterr()
+
+    assert "teacher cache plan:" in captured.out
+    assert "[ ] public_val:" in captured.out
+    assert "0 B/" in captured.out
+    assert "next public_val:" in captured.out
+
+
+def test_cli_teacher_backend_plan_text_reports_planned_accelerator(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main(["teacher-backend-plan", "--device", "cpu"])
+    captured = capsys.readouterr()
+
+    assert "teacher backend plan:" in captured.out
+    assert "recommended_accelerator=openvino" in captured.out
+    assert "- pytorch: status=implemented" in captured.out
+
+
 def test_cli_full_run_status_json_matches_stable_golden(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

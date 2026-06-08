@@ -20,6 +20,9 @@ def test_validate_teacher_cache_backend_accepts_only_implemented_backend() -> No
     with pytest.raises(ValueError, match="backend 'tensorrt' is planned but not implemented"):
         validate_teacher_cache_backend("tensorrt")
 
+    with pytest.raises(ValueError, match="unknown teacher cache backend 'coreml'"):
+        validate_teacher_cache_backend("coreml")
+
 
 @pytest.mark.parametrize(
     ("device", "accelerator"),
