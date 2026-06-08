@@ -25,6 +25,10 @@ from learned_tta.imagenet_split import (
     write_class_mapping,
     write_split_manifests,
 )
+from learned_tta.inference_backends import (
+    build_teacher_backend_plan,
+    teacher_backend_plan_to_dict,
+)
 from learned_tta.preflight import run_full_run_preflight
 from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
@@ -119,6 +123,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             splits=tuple(args.split) if args.split is not None else None,
             output_format=str(args.format),
         )
+    elif command == "teacher-backend-plan":
+        _cmd_teacher_backend_plan(
+            device=str(args.device),
+            output_format=str(args.format),
+        )
     elif command == "resume-full-run":
         _cmd_resume_full_run(
             config_path=Path(args.config),
@@ -141,6 +150,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             num_workers=int(args.num_workers),
             resume=not bool(args.no_resume),
             device=str(args.device),
+            backend=str(args.backend),
         )
     elif command == "build-targets":
         cache_dir = Path(args.cache_dir) if args.cache_dir is not None else None
@@ -435,6 +445,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output format for the teacher-cache plan.",
     )
 
+    teacher_backend_plan = subparsers.add_parser(
+        "teacher-backend-plan",
+        help="Show implemented and planned teacher inference backends.",
+    )
+    teacher_backend_plan.add_argument(
+        "--device",
+        default="cuda",
+        help="Target device family for recommendations, e.g. cuda or cpu.",
+    )
+    teacher_backend_plan.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the teacher backend plan.",
+    )
+
     resume_full_run = subparsers.add_parser(
         "resume-full-run",
         help="Run the next missing full-run step with Colab-safe cache supervision.",
@@ -496,6 +522,14 @@ def _build_parser() -> argparse.ArgumentParser:
     cache_teacher.add_argument("--batch-size", type=int, default=64)
     cache_teacher.add_argument("--num-workers", type=int, default=4)
     cache_teacher.add_argument("--device", default="cpu")
+    cache_teacher.add_argument(
+        "--backend",
+        default="pytorch",
+        help=(
+            "Teacher inference backend. Only pytorch is implemented; TensorRT, "
+            "ONNXRuntime, and OpenVINO are documented planned accelerators."
+        ),
+    )
     cache_teacher.add_argument("--no-resume", action="store_true")
 
     build_targets = subparsers.add_parser(
@@ -879,6 +913,25 @@ def _cmd_teacher_cache_plan(
             print(f"next {split.split}: {split.next_command}")
 
 
+def _cmd_teacher_backend_plan(*, device: str, output_format: str) -> None:
+    plan = build_teacher_backend_plan(device=device)
+    if output_format == "json":
+        print(json.dumps(teacher_backend_plan_to_dict(plan), indent=2, sort_keys=True))
+        return
+
+    print(
+        "teacher backend plan: "
+        f"active={plan.active_backend}, "
+        f"device={plan.device}, "
+        f"recommended_accelerator={plan.recommended_accelerator}"
+    )
+    for backend in plan.backends:
+        print(
+            f"- {backend.name}: status={backend.status}, "
+            f"device={backend.device}, role={backend.role}"
+        )
+
+
 def _format_bytes(value: int) -> str:
     units = ("B", "KiB", "MiB", "GiB", "TiB")
     size = float(value)
@@ -941,6 +994,7 @@ def _cmd_cache_teacher(
     num_workers: int,
     resume: bool,
     device: str,
+    backend: str,
 ) -> None:
     summary = cache_teacher_from_config(
         config_path=config_path,
@@ -952,6 +1006,7 @@ def _cmd_cache_teacher(
         num_workers=num_workers,
         resume=resume,
         device=device,
+        backend=backend,
     )
     print(
         f"teacher cache {summary.split}: wrote {_plural(len(summary.written), 'shard')}, "

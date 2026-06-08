@@ -417,6 +417,13 @@ logits cache is done?". It reports expected images, teacher forward passes,
 complete shards, missing files, stale/malformed shards, fp16 logits size, and
 the next `cache-teacher --split ...` command for `public_train`, `public_val`,
 and `private`.
+The current teacher inference backend is explicit:
+`cache-teacher --backend pytorch` is the implemented correctness path.
+`teacher-backend-plan` documents
+planned accelerators for future throughput work: TensorRT for CUDA,
+ONNXRuntime as a portable exported-model runtime, and OpenVINO for CPU. Passing
+a planned backend to `cache-teacher` fails early instead of silently running
+PyTorch under a misleading backend name.
 `make-splits` writes `artifacts/manifests/class_to_idx.json` alongside the CSV
 manifests. Keep that artifact with the run output; it is the audit trail tying
 manifest labels to the teacher model's ImageNet-1k output indices.

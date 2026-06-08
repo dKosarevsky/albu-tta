@@ -111,6 +111,25 @@ def test_run_teacher_cache_writes_and_resumes_complete_shards(
     assert benchmark["images_per_second"] > 0.0
 
 
+def test_run_teacher_cache_rejects_unimplemented_backend(
+    tmp_path: Path,
+    manifest_records: list[ManifestRecord],
+    candidates: list[AugmentationCandidate],
+) -> None:
+    with pytest.raises(ValueError, match="backend 'onnxruntime' is planned but not implemented"):
+        run_teacher_cache(
+            split="public",
+            records=manifest_records,
+            candidates=candidates,
+            teacher=_fake_teacher_bundle(),
+            output_dir=tmp_path / "cache",
+            seed=20260522,
+            batch_size=2,
+            num_workers=0,
+            backend="onnxruntime",
+        )
+
+
 def test_run_teacher_cache_resume_recomputes_when_run_metadata_changes(
     tmp_path: Path,
     manifest_records: list[ManifestRecord],

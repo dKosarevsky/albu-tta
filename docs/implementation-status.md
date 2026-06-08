@@ -19,6 +19,9 @@ Implemented:
 - Teacher-cache planning CLI that reports the expected 5M teacher forward
   passes, 300 shard target, missing files, stale/malformed shards, fp16 logits
   size, and the next split-level `cache-teacher` command.
+- Teacher backend planning CLI and explicit `cache-teacher --backend pytorch`
+  guard. TensorRT, ONNXRuntime, and OpenVINO are documented as planned
+  accelerators and fail early if requested before implementation.
 - AlbumentationsX registry with 100 single-transform candidates, explicit
   `fixed` vs `seeded_stochastic` determinism metadata, range validation for
   fixed candidates, and audit JSON including runtime package versions.
@@ -55,6 +58,8 @@ Not part of the implementation-complete status:
 - Producing the full 5M teacher logits cache.
 - Producing paper-ready numeric claims.
 - Claiming SOTA or cross-architecture generality.
+- Running teacher cache through TensorRT, ONNXRuntime, or OpenVINO. PyTorch is
+  the only implemented teacher-cache backend today.
 - Deciding the final best second-level target formulation. The current primary
   baseline remains the 100-output gain predictor; materialized target variants,
   clean-logits/tabular selector, global aggregation, class-specific aggregation,

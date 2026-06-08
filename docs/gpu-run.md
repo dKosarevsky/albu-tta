@@ -228,6 +228,9 @@ uv run python -m learned_tta.cli full-run-status \
 
 uv run python -m learned_tta.cli teacher-cache-plan \
   --config "$CONFIG"
+
+uv run python -m learned_tta.cli teacher-backend-plan \
+  --device cuda
 ```
 
 Teacher cache progress can be checked with sidecar counts:
@@ -261,6 +264,11 @@ Use `teacher-cache-plan` for a cache-specific summary: it reports expected
 images, teacher forward passes, complete shards, missing files,
 stale/malformed shards, fp16 logits size, and the next `cache-teacher --split`
 command for `public_train`, `public_val`, and `private`.
+The implemented teacher-cache backend is currently PyTorch. `teacher-backend-plan`
+documents planned accelerators: TensorRT for CUDA, ONNXRuntime as a portable
+exported-model runtime, and OpenVINO for CPU. Do not pass these planned backend
+names to `cache-teacher`; the CLI fails early until their inference paths are
+implemented and tested.
 
 ## One-Step Resume
 
@@ -364,12 +372,14 @@ uv run python -m learned_tta.cli check-clean-baseline \
 uv run python -m learned_tta.cli cache-teacher \
   --split public_train \
   --config "$CONFIG" \
+  --backend pytorch \
   --device cuda \
   --num-workers 2
 
 uv run python -m learned_tta.cli cache-teacher \
   --split public_val \
   --config "$CONFIG" \
+  --backend pytorch \
   --device cuda \
   --num-workers 2
 
