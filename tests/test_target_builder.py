@@ -57,6 +57,34 @@ def test_build_selector_targets_from_cache_uses_train_stats_for_val(
     np.testing.assert_allclose(val_targets.stats.std, train_targets.stats.std)
     assert train_targets.gain.shape == (2, 2)
     assert val_targets.gain.shape == (2, 2)
+    assert train_targets.target_kind == "gain"
+    assert val_targets.target_kind == "gain"
+
+
+def test_build_selector_targets_from_cache_can_use_softmax_weight_target(
+    tmp_path: Path,
+    cache_dir: Path,
+) -> None:
+    output_dir = tmp_path / "selector"
+
+    summary = build_selector_targets_from_cache(
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        train_split="public_train",
+        val_split="public_val",
+        aug_ids=["aug_000", "aug_001"],
+        identity_aug_id="aug_000",
+        target_kind="softmax_weight",
+    )
+
+    train_targets = load_selector_targets(summary.train_path)
+    train_weights = train_targets.target_z * train_targets.stats.std + train_targets.stats.mean
+
+    assert summary.target_kind == "softmax_weight"
+    assert train_targets.target_kind == "softmax_weight"
+    assert train_targets.higher_is_better is True
+    np.testing.assert_allclose(train_weights.sum(axis=1), np.ones(2), atol=1e-6)
+    assert np.all(train_weights >= 0.0)
 
 
 @pytest.mark.parametrize(
@@ -135,15 +163,23 @@ def test_build_targets_cli_writes_default_artifacts(
             "aug_000",
             "--candidate-id",
             "aug_001",
+            "--target-kind",
+            "true_logit",
         ]
     )
     captured = capsys.readouterr()
 
-    assert "selector targets: wrote public_train_targets.npz and public_val_targets.npz" in (
-        captured.out
+    assert (
+        "selector targets: wrote public_train_targets.npz and public_val_targets.npz"
+        in captured.out
     )
+    assert "target_kind=true_logit" in captured.out
     assert (output_dir / "public_train_targets.npz").exists()
     assert (output_dir / "public_val_targets.npz").exists()
+    assert (
+        load_selector_targets(output_dir / "public_train_targets.npz").target_kind
+        == "true_logit"
+    )
 
 
 def _write_split_cache(

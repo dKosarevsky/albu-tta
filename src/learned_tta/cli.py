@@ -25,6 +25,10 @@ from learned_tta.imagenet_split import (
     write_class_mapping,
     write_split_manifests,
 )
+from learned_tta.inference_backends import (
+    build_teacher_backend_plan,
+    teacher_backend_plan_to_dict,
+)
 from learned_tta.preflight import run_full_run_preflight
 from learned_tta.private_eval import evaluate_private_from_config
 from learned_tta.report_builder import build_report_from_config
@@ -34,7 +38,16 @@ from learned_tta.selector_training import train_selector_from_config
 from learned_tta.smoke import run_smoke_e2e
 from learned_tta.stacking import train_aggregator_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
+from learned_tta.targets import TRAINABLE_SELECTOR_TARGET_KINDS
 from learned_tta.teacher_cache import cache_teacher_from_config
+from learned_tta.teacher_cache_diagnostics import (
+    summarize_teacher_cache_diagnostics,
+    teacher_cache_diagnostics_to_dict,
+)
+from learned_tta.teacher_cache_plan import (
+    build_teacher_cache_plan,
+    teacher_cache_plan_to_dict,
+)
 from learned_tta.tta_tuning import tune_tta_from_config
 
 
@@ -107,6 +120,28 @@ def main(argv: Sequence[str] | None = None) -> None:
             fail_on_incomplete=bool(args.fail_on_incomplete),
             next_command=bool(args.next_command),
         )
+    elif command == "teacher-cache-plan":
+        _cmd_teacher_cache_plan(
+            config_path=Path(args.config),
+            cache_dir=_optional_path(args.cache_dir),
+            splits=tuple(args.split) if args.split is not None else None,
+            output_format=str(args.format),
+        )
+    elif command == "teacher-backend-plan":
+        _cmd_teacher_backend_plan(
+            device=str(args.device),
+            output_format=str(args.format),
+        )
+    elif command == "teacher-cache-diagnostics":
+        _cmd_teacher_cache_diagnostics(
+            config_path=Path(args.config),
+            split=str(args.split),
+            cache_dir=_optional_path(args.cache_dir),
+            candidate_ids=args.candidate_id,
+            top_n=int(args.top_n),
+            output_path=_optional_path(args.output),
+            output_format=str(args.format),
+        )
     elif command == "resume-full-run":
         _cmd_resume_full_run(
             config_path=Path(args.config),
@@ -129,6 +164,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             num_workers=int(args.num_workers),
             resume=not bool(args.no_resume),
             device=str(args.device),
+            backend=str(args.backend),
         )
     elif command == "build-targets":
         cache_dir = Path(args.cache_dir) if args.cache_dir is not None else None
@@ -140,6 +176,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             train_split=str(args.train_split),
             val_split=str(args.val_split),
             candidate_ids=args.candidate_id,
+            target_kind=str(args.target_kind),
         )
     elif command == "train-selector":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
@@ -394,6 +431,78 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print only the next required full-run command, if any.",
     )
 
+    teacher_cache_plan = subparsers.add_parser(
+        "teacher-cache-plan",
+        help="Summarize expected teacher-cache logits work and current shard progress.",
+    )
+    teacher_cache_plan.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    teacher_cache_plan.add_argument(
+        "--cache-dir",
+        help="Teacher cache directory. Defaults to artifacts.teacher_cache_dir.",
+    )
+    teacher_cache_plan.add_argument(
+        "--split",
+        action="append",
+        help=(
+            "Split to include. Repeatable. Defaults to public_train, public_val, "
+            "and private, which covers the 5M logits run once."
+        ),
+    )
+    teacher_cache_plan.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the teacher-cache plan.",
+    )
+
+    teacher_backend_plan = subparsers.add_parser(
+        "teacher-backend-plan",
+        help="Show implemented and planned teacher inference backends.",
+    )
+    teacher_backend_plan.add_argument(
+        "--device",
+        default="cuda",
+        help="Target device family for recommendations, e.g. cuda or cpu.",
+    )
+    teacher_backend_plan.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the teacher backend plan.",
+    )
+
+    teacher_cache_diagnostics = subparsers.add_parser(
+        "teacher-cache-diagnostics",
+        help="Summarize completed teacher-cache metadata for a split without loading logits.",
+    )
+    teacher_cache_diagnostics.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    teacher_cache_diagnostics.add_argument("--split", default="public_val")
+    teacher_cache_diagnostics.add_argument(
+        "--cache-dir",
+        help="Teacher cache directory. Defaults to artifacts.teacher_cache_dir.",
+    )
+    teacher_cache_diagnostics.add_argument(
+        "--candidate-id",
+        action="append",
+        help="Augmentation candidate id to include. May be passed more than once.",
+    )
+    teacher_cache_diagnostics.add_argument("--top-n", type=int, default=10)
+    teacher_cache_diagnostics.add_argument("--output", help="Optional JSON output path.")
+    teacher_cache_diagnostics.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for diagnostics.",
+    )
+
     resume_full_run = subparsers.add_parser(
         "resume-full-run",
         help="Run the next missing full-run step with Colab-safe cache supervision.",
@@ -455,6 +564,14 @@ def _build_parser() -> argparse.ArgumentParser:
     cache_teacher.add_argument("--batch-size", type=int, default=64)
     cache_teacher.add_argument("--num-workers", type=int, default=4)
     cache_teacher.add_argument("--device", default="cpu")
+    cache_teacher.add_argument(
+        "--backend",
+        default="pytorch",
+        help=(
+            "Teacher inference backend. Only pytorch is implemented; TensorRT, "
+            "ONNXRuntime, and OpenVINO are documented planned accelerators."
+        ),
+    )
     cache_teacher.add_argument("--no-resume", action="store_true")
 
     build_targets = subparsers.add_parser(
@@ -472,6 +589,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     build_targets.add_argument("--train-split", default="public_train")
     build_targets.add_argument("--val-split", default="public_val")
+    build_targets.add_argument(
+        "--target-kind",
+        choices=TRAINABLE_SELECTOR_TARGET_KINDS,
+        default="gain",
+        help=(
+            "High-is-better selector target to train against. Raw nll stays diagnostic-only; "
+            "use negative_nll for a trainable loss-based target."
+        ),
+    )
     build_targets.add_argument(
         "--candidate-id",
         action="append",
@@ -788,6 +914,128 @@ def _cmd_full_run_status(
         raise SystemExit(1)
 
 
+def _cmd_teacher_cache_plan(
+    *,
+    config_path: Path,
+    cache_dir: Path | None,
+    splits: tuple[str, ...] | None,
+    output_format: str,
+) -> None:
+    plan = build_teacher_cache_plan(
+        config_path=config_path,
+        cache_dir=cache_dir,
+        splits=splits if splits is not None else ("public_train", "public_val", "private"),
+    )
+    if output_format == "json":
+        print(json.dumps(teacher_cache_plan_to_dict(plan), indent=2, sort_keys=True))
+        return
+
+    print(
+        "teacher cache plan: "
+        f"predictions={plan.total_predictions:,}, "
+        f"shards={plan.complete_shards}/{plan.expected_shards}, "
+        f"missing_files={plan.missing_files}, "
+        f"stale_or_malformed={plan.stale_or_malformed_shards}, "
+        f"logits={_format_bytes(plan.completed_logits_bytes)}/"
+        f"{_format_bytes(plan.logits_bytes_estimate)}"
+    )
+    for split in plan.splits:
+        marker = "x" if split.complete else " "
+        print(
+            f"[{marker}] {split.split}: "
+            f"images={split.expected_images:,}, "
+            f"predictions={split.expected_predictions:,}, "
+            f"shards={split.complete_shards}/{split.expected_shards}, "
+            f"missing_files={split.missing_files}, "
+            f"stale_or_malformed={split.stale_or_malformed_shards}, "
+            f"logits={_format_bytes(split.completed_logits_bytes)}/"
+            f"{_format_bytes(split.logits_bytes_estimate)}"
+        )
+        if split.next_command is not None:
+            print(f"next {split.split}: {split.next_command}")
+
+
+def _cmd_teacher_backend_plan(*, device: str, output_format: str) -> None:
+    plan = build_teacher_backend_plan(device=device)
+    if output_format == "json":
+        print(json.dumps(teacher_backend_plan_to_dict(plan), indent=2, sort_keys=True))
+        return
+
+    print(
+        "teacher backend plan: "
+        f"active={plan.active_backend}, "
+        f"device={plan.device}, "
+        f"recommended_accelerator={plan.recommended_accelerator}"
+    )
+    for backend in plan.backends:
+        print(
+            f"- {backend.name}: status={backend.status}, "
+            f"device={backend.device}, role={backend.role}"
+        )
+
+
+def _cmd_teacher_cache_diagnostics(
+    *,
+    config_path: Path,
+    split: str,
+    cache_dir: Path | None,
+    candidate_ids: list[str] | None,
+    top_n: int,
+    output_path: Path | None,
+    output_format: str,
+) -> None:
+    config = load_experiment_config(config_path)
+    aug_ids = candidate_ids
+    if aug_ids is None:
+        aug_ids = [
+            candidate.id
+            for candidate in load_augmentation_registry(config.augmentations.registry_path)
+        ]
+    summary = summarize_teacher_cache_diagnostics(
+        cache_dir=cache_dir or config.artifacts.teacher_cache_dir,
+        split=split,
+        aug_ids=aug_ids,
+        identity_aug_id=config.augmentations.identity_id,
+        top_n=top_n,
+    )
+    payload = teacher_cache_diagnostics_to_dict(summary)
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    if output_format == "json":
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    print(
+        "teacher cache diagnostics: "
+        f"split={summary.split}, "
+        f"images={summary.image_count:,}, "
+        f"candidates={summary.candidate_count}, "
+        f"clean_top1={summary.clean_top1:.4f}, "
+        f"clean_top5={summary.clean_top5:.4f}, "
+        f"clean_nll={summary.clean_nll:.4f}, "
+        f"best_single={summary.best_single_aug_id} "
+        f"gain={summary.best_single_aug_mean_gain:.6g}, "
+        f"oracle_gain={summary.oracle_best_mean_gain:.6g}"
+    )
+    if output_path is not None:
+        print(f"wrote {output_path}")
+
+
+def _format_bytes(value: int) -> str:
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    size = float(value)
+    unit = units[0]
+    for unit in units:
+        if abs(size) < 1024.0 or unit == units[-1]:
+            break
+        size /= 1024.0
+    if unit == "B":
+        return f"{int(size)} {unit}"
+    return f"{size:.2f} {unit}"
+
+
 def _cmd_resume_full_run(
     config_path: Path,
     imagenet_val_dir: Path | None,
@@ -837,6 +1085,7 @@ def _cmd_cache_teacher(
     num_workers: int,
     resume: bool,
     device: str,
+    backend: str,
 ) -> None:
     summary = cache_teacher_from_config(
         config_path=config_path,
@@ -848,6 +1097,7 @@ def _cmd_cache_teacher(
         num_workers=num_workers,
         resume=resume,
         device=device,
+        backend=backend,
     )
     print(
         f"teacher cache {summary.split}: wrote {_plural(len(summary.written), 'shard')}, "
@@ -867,6 +1117,7 @@ def _cmd_build_targets(
     train_split: str,
     val_split: str,
     candidate_ids: list[str] | None,
+    target_kind: str,
 ) -> None:
     summary = build_selector_targets_from_config(
         config_path=config_path,
@@ -875,10 +1126,12 @@ def _cmd_build_targets(
         train_split=train_split,
         val_split=val_split,
         candidate_ids=candidate_ids,
+        target_kind=target_kind,
     )
     print(
         f"selector targets: wrote {summary.train_path.name} and {summary.val_path.name} "
-        f"for {_plural(len(summary.aug_ids), 'augmentation')}"
+        f"for {_plural(len(summary.aug_ids), 'augmentation')} "
+        f"target_kind={summary.target_kind}"
     )
 
 

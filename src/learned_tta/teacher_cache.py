@@ -21,6 +21,7 @@ from learned_tta.cache import (
 )
 from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest, make_teacher_dataloader
+from learned_tta.inference_backends import validate_teacher_cache_backend
 from learned_tta.teacher import TeacherBundle, load_teacher
 
 
@@ -45,9 +46,11 @@ def run_teacher_cache(
     num_workers: int,
     resume: bool = True,
     device: str | torch.device = "cpu",
+    backend: str = "pytorch",
 ) -> TeacherCacheRunSummary:
     """Run teacher inference for one split over a list of augmentation candidates."""
 
+    validate_teacher_cache_backend(backend)
     output_dir = Path(output_dir)
     torch_device = torch.device(device)
     model = teacher.model
@@ -104,6 +107,7 @@ def run_teacher_cache(
             split=split,
             aug_id=candidate.id,
             device=torch_device,
+            backend=backend,
             batch_size=batch_size,
             num_workers=num_workers,
             image_count=len(shard.image_ids),
@@ -129,9 +133,11 @@ def cache_teacher_from_config(
     num_workers: int = 4,
     resume: bool = True,
     device: str | torch.device = "cpu",
+    backend: str = "pytorch",
 ) -> TeacherCacheRunSummary:
     """Load config, manifest, registry, and teacher, then run teacher caching."""
 
+    validate_teacher_cache_backend(backend)
     config = load_experiment_config(config_path)
     resolved_manifest_path = manifest_path or config.artifacts.manifests_dir / f"{split}.csv"
     resolved_output_dir = output_dir or config.artifacts.teacher_cache_dir
@@ -153,6 +159,7 @@ def cache_teacher_from_config(
         num_workers=num_workers,
         resume=resume,
         device=device,
+        backend=backend,
     )
 
 
@@ -255,6 +262,7 @@ def _write_benchmark_sidecar(
     split: str,
     aug_id: str,
     device: torch.device,
+    backend: str,
     batch_size: int,
     num_workers: int,
     image_count: int,
@@ -265,7 +273,7 @@ def _write_benchmark_sidecar(
         "version": 1,
         "split": split,
         "aug_id": aug_id,
-        "backend": "pytorch",
+        "backend": backend,
         "device": str(device),
         "batch_size": int(batch_size),
         "num_workers": int(num_workers),
