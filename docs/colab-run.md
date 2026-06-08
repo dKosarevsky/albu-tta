@@ -28,6 +28,10 @@ CPU runtimes are supported for setup and diagnostics only. They can mount
 Drive, inspect existing artifacts, count completed shards, and print status, but
 they should not run the full teacher cache. The full public/private
 all-candidate cache is roughly 5,000,000 ResNet50 forwards.
+CPU runtimes can also prepare ImageNet validation layout before a GPU is
+available. Put `ILSVRC2012_img_val.tar` and `ILSVRC2012_devkit_t12.tar.gz` in
+Colab or Drive, then run `prepare-imagenet-val` to create
+`/content/imagenet_val_prepare/val`; this step does not require CUDA.
 
 The notebook prefers a locally prepared validation folder and falls back to a
 Google Drive copy:

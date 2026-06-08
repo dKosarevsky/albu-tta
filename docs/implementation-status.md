@@ -7,6 +7,8 @@ Implemented:
 - Project bootstrap, CI, pytest, coverage, Ruff, ty, badges, and artifact policy.
 - Strict ImageNet-val preflight requiring 1,000 WNID classes, 50,000 images,
   50 images per class, and a configured class index matching `timm-imagenet-1k`.
+- CPU-only `prepare-imagenet-val` CLI for converting local official
+  `ILSVRC2012_img_val.tar` plus devkit labels into `val/WNID/*.JPEG` layout.
 - Stratified ImageNet-val manifests for `public_train`, `public_val`,
   `public`, and `private`, plus `class_to_idx.json` for label-index audit.
 - Clean identity-cache baseline gate on `public_val` before full all-candidate
