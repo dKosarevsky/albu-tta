@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tarfile
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -81,6 +83,48 @@ def test_cli_make_splits_writes_manifests(
     assert (output_dir / "public.csv").exists()
     assert (output_dir / "private.csv").exists()
     assert (output_dir / "class_to_idx.json").exists()
+
+
+def test_cli_prepare_imagenet_val_writes_wnid_layout(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=2)
+    val_tar = tmp_path / "ILSVRC2012_img_val.tar"
+    devkit_tar = tmp_path / "ILSVRC2012_devkit_t12.tar.gz"
+    output_dir = tmp_path / "imagenet" / "val"
+    audit_path = tmp_path / "prepare_audit.json"
+    _write_test_val_tar(
+        val_tar,
+        [
+            "ILSVRC2012_val_00000001.JPEG",
+            "ILSVRC2012_val_00000002.JPEG",
+        ],
+    )
+    _write_test_devkit_tar(devkit_tar, labels=[1, 2])
+
+    main(
+        [
+            "prepare-imagenet-val",
+            "--config",
+            str(config_path),
+            "--val-tar",
+            str(val_tar),
+            "--devkit",
+            str(devkit_tar),
+            "--output-dir",
+            str(output_dir),
+            "--audit-output",
+            str(audit_path),
+        ]
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(audit_path.read_text(encoding="utf-8"))
+
+    assert "prepared ImageNet validation: images=2, classes=2" in captured.out
+    assert (output_dir / "n00000000" / "ILSVRC2012_val_00000001.JPEG").exists()
+    assert (output_dir / "n00000001" / "ILSVRC2012_val_00000002.JPEG").exists()
+    assert payload["label_mapping"] == "one_based_configured_class_index"
 
 
 def test_cli_check_full_run_reports_preflight_summary(
@@ -580,6 +624,25 @@ def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int 
         for image_idx in range(images_per_class):
             (class_dir / f"ILSVRC2012_val_{class_idx:04d}_{image_idx:04d}.JPEG").write_bytes(b"")
     return val_root
+
+
+def _write_test_val_tar(path: Path, names: list[str]) -> None:
+    with tarfile.open(path, "w") as archive:
+        for name in names:
+            payload = f"payload for {name}".encode()
+            info = tarfile.TarInfo(name=name)
+            info.size = len(payload)
+            archive.addfile(info, BytesIO(payload))
+
+
+def _write_test_devkit_tar(path: Path, labels: list[int]) -> None:
+    payload = ("\n".join(str(label) for label in labels) + "\n").encode()
+    info = tarfile.TarInfo(
+        name="ILSVRC2012_devkit_t12/data/ILSVRC2012_validation_ground_truth.txt"
+    )
+    info.size = len(payload)
+    with tarfile.open(path, "w:gz") as archive:
+        archive.addfile(info, BytesIO(payload))
 
 
 def _write_test_config(tmp_path: Path, class_count: int, images_per_class: int) -> Path:

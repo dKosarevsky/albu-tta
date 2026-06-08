@@ -17,6 +17,7 @@ from learned_tta.clean_baseline import (
     summarize_clean_center_crop_baseline_from_config,
 )
 from learned_tta.config import load_experiment_config
+from learned_tta.imagenet_prepare import prepare_imagenet_val
 from learned_tta.imagenet_split import (
     build_stratified_splits,
     discover_imagenet_val,
@@ -66,6 +67,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             config_path=Path(args.config),
             imagenet_val_dir=Path(args.imagenet_val_dir),
             output_dir=output_dir,
+        )
+    elif command == "prepare-imagenet-val":
+        _cmd_prepare_imagenet_val(
+            config_path=Path(args.config),
+            val_tar_path=Path(args.val_tar),
+            output_dir=Path(args.output_dir),
+            devkit_path=_optional_path(args.devkit),
+            ground_truth_path=_optional_path(args.ground_truth),
+            audit_output_path=_optional_path(args.audit_output),
+            overwrite=bool(args.overwrite),
         )
     elif command == "check-full-run":
         _cmd_check_full_run(
@@ -271,6 +282,39 @@ def _build_parser() -> argparse.ArgumentParser:
     make_splits.add_argument(
         "--output-dir",
         help="Manifest output directory. Defaults to artifacts.manifests_dir from config.",
+    )
+
+    prepare_imagenet_val = subparsers.add_parser(
+        "prepare-imagenet-val",
+        help="Prepare official ImageNet validation tar into val/WNID/*.JPEG layout.",
+    )
+    prepare_imagenet_val.add_argument("--config", required=True, help="Path to experiment YAML.")
+    prepare_imagenet_val.add_argument(
+        "--val-tar",
+        required=True,
+        help="Path to local ILSVRC2012_img_val.tar.",
+    )
+    prepare_imagenet_val.add_argument(
+        "--output-dir",
+        required=True,
+        help="Output validation directory to create, e.g. /datasets/imagenet/val.",
+    )
+    prepare_imagenet_val.add_argument(
+        "--devkit",
+        help="Path to local ILSVRC2012_devkit_t12.tar.gz or extracted devkit directory.",
+    )
+    prepare_imagenet_val.add_argument(
+        "--ground-truth",
+        help="Path to ILSVRC2012_validation_ground_truth.txt. Overrides --devkit.",
+    )
+    prepare_imagenet_val.add_argument(
+        "--audit-output",
+        help="Optional JSON audit path. Defaults to OUTPUT_DIR/_preparation_audit.json.",
+    )
+    prepare_imagenet_val.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing non-empty output directory.",
     )
 
     check_full_run = subparsers.add_parser(
@@ -601,6 +645,36 @@ def _cmd_make_splits(
     written = write_split_manifests(splits, target_dir)
     mapping_path = write_class_mapping(class_to_idx, Path(target_dir) / "class_to_idx.json")
     print(f"wrote {len(written)} split manifests to {target_dir}; wrote {mapping_path}")
+
+
+def _cmd_prepare_imagenet_val(
+    *,
+    config_path: Path,
+    val_tar_path: Path,
+    output_dir: Path,
+    devkit_path: Path | None,
+    ground_truth_path: Path | None,
+    audit_output_path: Path | None,
+    overwrite: bool,
+) -> None:
+    config = load_experiment_config(config_path)
+    class_to_idx = load_class_to_idx(config.dataset.class_index, config.project_root)
+    summary = prepare_imagenet_val(
+        val_tar_path=val_tar_path,
+        output_dir=output_dir,
+        class_to_idx=class_to_idx,
+        devkit_path=devkit_path,
+        ground_truth_path=ground_truth_path,
+        audit_output_path=audit_output_path,
+        overwrite=overwrite,
+    )
+    print(
+        "prepared ImageNet validation: "
+        f"images={summary.image_count}, "
+        f"classes={summary.class_count}, "
+        f"output_dir={summary.output_dir}, "
+        f"audit={summary.audit_output_path}"
+    )
 
 
 def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:
