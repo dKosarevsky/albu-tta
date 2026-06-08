@@ -6,10 +6,12 @@ import pytest
 from learned_tta.targets import (
     TargetStats,
     compute_gain_targets,
+    compute_selector_target_matrices,
     compute_target_stats,
     compute_true_class_nll,
     load_selector_targets,
     save_selector_targets,
+    select_selector_target_matrix,
     standardize_gain_targets,
 )
 
@@ -114,6 +116,66 @@ def test_compute_gain_targets_requires_identity_logits(
         compute_gain_targets(logits_by_aug, class_idxs, identity_aug_id="aug_999")
 
 
+def test_compute_selector_target_matrices_exposes_trainable_ablation_targets(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+) -> None:
+    matrices = compute_selector_target_matrices(
+        logits_by_aug,
+        class_idxs,
+        identity_aug_id="aug_000",
+        softmax_temperature=0.5,
+    )
+
+    assert matrices.aug_ids == ["aug_000", "aug_001", "aug_002"]
+    assert matrices.gain.shape == (2, 3)
+    assert matrices.nll.shape == (2, 3)
+    np.testing.assert_allclose(matrices.negative_nll, -matrices.nll)
+    np.testing.assert_allclose(matrices.helpfulness, (matrices.gain > 0.0).astype(np.float32))
+    assert matrices.rank[0, 2] == pytest.approx(1.0)
+    assert matrices.rank[0, 1] == pytest.approx(0.0)
+    np.testing.assert_allclose(matrices.softmax_weight.sum(axis=1), np.ones(2), atol=1e-6)
+    assert np.all(matrices.softmax_weight >= 0.0)
+    np.testing.assert_allclose(
+        matrices.true_logit[:, 0],
+        np.array([3.0, 1.0], dtype=np.float32),
+    )
+
+
+@pytest.mark.parametrize(
+    "target_kind",
+    ["gain", "negative_nll", "helpfulness", "rank", "softmax_weight", "true_logit"],
+)
+def test_select_selector_target_matrix_returns_high_is_better_target(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    target_kind: str,
+) -> None:
+    matrices = compute_selector_target_matrices(
+        logits_by_aug,
+        class_idxs,
+        identity_aug_id="aug_000",
+    )
+
+    selected = select_selector_target_matrix(matrices, target_kind)
+
+    assert selected.shape == matrices.gain.shape
+
+
+def test_select_selector_target_matrix_rejects_raw_nll_for_training(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+) -> None:
+    matrices = compute_selector_target_matrices(
+        logits_by_aug,
+        class_idxs,
+        identity_aug_id="aug_000",
+    )
+
+    with pytest.raises(ValueError, match="raw nll is diagnostic-only"):
+        select_selector_target_matrix(matrices, "nll")
+
+
 def test_compute_target_stats_and_standardize_round_trip() -> None:
     gain = np.array(
         [
@@ -178,7 +240,31 @@ def test_save_and_load_selector_targets(tmp_path) -> None:
 
     assert loaded.aug_ids == aug_ids
     assert loaded.image_ids == image_ids
+    assert loaded.target_kind == "gain"
+    assert loaded.higher_is_better is True
     np.testing.assert_array_equal(loaded.gain, gain)
     np.testing.assert_array_equal(loaded.target_z, target_z)
     np.testing.assert_array_equal(loaded.stats.mean, stats.mean)
     np.testing.assert_array_equal(loaded.stats.std, stats.std)
+
+
+def test_save_and_load_selector_targets_preserves_target_kind(tmp_path) -> None:
+    path = tmp_path / "targets.npz"
+    save_selector_targets(
+        path,
+        aug_ids=["aug_000", "aug_001"],
+        image_ids=["image-0", "image-1"],
+        gain=np.zeros((2, 2), dtype=np.float32),
+        target_z=np.ones((2, 2), dtype=np.float32),
+        stats=TargetStats(
+            mean=np.zeros(2, dtype=np.float32),
+            std=np.ones(2, dtype=np.float32),
+        ),
+        target_kind="softmax_weight",
+        higher_is_better=True,
+    )
+
+    loaded = load_selector_targets(path)
+
+    assert loaded.target_kind == "softmax_weight"
+    assert loaded.higher_is_better is True

@@ -109,6 +109,8 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
     assert checkpoint["aug_ids"] == ["aug_000", "aug_001"]
     assert checkpoint["target_mean"].tolist() == pytest.approx([0.0, 0.0])
     assert checkpoint["target_std"].tolist() == pytest.approx([1.0, 1.0])
+    assert checkpoint["target_kind"] == "gain"
+    assert checkpoint["higher_is_better"] is True
     assert "val_tta_nll" in summary.history[0]
     assert summary.history[0]["val_tta_best_k"] == 1
     assert "val_tta_oracle_recall" in summary.history[0]

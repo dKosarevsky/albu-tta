@@ -208,6 +208,8 @@ def train_selector_from_artifacts(
             optimizer=optimizer,
             aug_ids=train_targets.aug_ids,
             target_stats=train_targets.stats,
+            target_kind=train_targets.target_kind,
+            higher_is_better=train_targets.higher_is_better,
         )
         history.append(history_row)
 

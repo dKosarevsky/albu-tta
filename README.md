@@ -74,16 +74,21 @@ training, the best checkpoint is selected by public-validation
 regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
 written to `selector/selector_history.csv`.
 
-The current primary baseline is the 100-output gain predictor. Other target
-heads and second-level models are planned ablations after the full 5M teacher
-logits cache is available, not assumptions baked into the main claim. Planned
-ablations include 100 binary helpfulness labels (`gain > 0`), listwise or
-pairwise ranking heads, softmax-weight distillation from public-train oracle
-utilities, clean-logits/tabular selectors, global non-negative aggregation,
-class-specific aggregation, and XGBoost stacking. Selector utility scores may be
-negative because they represent predicted gain, but deployed probability TTA
-weights should remain non-negative, for example uniform top-k or softmax over
-selected utilities.
+The current primary baseline is the 100-output gain predictor. Target
+materialization for planned ablations after the full 5M teacher logits cache is
+implemented, but the scientific comparison of those heads is not an assumption
+baked into the main claim. `build-targets --target-kind` can currently emit
+trainable high-is-better targets for `gain`, `negative_nll`, `helpfulness`,
+`rank`, `softmax_weight`, and `true_logit`. Raw `nll` remains diagnostic-only;
+use `negative_nll` when the selector should learn a loss-derived utility.
+The implemented target variants cover the earlier planned
+100 binary helpfulness labels (`gain > 0`) and softmax-weight distillation from
+public-train oracle utilities. Second-level model ablations include
+clean-logits/tabular selectors, global non-negative aggregation,
+class-specific aggregation, and XGBoost stacking. Selector utility scores may
+be negative because they can represent predicted gain or negative NLL, but
+deployed probability TTA weights should remain non-negative, for example
+uniform top-k or softmax over selected utilities.
 
 Selector target artifacts also persist `image_id` order. Training refuses to pair
 a manifest with targets whose rows were generated from a different image order,
@@ -326,6 +331,9 @@ uv run python -m learned_tta.cli full-run-status \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --next-command
 
+uv run python -m learned_tta.cli teacher-cache-plan \
+  --config configs/experiment/resnet50_a1_in1k.yaml
+
 uv run python -m learned_tta.cli resume-full-run \
   --config configs/experiment/resnet50_a1_in1k.yaml \
   --imagenet-val-dir /path/to/imagenet/val \
@@ -356,6 +364,10 @@ uv run python -m learned_tta.cli cache-teacher --split public_val \
 
 uv run python -m learned_tta.cli build-targets \
   --config configs/experiment/resnet50_a1_in1k.yaml
+
+uv run python -m learned_tta.cli build-targets \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --target-kind softmax_weight
 
 uv run python -m learned_tta.cli train-selector \
   --config configs/experiment/resnet50_a1_in1k.yaml \
@@ -400,6 +412,11 @@ locations and print the next missing command without loading ImageNet or GPU
 models. The text output separates required steps from the optional XGBoost
 stacker, and `--format json` exposes the same required/optional status for
 external run scripts.
+Use `teacher-cache-plan` when the question is specifically "how much of the 5M
+logits cache is done?". It reports expected images, teacher forward passes,
+complete shards, missing files, stale/malformed shards, fp16 logits size, and
+the next `cache-teacher --split ...` command for `public_train`, `public_val`,
+and `private`.
 `make-splits` writes `artifacts/manifests/class_to_idx.json` alongside the CSV
 manifests. Keep that artifact with the run output; it is the audit trail tying
 manifest labels to the teacher model's ImageNet-1k output indices.

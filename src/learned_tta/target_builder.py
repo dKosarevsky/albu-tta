@@ -12,9 +12,10 @@ from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.split_policy import validate_selector_target_splits
 from learned_tta.targets import (
-    compute_gain_targets,
+    compute_selector_target_matrices,
     compute_target_stats,
     save_selector_targets,
+    select_selector_target_matrix,
     standardize_gain_targets,
 )
 
@@ -28,6 +29,7 @@ class SelectorTargetBuildSummary:
     aug_ids: list[str]
     train_rows: int
     val_rows: int
+    target_kind: str
 
 
 def build_selector_targets_from_cache(
@@ -37,6 +39,7 @@ def build_selector_targets_from_cache(
     val_split: str,
     aug_ids: list[str],
     identity_aug_id: str,
+    target_kind: str = "gain",
 ) -> SelectorTargetBuildSummary:
     """Build public-train and public-val selector target artifacts from cached logits."""
 
@@ -51,44 +54,51 @@ def build_selector_targets_from_cache(
     )
     val_logits, val_class_idxs, val_image_ids = _read_split_logits(cache_dir, val_split, aug_ids)
 
-    train_targets = compute_gain_targets(
+    train_matrices = compute_selector_target_matrices(
         logits_by_aug=train_logits,
         class_idxs=train_class_idxs,
         identity_aug_id=identity_aug_id,
     )
-    val_targets = compute_gain_targets(
+    val_matrices = compute_selector_target_matrices(
         logits_by_aug=val_logits,
         class_idxs=val_class_idxs,
         identity_aug_id=identity_aug_id,
     )
-    stats = compute_target_stats(train_targets.gain)
-    train_z = standardize_gain_targets(train_targets.gain, stats)
-    val_z = standardize_gain_targets(val_targets.gain, stats)
+    train_target = select_selector_target_matrix(train_matrices, target_kind)
+    val_target = select_selector_target_matrix(val_matrices, target_kind)
+    stats = compute_target_stats(train_target)
+    train_z = standardize_gain_targets(train_target, stats)
+    val_z = standardize_gain_targets(val_target, stats)
 
     train_path = output_dir / f"{train_split}_targets.npz"
     val_path = output_dir / f"{val_split}_targets.npz"
     save_selector_targets(
         path=train_path,
-        aug_ids=train_targets.aug_ids,
+        aug_ids=train_matrices.aug_ids,
         image_ids=train_image_ids,
-        gain=train_targets.gain,
+        gain=train_matrices.gain,
         target_z=train_z,
         stats=stats,
+        target_kind=target_kind,
+        higher_is_better=True,
     )
     save_selector_targets(
         path=val_path,
-        aug_ids=val_targets.aug_ids,
+        aug_ids=val_matrices.aug_ids,
         image_ids=val_image_ids,
-        gain=val_targets.gain,
+        gain=val_matrices.gain,
         target_z=val_z,
         stats=stats,
+        target_kind=target_kind,
+        higher_is_better=True,
     )
     return SelectorTargetBuildSummary(
         train_path=train_path,
         val_path=val_path,
-        aug_ids=train_targets.aug_ids,
-        train_rows=train_targets.gain.shape[0],
-        val_rows=val_targets.gain.shape[0],
+        aug_ids=train_matrices.aug_ids,
+        train_rows=train_matrices.gain.shape[0],
+        val_rows=val_matrices.gain.shape[0],
+        target_kind=target_kind,
     )
 
 
@@ -99,6 +109,7 @@ def build_selector_targets_from_config(
     train_split: str = "public_train",
     val_split: str = "public_val",
     candidate_ids: list[str] | None = None,
+    target_kind: str = "gain",
 ) -> SelectorTargetBuildSummary:
     """Load experiment config and build selector targets from cached teacher shards."""
 
@@ -117,6 +128,7 @@ def build_selector_targets_from_config(
         val_split=val_split,
         aug_ids=candidate_ids,
         identity_aug_id=config.augmentations.identity_id,
+        target_kind=target_kind,
     )
 
 

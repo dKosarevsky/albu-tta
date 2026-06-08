@@ -34,8 +34,12 @@ from learned_tta.selector_training import train_selector_from_config
 from learned_tta.smoke import run_smoke_e2e
 from learned_tta.stacking import train_aggregator_from_config
 from learned_tta.target_builder import build_selector_targets_from_config
+from learned_tta.targets import TRAINABLE_SELECTOR_TARGET_KINDS
 from learned_tta.teacher_cache import cache_teacher_from_config
-from learned_tta.teacher_cache_plan import build_teacher_cache_plan, teacher_cache_plan_to_dict
+from learned_tta.teacher_cache_plan import (
+    build_teacher_cache_plan,
+    teacher_cache_plan_to_dict,
+)
 from learned_tta.tta_tuning import tune_tta_from_config
 
 
@@ -148,6 +152,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             train_split=str(args.train_split),
             val_split=str(args.val_split),
             candidate_ids=args.candidate_id,
+            target_kind=str(args.target_kind),
         )
     elif command == "train-selector":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
@@ -508,6 +513,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     build_targets.add_argument("--train-split", default="public_train")
     build_targets.add_argument("--val-split", default="public_val")
+    build_targets.add_argument(
+        "--target-kind",
+        choices=TRAINABLE_SELECTOR_TARGET_KINDS,
+        default="gain",
+        help=(
+            "High-is-better selector target to train against. Raw nll stays diagnostic-only; "
+            "use negative_nll for a trainable loss-based target."
+        ),
+    )
     build_targets.add_argument(
         "--candidate-id",
         action="append",
@@ -957,6 +971,7 @@ def _cmd_build_targets(
     train_split: str,
     val_split: str,
     candidate_ids: list[str] | None,
+    target_kind: str,
 ) -> None:
     summary = build_selector_targets_from_config(
         config_path=config_path,
@@ -965,10 +980,12 @@ def _cmd_build_targets(
         train_split=train_split,
         val_split=val_split,
         candidate_ids=candidate_ids,
+        target_kind=target_kind,
     )
     print(
         f"selector targets: wrote {summary.train_path.name} and {summary.val_path.name} "
-        f"for {_plural(len(summary.aug_ids), 'augmentation')}"
+        f"for {_plural(len(summary.aug_ids), 'augmentation')} "
+        f"target_kind={summary.target_kind}"
     )
 
 

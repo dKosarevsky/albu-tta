@@ -41,6 +41,32 @@ class SavedSelectorTargets:
     gain: np.ndarray
     target_z: np.ndarray
     stats: TargetStats
+    target_kind: str = "gain"
+    higher_is_better: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class SelectorTargetMatrices:
+    """Per-image, per-augmentation target variants derived from teacher logits."""
+
+    aug_ids: list[str]
+    gain: np.ndarray
+    nll: np.ndarray
+    negative_nll: np.ndarray
+    helpfulness: np.ndarray
+    rank: np.ndarray
+    softmax_weight: np.ndarray
+    true_logit: np.ndarray
+
+
+TRAINABLE_SELECTOR_TARGET_KINDS = (
+    "gain",
+    "negative_nll",
+    "helpfulness",
+    "rank",
+    "softmax_weight",
+    "true_logit",
+)
 
 
 def compute_true_class_nll(logits: np.ndarray, class_idxs: np.ndarray) -> TrueClassLoss:
@@ -82,6 +108,60 @@ def compute_gain_targets(
     )
 
 
+def compute_selector_target_matrices(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    identity_aug_id: str,
+    softmax_temperature: float = 1.0,
+) -> SelectorTargetMatrices:
+    """Compute diagnostic and trainable selector target variants from teacher logits."""
+
+    if identity_aug_id not in logits_by_aug:
+        raise ValueError(f"identity augmentation {identity_aug_id!r} is missing")
+    if softmax_temperature <= 0.0:
+        raise ValueError("softmax_temperature must be positive")
+
+    aug_ids = sorted(logits_by_aug)
+    nll_columns = []
+    true_logit_columns = []
+    row_indices: np.ndarray | None = None
+    for aug_id in aug_ids:
+        logits = np.asarray(logits_by_aug[aug_id], dtype=np.float32)
+        if row_indices is None:
+            row_indices = np.arange(logits.shape[0])
+        losses = compute_true_class_nll(logits, class_idxs)
+        nll_columns.append(losses.nll_true)
+        true_logit_columns.append(logits[row_indices, class_idxs])
+    nll = np.stack(nll_columns, axis=1).astype(np.float32)
+    clean_nll = compute_true_class_nll(logits_by_aug[identity_aug_id], class_idxs).nll_true
+    gain = (clean_nll[:, None] - nll).astype(np.float32)
+
+    return SelectorTargetMatrices(
+        aug_ids=aug_ids,
+        gain=gain,
+        nll=nll,
+        negative_nll=(-nll).astype(np.float32),
+        helpfulness=(gain > 0.0).astype(np.float32),
+        rank=_rank_high_to_low(gain),
+        softmax_weight=_softmax(gain / softmax_temperature).astype(np.float32),
+        true_logit=np.stack(true_logit_columns, axis=1).astype(np.float32),
+    )
+
+
+def select_selector_target_matrix(
+    matrices: SelectorTargetMatrices,
+    target_kind: str,
+) -> np.ndarray:
+    """Return a trainable high-is-better target matrix by kind."""
+
+    if target_kind == "nll":
+        raise ValueError("raw nll is diagnostic-only; use negative_nll for selector training")
+    if target_kind not in TRAINABLE_SELECTOR_TARGET_KINDS:
+        allowed = ", ".join(TRAINABLE_SELECTOR_TARGET_KINDS)
+        raise ValueError(f"unknown selector target kind {target_kind!r}; expected one of {allowed}")
+    return np.asarray(getattr(matrices, target_kind), dtype=np.float32)
+
+
 def compute_target_stats(gain: np.ndarray, min_std: float = 1.0) -> TargetStats:
     """Compute per-augmentation standardization stats from public-train gain."""
 
@@ -114,6 +194,9 @@ def save_selector_targets(
     gain: np.ndarray,
     target_z: np.ndarray,
     stats: TargetStats,
+    *,
+    target_kind: str = "gain",
+    higher_is_better: bool = True,
 ) -> None:
     """Save selector targets and normalization stats as a compressed numpy artifact."""
 
@@ -138,6 +221,8 @@ def save_selector_targets(
         target_z=target_z,
         mean=np.asarray(stats.mean, dtype=np.float32),
         std=np.asarray(stats.std, dtype=np.float32),
+        target_kind=np.asarray(target_kind),
+        higher_is_better=np.asarray(higher_is_better),
     )
 
 
@@ -158,7 +243,30 @@ def load_selector_targets(path: Path) -> SavedSelectorTargets:
                 mean=np.asarray(data["mean"], dtype=np.float32),
                 std=np.asarray(data["std"], dtype=np.float32),
             ),
+            target_kind=(
+                str(data["target_kind"].item()) if "target_kind" in data.files else "gain"
+            ),
+            higher_is_better=(
+                bool(data["higher_is_better"].item())
+                if "higher_is_better" in data.files
+                else True
+            ),
         )
+
+
+def _rank_high_to_low(scores: np.ndarray) -> np.ndarray:
+    scores = np.asarray(scores, dtype=np.float32)
+    if scores.ndim != 2:
+        raise ValueError("scores must have shape [num_images, num_augmentations]")
+    if scores.shape[1] == 1:
+        return np.ones_like(scores, dtype=np.float32)
+
+    rank_values = np.linspace(1.0, 0.0, scores.shape[1], dtype=np.float32)
+    order = np.argsort(-scores, axis=1, kind="stable")
+    ranks = np.empty_like(scores, dtype=np.float32)
+    for row_idx, row_order in enumerate(order):
+        ranks[row_idx, row_order] = rank_values
+    return ranks
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:

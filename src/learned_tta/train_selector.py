@@ -79,6 +79,8 @@ def save_checkpoint_if_best(
     optimizer: Optimizer,
     aug_ids: list[str] | None = None,
     target_stats: TargetStats | None = None,
+    target_kind: str = "gain",
+    higher_is_better: bool = True,
 ) -> CheckpointState:
     """Save model checkpoint when validation NLL improves."""
 
@@ -97,6 +99,8 @@ def save_checkpoint_if_best(
     if target_stats is not None:
         checkpoint["target_mean"] = target_stats.mean
         checkpoint["target_std"] = target_stats.std
+    checkpoint["target_kind"] = target_kind
+    checkpoint["higher_is_better"] = higher_is_better
     torch.save(checkpoint, state.path)
     return CheckpointState(best_val_nll=val_nll, best_epoch=epoch, path=state.path)
 
