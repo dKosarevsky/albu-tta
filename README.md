@@ -32,6 +32,15 @@ driver for running the same `resume-full-run` pipeline outside a notebook.
 For handing the experiment to another GPU worker, use the shorter
 [`docs/gpu-handoff.md`](docs/gpu-handoff.md) checklist.
 
+The external GPU entrypoint is:
+
+```bash
+WORKDIR="$PWD" \
+RUN_ROOT="$HOME/albu-tta-runs/resnet50_a1_in1k" \
+IMAGENET_VAL_DIR="$HOME/datasets/imagenet/val" \
+scripts/run_full_imagenet_pipeline.sh
+```
+
 ## Methods
 
 The project now keeps two TTA learning layers separate.
