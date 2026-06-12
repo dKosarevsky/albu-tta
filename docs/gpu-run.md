@@ -108,6 +108,58 @@ print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "no cuda")
 PY
 ```
 
+## Scripted Full Pipeline
+
+The recommended non-Colab entrypoint is
+`scripts/run_full_imagenet_pipeline.sh`. It keeps generated artifacts in
+`RUN_ROOT`, links the repo-visible artifact paths to that persistent storage,
+checks CUDA, prepares ImageNet-val when `VAL_TAR` and `DEVKIT` or
+`GROUND_TRUTH` are provided, runs preflight checks, then loops over
+`resume-full-run` until `full-run-status --fail-on-incomplete` passes.
+
+Minimal run when ImageNet-val is already prepared:
+
+```bash
+cd "$WORKDIR"
+
+RUN_ROOT="$RUN_ROOT" \
+IMAGENET_VAL_DIR="$IMAGENET_VAL_DIR" \
+CONFIG="$CONFIG" \
+CACHE_LOG_DIR="$CACHE_LOG_DIR" \
+scripts/run_full_imagenet_pipeline.sh
+```
+
+Run with local official archives and let the script prepare the validation
+layout first:
+
+```bash
+cd "$WORKDIR"
+
+RUN_ROOT="$RUN_ROOT" \
+IMAGENET_VAL_DIR="$IMAGENET_VAL_DIR" \
+CONFIG="$CONFIG" \
+CACHE_LOG_DIR="$CACHE_LOG_DIR" \
+VAL_TAR=/path/to/ILSVRC2012_img_val.tar \
+DEVKIT=/path/to/ILSVRC2012_devkit_t12.tar.gz \
+scripts/run_full_imagenet_pipeline.sh
+```
+
+Useful controls:
+
+```text
+SYNC_DEPS=0              skip uv sync when the environment is already ready
+GIT_PULL=1               git pull --ff-only before running
+MAX_STEPS=1              run one supervised step and exit
+SLEEP_SECONDS=300        wait longer between background cache status checks
+FOREGROUND_CACHE=1       run cache-teacher in the foreground
+ALLOW_DUPLICATE_CACHE=1  bypass duplicate cache-process guard
+```
+
+The script intentionally refuses to replace non-symlink generated paths. This
+protects partially restored artifacts from accidental overwrites. If it stops
+there, inspect the path it prints and move the data into `RUN_ROOT` before
+rerunning.
+
 ## ImageNet Validation Check
 
 `IMAGENET_VAL_DIR` must contain WNID class directories directly under the
