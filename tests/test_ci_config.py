@@ -22,6 +22,21 @@ def implementation_status_text() -> str:
 
 
 @pytest.fixture
+def method_doc_text() -> str:
+    return (ROOT / "docs" / "method.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def full_run_doc_text() -> str:
+    return (ROOT / "docs" / "full-run.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def artifacts_doc_text() -> str:
+    return (ROOT / "docs" / "artifacts.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
 def colab_runbook_text() -> str:
     return (ROOT / "docs" / "colab-run.md").read_text(encoding="utf-8")
 
@@ -34,6 +49,31 @@ def gpu_handoff_text() -> str:
 @pytest.fixture
 def gpu_runbook_text() -> str:
     return (ROOT / "docs" / "gpu-run.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def project_docs_text(
+    readme_text: str,
+    method_doc_text: str,
+    full_run_doc_text: str,
+    artifacts_doc_text: str,
+    implementation_status_text: str,
+    colab_runbook_text: str,
+    gpu_handoff_text: str,
+    gpu_runbook_text: str,
+) -> str:
+    return "\n".join(
+        [
+            readme_text,
+            method_doc_text,
+            full_run_doc_text,
+            artifacts_doc_text,
+            implementation_status_text,
+            colab_runbook_text,
+            gpu_handoff_text,
+            gpu_runbook_text,
+        ]
+    )
 
 
 @pytest.fixture
@@ -98,6 +138,30 @@ def test_readme_badges_do_not_duplicate_ci_workflow_status(readme_text: str) -> 
 
 def test_readme_does_not_claim_pypi_status(readme_text: str) -> None:
     assert "pypi" not in readme_text.lower()
+
+
+def test_readme_is_a_short_navigation_page(readme_text: str) -> None:
+    assert len(readme_text.splitlines()) <= 120
+
+
+def test_readme_links_official_albumentationsx_repository(readme_text: str) -> None:
+    assert "https://github.com/albumentations-team/AlbumentationsX" in readme_text
+
+
+@pytest.mark.parametrize(
+    "doc_path",
+    [
+        "docs/implementation-status.md",
+        "docs/method.md",
+        "docs/full-run.md",
+        "docs/artifacts.md",
+        "docs/gpu-run.md",
+        "docs/gpu-handoff.md",
+        "docs/colab-run.md",
+    ],
+)
+def test_readme_links_core_documentation(readme_text: str, doc_path: str) -> None:
+    assert doc_path in readme_text
 
 
 @pytest.mark.parametrize(
@@ -253,11 +317,11 @@ def test_colab_notebook_uses_colab_safe_teacher_cache_workers(
         "weights should remain non-negative",
     ],
 )
-def test_readme_documents_selector_target_formulation(
-    readme_text: str,
+def test_method_doc_documents_selector_target_formulation(
+    method_doc_text: str,
     target_fragment: str,
 ) -> None:
-    assert target_fragment in readme_text
+    assert target_fragment in method_doc_text
 
 
 @pytest.mark.parametrize(
@@ -272,11 +336,11 @@ def test_readme_documents_selector_target_formulation(
         "ILSVRC2012_validation_ground_truth.txt",
     ],
 )
-def test_readme_documents_cpu_only_imagenet_preparation(
-    readme_text: str,
+def test_full_run_doc_documents_cpu_only_imagenet_preparation(
+    full_run_doc_text: str,
     prepare_fragment: str,
 ) -> None:
-    assert prepare_fragment in readme_text
+    assert prepare_fragment in full_run_doc_text
 
 
 @pytest.mark.parametrize(
@@ -305,11 +369,11 @@ def test_implementation_status_documents_selector_target_choice(
         "not deployable methods or tuning inputs",
     ],
 )
-def test_readme_documents_split_contract(
-    readme_text: str,
+def test_method_doc_documents_split_contract(
+    method_doc_text: str,
     leakage_fragment: str,
 ) -> None:
-    assert leakage_fragment in readme_text
+    assert leakage_fragment in method_doc_text
 
 
 def test_implementation_status_documents_split_role_guards(
@@ -406,11 +470,11 @@ def test_gpu_runbook_documents_full_logits_cache_requirements(
         "build-report",
     ],
 )
-def test_readme_documents_smoke_and_full_run_order(
-    readme_text: str,
+def test_project_docs_document_smoke_and_full_run_order(
+    project_docs_text: str,
     runbook_fragment: str,
 ) -> None:
-    assert runbook_fragment in readme_text
+    assert runbook_fragment in project_docs_text
 
 
 def test_ci_workflow_has_separate_pytest_ruff_ty_and_coverage_jobs(
