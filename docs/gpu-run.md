@@ -191,8 +191,11 @@ uv run python -m learned_tta.cli prepare-imagenet-val \
 It writes `val/WNID/*.JPEG` plus `_preparation_audit.json`. It refuses to write
 into a non-empty output directory unless `--overwrite` is passed. If the devkit
 has already been extracted, pass the extracted devkit directory to `--devkit`;
-if only `ILSVRC2012_validation_ground_truth.txt` is available, pass it with
-`--ground-truth`.
+for official ImageNet-val, do not replace the devkit with only
+`ILSVRC2012_validation_ground_truth.txt`. The ground-truth file stores
+`ILSVRC2012_ID` labels, while `meta.mat` in the devkit maps those IDs to WNID
+class directories. Use `--ground-truth` only for already normalized one-based
+labels that match the configured class index order.
 
 Verify the count and run the project preflight:
 

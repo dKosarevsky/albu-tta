@@ -233,6 +233,8 @@ def test_gpu_handoff_checklist_has_operational_contract(
         "prepare-imagenet-val",
         "ILSVRC2012_img_val.tar",
         "ILSVRC2012_devkit_t12.tar.gz",
+        "meta.mat",
+        "official `ILSVRC2012_ID` labels to WNID",
         "does not require CUDA",
     ],
 )
@@ -334,6 +336,9 @@ def test_method_doc_documents_selector_target_formulation(
         "does not download ImageNet",
         "does not require CUDA",
         "ILSVRC2012_validation_ground_truth.txt",
+        "ILSVRC2012_ID -> WNID",
+        "Passing `--ground-truth` is only for already",
+        "normalized one-based labels",
     ],
 )
 def test_full_run_doc_documents_cpu_only_imagenet_preparation(
@@ -396,6 +401,8 @@ def test_implementation_status_documents_split_role_guards(
         "ILSVRC2012_img_val.tar",
         "ILSVRC2012_devkit_t12.tar.gz",
         "ILSVRC2012_validation_ground_truth.txt",
+        "ILSVRC2012_ID",
+        "meta.mat",
         "--ground-truth",
         "--overwrite",
         "full teacher cache means 5M teacher",
