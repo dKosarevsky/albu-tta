@@ -9,7 +9,14 @@ import numpy as np
 import pytest
 from scipy.io import savemat
 
-from learned_tta.imagenet_prepare import _read_labels, prepare_imagenet_val
+from learned_tta.imagenet_prepare import (
+    _class_name_for_label,
+    _mat_field,
+    _mat_scalar,
+    _parse_devkit_meta_label_mapping,
+    _read_labels,
+    prepare_imagenet_val,
+)
 
 
 def test_prepare_imagenet_val_from_tar_and_devkit(tmp_path: Path) -> None:
@@ -408,6 +415,51 @@ def test_read_labels_rejects_missing_sources() -> None:
         _read_labels(devkit_path=None, ground_truth_path=None)
 
 
+def test_parse_devkit_meta_label_mapping_rejects_missing_synsets() -> None:
+    meta_buffer = BytesIO()
+    savemat(meta_buffer, {"not_synsets": np.array([1])})
+
+    with pytest.raises(ValueError, match="does not contain synsets"):
+        _parse_devkit_meta_label_mapping(
+            meta_bytes=meta_buffer.getvalue(),
+            class_to_idx={"n00000001": 0},
+        )
+
+
+def test_parse_devkit_meta_label_mapping_rejects_unmatched_class_index() -> None:
+    meta_buffer = BytesIO()
+    _write_meta_mat(meta_buffer, {1: "n00000002"})
+
+    with pytest.raises(ValueError, match="does not match configured class index"):
+        _parse_devkit_meta_label_mapping(
+            meta_bytes=meta_buffer.getvalue(),
+            class_to_idx={"n00000001": 0},
+        )
+
+
+def test_mat_field_rejects_missing_field() -> None:
+    with pytest.raises(ValueError, match="missing WNID"):
+        _mat_field(object(), "WNID")
+
+
+def test_mat_scalar_rejects_non_scalar_arrays() -> None:
+    with pytest.raises(ValueError, match="field must be scalar"):
+        _mat_scalar(np.array([1, 2]))
+
+
+def test_mat_scalar_decodes_bytes() -> None:
+    assert _mat_scalar(b"n01440764") == "n01440764"
+
+
+def test_class_name_for_label_rejects_missing_official_mapping_label() -> None:
+    with pytest.raises(ValueError, match="missing from ImageNet devkit meta mapping"):
+        _class_name_for_label(
+            490,
+            class_names_by_label=["n01440764"],
+            label_to_class_name={1: "n01440764"},
+        )
+
+
 def _write_val_tar(path: Path, names: list[str]) -> None:
     with tarfile.open(path, "w") as archive:
         for name in names:
@@ -434,15 +486,8 @@ def _write_devkit_tar_with_meta(
     id_to_wnid: dict[int, str],
 ) -> None:
     ground_truth = ("\n".join(str(label) for label in labels) + "\n").encode()
-    synsets = np.empty(
-        len(id_to_wnid),
-        dtype=[("ILSVRC2012_ID", "O"), ("WNID", "O"), ("words", "O")],
-    )
-    for index, (label, wnid) in enumerate(sorted(id_to_wnid.items())):
-        synsets[index] = (label, wnid, f"words for {wnid}")
-
     meta_buffer = BytesIO()
-    savemat(meta_buffer, {"synsets": synsets})
+    _write_meta_mat(meta_buffer, id_to_wnid)
 
     with tarfile.open(path, "w:gz") as archive:
         gt_info = tarfile.TarInfo(
@@ -455,3 +500,13 @@ def _write_devkit_tar_with_meta(
         meta_info = tarfile.TarInfo(name="ILSVRC2012_devkit_t12/data/meta.mat")
         meta_info.size = len(meta_payload)
         archive.addfile(meta_info, BytesIO(meta_payload))
+
+
+def _write_meta_mat(handle: BytesIO, id_to_wnid: dict[int, str]) -> None:
+    synsets = np.empty(
+        len(id_to_wnid),
+        dtype=[("ILSVRC2012_ID", "O"), ("WNID", "O"), ("words", "O")],
+    )
+    for index, (label, wnid) in enumerate(sorted(id_to_wnid.items())):
+        synsets[index] = (label, wnid, f"words for {wnid}")
+    savemat(handle, {"synsets": synsets})
