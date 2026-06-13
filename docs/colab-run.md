@@ -32,6 +32,9 @@ CPU runtimes can also prepare ImageNet validation layout before a GPU is
 available. Put `ILSVRC2012_img_val.tar` and `ILSVRC2012_devkit_t12.tar.gz` in
 Colab or Drive, then run `prepare-imagenet-val` to create
 `/content/imagenet_val_prepare/val`; this step does not require CUDA.
+Use the full official devkit archive or extracted devkit directory here, not
+just `ILSVRC2012_validation_ground_truth.txt`: `meta.mat` is needed to map
+official `ILSVRC2012_ID` labels to WNID class directories.
 
 The notebook prefers a locally prepared validation folder and falls back to a
 Google Drive copy:

@@ -5,9 +5,18 @@ import tarfile
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import pytest
+from scipy.io import savemat
 
-from learned_tta.imagenet_prepare import _read_labels, prepare_imagenet_val
+from learned_tta.imagenet_prepare import (
+    _class_name_for_label,
+    _mat_field,
+    _mat_scalar,
+    _parse_devkit_meta_label_mapping,
+    _read_labels,
+    prepare_imagenet_val,
+)
 
 
 def test_prepare_imagenet_val_from_tar_and_devkit(tmp_path: Path) -> None:
@@ -49,6 +58,44 @@ def test_prepare_imagenet_val_from_tar_and_devkit(tmp_path: Path) -> None:
         "ILSVRC2012_val_00000002.JPEG",
         "ILSVRC2012_val_00000004.JPEG",
     ]
+
+
+def test_prepare_imagenet_val_uses_official_devkit_meta_label_mapping(
+    tmp_path: Path,
+) -> None:
+    val_tar = tmp_path / "ILSVRC2012_img_val.tar"
+    devkit_tar = tmp_path / "ILSVRC2012_devkit_t12.tar.gz"
+    output_dir = tmp_path / "val"
+    audit_path = tmp_path / "prepare_audit.json"
+    _write_val_tar(
+        val_tar,
+        [
+            "ILSVRC2012_val_00000001.JPEG",
+            "ILSVRC2012_val_00000002.JPEG",
+        ],
+    )
+    _write_devkit_tar_with_meta(
+        devkit_tar,
+        labels=[490, 1],
+        id_to_wnid={
+            1: "n01440764",
+            490: "n01751748",
+        },
+    )
+
+    summary = prepare_imagenet_val(
+        val_tar_path=val_tar,
+        output_dir=output_dir,
+        class_to_idx={"n01440764": 0, "n01751748": 1},
+        devkit_path=devkit_tar,
+        audit_output_path=audit_path,
+    )
+
+    payload = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert summary.images_per_class == {"n01440764": 1, "n01751748": 1}
+    assert payload["label_mapping"] == "official_ilsvrc2012_id_to_wnid"
+    assert (output_dir / "n01751748" / "ILSVRC2012_val_00000001.JPEG").exists()
+    assert (output_dir / "n01440764" / "ILSVRC2012_val_00000002.JPEG").exists()
 
 
 def test_prepare_imagenet_val_accepts_direct_ground_truth_file(tmp_path: Path) -> None:
@@ -368,6 +415,51 @@ def test_read_labels_rejects_missing_sources() -> None:
         _read_labels(devkit_path=None, ground_truth_path=None)
 
 
+def test_parse_devkit_meta_label_mapping_rejects_missing_synsets() -> None:
+    meta_buffer = BytesIO()
+    savemat(meta_buffer, {"not_synsets": np.array([1])})
+
+    with pytest.raises(ValueError, match="does not contain synsets"):
+        _parse_devkit_meta_label_mapping(
+            meta_bytes=meta_buffer.getvalue(),
+            class_to_idx={"n00000001": 0},
+        )
+
+
+def test_parse_devkit_meta_label_mapping_rejects_unmatched_class_index() -> None:
+    meta_buffer = BytesIO()
+    _write_meta_mat(meta_buffer, {1: "n00000002"})
+
+    with pytest.raises(ValueError, match="does not match configured class index"):
+        _parse_devkit_meta_label_mapping(
+            meta_bytes=meta_buffer.getvalue(),
+            class_to_idx={"n00000001": 0},
+        )
+
+
+def test_mat_field_rejects_missing_field() -> None:
+    with pytest.raises(ValueError, match="missing WNID"):
+        _mat_field(object(), "WNID")
+
+
+def test_mat_scalar_rejects_non_scalar_arrays() -> None:
+    with pytest.raises(ValueError, match="field must be scalar"):
+        _mat_scalar(np.array([1, 2]))
+
+
+def test_mat_scalar_decodes_bytes() -> None:
+    assert _mat_scalar(b"n01440764") == "n01440764"
+
+
+def test_class_name_for_label_rejects_missing_official_mapping_label() -> None:
+    with pytest.raises(ValueError, match="missing from ImageNet devkit meta mapping"):
+        _class_name_for_label(
+            490,
+            class_names_by_label=["n01440764"],
+            label_to_class_name={1: "n01440764"},
+        )
+
+
 def _write_val_tar(path: Path, names: list[str]) -> None:
     with tarfile.open(path, "w") as archive:
         for name in names:
@@ -385,3 +477,36 @@ def _write_devkit_tar(path: Path, labels: list[int]) -> None:
     info.size = len(payload)
     with tarfile.open(path, "w:gz") as archive:
         archive.addfile(info, BytesIO(payload))
+
+
+def _write_devkit_tar_with_meta(
+    path: Path,
+    *,
+    labels: list[int],
+    id_to_wnid: dict[int, str],
+) -> None:
+    ground_truth = ("\n".join(str(label) for label in labels) + "\n").encode()
+    meta_buffer = BytesIO()
+    _write_meta_mat(meta_buffer, id_to_wnid)
+
+    with tarfile.open(path, "w:gz") as archive:
+        gt_info = tarfile.TarInfo(
+            name="ILSVRC2012_devkit_t12/data/ILSVRC2012_validation_ground_truth.txt"
+        )
+        gt_info.size = len(ground_truth)
+        archive.addfile(gt_info, BytesIO(ground_truth))
+
+        meta_payload = meta_buffer.getvalue()
+        meta_info = tarfile.TarInfo(name="ILSVRC2012_devkit_t12/data/meta.mat")
+        meta_info.size = len(meta_payload)
+        archive.addfile(meta_info, BytesIO(meta_payload))
+
+
+def _write_meta_mat(handle: BytesIO, id_to_wnid: dict[int, str]) -> None:
+    synsets = np.empty(
+        len(id_to_wnid),
+        dtype=[("ILSVRC2012_ID", "O"), ("WNID", "O"), ("words", "O")],
+    )
+    for index, (label, wnid) in enumerate(sorted(id_to_wnid.items())):
+        synsets[index] = (label, wnid, f"words for {wnid}")
+    savemat(handle, {"synsets": synsets})

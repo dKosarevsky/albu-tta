@@ -56,6 +56,11 @@ DEVKIT=/path/to/ILSVRC2012_devkit_t12.tar.gz \
 scripts/run_full_imagenet_pipeline.sh
 ```
 
+Use the full official devkit archive or extracted devkit directory when
+preparing ImageNet-val. The validation ground-truth file stores
+`ILSVRC2012_ID` labels, and the project needs `meta.mat` from the devkit to map
+those labels back to ImageNet-1k WNID class directories.
+
 ## Quick Smoke
 
 Run the synthetic smoke pipeline before spending GPU time:

@@ -60,9 +60,12 @@ uv run python -m learned_tta.cli prepare-imagenet-val \
 ```
 
 `prepare-imagenet-val` does not download ImageNet. If the devkit has already
-been extracted, pass that directory with `--devkit`; if only
-`ILSVRC2012_validation_ground_truth.txt` is available, pass it with
-`--ground-truth`.
+been extracted, pass that directory with `--devkit`. For official ImageNet-val,
+prefer the full devkit archive or extracted devkit directory over a standalone
+`ILSVRC2012_validation_ground_truth.txt`: the ground-truth file stores
+`ILSVRC2012_ID` labels, and `meta.mat` supplies the required
+`ILSVRC2012_ID -> WNID` mapping. Passing `--ground-truth` is only for already
+normalized one-based labels that match the configured class index order.
 
 The prepared directory must contain exactly 1,000 WNID directories and 50,000
 JPEG files. Check it before launching GPU inference:
