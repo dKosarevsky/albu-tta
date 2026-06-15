@@ -6,13 +6,11 @@ import csv
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import torch
 from PIL import Image
-
-from learned_tta.augmentations import AugmentationCandidate, apply_candidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +67,7 @@ class AugmentedImageDataset(torch.utils.data.Dataset[TeacherSample]):
     def __init__(
         self,
         records: list[ManifestRecord],
-        candidate: AugmentationCandidate,
+        candidate: Any,
         preprocess: Callable[[Image.Image], torch.Tensor],
         seed: int,
     ) -> None:
@@ -82,6 +80,8 @@ class AugmentedImageDataset(torch.utils.data.Dataset[TeacherSample]):
         return len(self.records)
 
     def __getitem__(self, index: int) -> TeacherSample:
+        from learned_tta.augmentations import apply_candidate
+
         record = self.records[index]
         image = load_rgb_image(record.path)
         augmented = apply_candidate(self.candidate, image, seed=self.seed)
@@ -114,7 +114,7 @@ def collate_teacher_batch(samples: list[TeacherSample]) -> TeacherBatch:
 
 def make_teacher_dataloader(
     records: list[ManifestRecord],
-    candidate: AugmentationCandidate,
+    candidate: Any,
     preprocess: Callable[[Image.Image], torch.Tensor],
     seed: int,
     batch_size: int,

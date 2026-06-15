@@ -19,6 +19,27 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "configs" / "experiment" / "resnet50_a1_in1k.yaml"
 
 
+def test_cli_import_does_not_import_albumentations() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "import learned_tta.cli; "
+                "import learned_tta.teacher_cache; "
+                "import learned_tta.data; "
+                "print(int('albumentations' in sys.modules))"
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == "0"
+
+
 def test_cli_validate_augmentations_reports_candidate_count(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -232,8 +253,13 @@ def test_cli_summarize_clean_baseline_writes_full_val_summary(
     assert payload["overall"]["top1"] == pytest.approx(0.8)
 
 
-def test_cli_full_run_status_reports_next_step(capsys: pytest.CaptureFixture[str]) -> None:
-    main(["full-run-status", "--config", str(CONFIG_PATH)])
+def test_cli_full_run_status_reports_next_step(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
+    main(["full-run-status", "--config", str(config_path)])
 
     captured = capsys.readouterr()
 
@@ -245,8 +271,13 @@ def test_cli_full_run_status_reports_next_step(capsys: pytest.CaptureFixture[str
     assert "validate_augmentations" in captured.out
 
 
-def test_cli_full_run_status_can_emit_json(capsys: pytest.CaptureFixture[str]) -> None:
-    main(["full-run-status", "--config", str(CONFIG_PATH), "--format", "json"])
+def test_cli_full_run_status_can_emit_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
+    main(["full-run-status", "--config", str(config_path), "--format", "json"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -322,12 +353,15 @@ def test_cli_teacher_backend_plan_text_reports_planned_accelerator(
 
 
 def test_cli_full_run_status_json_matches_stable_golden(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    main(["full-run-status", "--config", str(CONFIG_PATH), "--format", "json"])
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
+    main(["full-run-status", "--config", str(config_path), "--format", "json"])
 
     captured = capsys.readouterr()
-    payload = _normalize_json_paths(json.loads(captured.out))
+    payload = _normalize_json_paths(json.loads(captured.out), extra_root=tmp_path)
 
     assert {
         "completed_required_steps": payload["completed_required_steps"],
@@ -338,7 +372,7 @@ def test_cli_full_run_status_json_matches_stable_golden(
     } == {
         "completed_required_steps": 0,
         "completed_steps": 0,
-        "config_path": "<repo>/configs/experiment/resnet50_a1_in1k.yaml",
+        "config_path": "<tmp>/experiment.yaml",
         "total_required_steps": 14,
         "total_steps": 15,
     }
@@ -347,22 +381,22 @@ def test_cli_full_run_status_json_matches_stable_golden(
         {
             "command": (
                 "uv run python -m learned_tta.cli validate-augmentations "
-                "--config <repo>/configs/experiment/resnet50_a1_in1k.yaml "
-                "--audit-output <repo>/artifacts/augmentation_registry_audit.json"
+                "--config <tmp>/experiment.yaml "
+                "--audit-output <tmp>/artifacts/augmentation_registry_audit.json"
             ),
             "complete": False,
             "extra_output_count": 0,
             "extra_outputs": [],
             "missing_output_count": 1,
-            "missing_outputs": ["<repo>/artifacts/augmentation_registry_audit.json"],
+            "missing_outputs": ["<tmp>/artifacts/augmentation_registry_audit.json"],
             "name": "validate_augmentations",
-            "outputs": ["<repo>/artifacts/augmentation_registry_audit.json"],
+            "outputs": ["<tmp>/artifacts/augmentation_registry_audit.json"],
             "required": True,
         },
         {
             "command": (
                 "uv run python -m learned_tta.cli make-splits "
-                "--config <repo>/configs/experiment/resnet50_a1_in1k.yaml "
+                "--config <tmp>/experiment.yaml "
                 "--imagenet-val-dir /path/to/imagenet/val"
             ),
             "complete": False,
@@ -370,19 +404,19 @@ def test_cli_full_run_status_json_matches_stable_golden(
             "extra_outputs": [],
             "missing_output_count": 5,
             "missing_outputs": [
-                "<repo>/artifacts/manifests/public_train.csv",
-                "<repo>/artifacts/manifests/public_val.csv",
-                "<repo>/artifacts/manifests/public.csv",
-                "<repo>/artifacts/manifests/private.csv",
-                "<repo>/artifacts/manifests/class_to_idx.json",
+                "<tmp>/artifacts/manifests/public_train.csv",
+                "<tmp>/artifacts/manifests/public_val.csv",
+                "<tmp>/artifacts/manifests/public.csv",
+                "<tmp>/artifacts/manifests/private.csv",
+                "<tmp>/artifacts/manifests/class_to_idx.json",
             ],
             "name": "make_splits",
             "outputs": [
-                "<repo>/artifacts/manifests/public_train.csv",
-                "<repo>/artifacts/manifests/public_val.csv",
-                "<repo>/artifacts/manifests/public.csv",
-                "<repo>/artifacts/manifests/private.csv",
-                "<repo>/artifacts/manifests/class_to_idx.json",
+                "<tmp>/artifacts/manifests/public_train.csv",
+                "<tmp>/artifacts/manifests/public_val.csv",
+                "<tmp>/artifacts/manifests/public.csv",
+                "<tmp>/artifacts/manifests/private.csv",
+                "<tmp>/artifacts/manifests/class_to_idx.json",
             ],
             "required": True,
         },
@@ -390,7 +424,7 @@ def test_cli_full_run_status_json_matches_stable_golden(
             "command": (
                 "uv run python -m learned_tta.cli cache-teacher "
                 "--split public_val "
-                "--config <repo>/configs/experiment/resnet50_a1_in1k.yaml "
+                "--config <tmp>/experiment.yaml "
                 "--device cuda --num-workers 2 --candidate-id aug_000"
             ),
             "complete": False,
@@ -398,15 +432,15 @@ def test_cli_full_run_status_json_matches_stable_golden(
             "extra_outputs": [],
             "missing_output_count": 3,
             "missing_outputs": [
-                "<repo>/artifacts/teacher_cache/public_val__aug_000.parquet",
-                "<repo>/artifacts/teacher_cache/public_val__aug_000.logits.npy",
-                "<repo>/artifacts/teacher_cache/public_val__aug_000.run.json",
+                "<tmp>/artifacts/teacher_cache/public_val__aug_000.parquet",
+                "<tmp>/artifacts/teacher_cache/public_val__aug_000.logits.npy",
+                "<tmp>/artifacts/teacher_cache/public_val__aug_000.run.json",
             ],
             "name": "cache_public_val_identity",
             "outputs": [
-                "<repo>/artifacts/teacher_cache/public_val__aug_000.parquet",
-                "<repo>/artifacts/teacher_cache/public_val__aug_000.logits.npy",
-                "<repo>/artifacts/teacher_cache/public_val__aug_000.run.json",
+                "<tmp>/artifacts/teacher_cache/public_val__aug_000.parquet",
+                "<tmp>/artifacts/teacher_cache/public_val__aug_000.logits.npy",
+                "<tmp>/artifacts/teacher_cache/public_val__aug_000.run.json",
             ],
             "required": True,
         },
@@ -414,14 +448,17 @@ def test_cli_full_run_status_json_matches_stable_golden(
 
 
 def test_cli_full_run_status_can_fail_on_incomplete_required_steps(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
     with pytest.raises(SystemExit) as exc_info:
         main(
             [
                 "full-run-status",
                 "--config",
-                str(CONFIG_PATH),
+                str(config_path),
                 "--fail-on-incomplete",
             ]
         )
@@ -433,9 +470,12 @@ def test_cli_full_run_status_can_fail_on_incomplete_required_steps(
 
 
 def test_cli_full_run_status_can_print_only_next_command(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    main(["full-run-status", "--config", str(CONFIG_PATH), "--next-command"])
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
+    main(["full-run-status", "--config", str(config_path), "--next-command"])
 
     captured = capsys.readouterr()
 
@@ -447,14 +487,17 @@ def test_cli_full_run_status_can_print_only_next_command(
 
 
 def test_cli_full_run_status_next_command_can_fail_on_incomplete(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
     with pytest.raises(SystemExit) as exc_info:
         main(
             [
                 "full-run-status",
                 "--config",
-                str(CONFIG_PATH),
+                str(config_path),
                 "--next-command",
                 "--fail-on-incomplete",
             ]
@@ -467,14 +510,17 @@ def test_cli_full_run_status_next_command_can_fail_on_incomplete(
 
 
 def test_cli_full_run_status_json_can_fail_on_incomplete(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
     with pytest.raises(SystemExit) as exc_info:
         main(
             [
                 "full-run-status",
                 "--config",
-                str(CONFIG_PATH),
+                str(config_path),
                 "--format",
                 "json",
                 "--fail-on-incomplete",
@@ -492,7 +538,7 @@ def test_cli_full_run_status_reports_no_next_step_for_complete_summary(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(
-        "learned_tta.cli.inspect_full_run_status",
+        "learned_tta.run_status.inspect_full_run_status",
         lambda _config_path: SimpleNamespace(
             completed_required_steps=14,
             total_required_steps=14,
@@ -529,7 +575,7 @@ def test_cli_resume_full_run_reports_background_cache_start(
         )
 
     monkeypatch.setattr(
-        "learned_tta.cli.run_next_full_run_step",
+        "learned_tta.run_supervisor.run_next_full_run_step",
         fake_run_next_full_run_step,
     )
 
@@ -626,7 +672,10 @@ def test_cli_resume_full_run_reports_non_started_statuses(
     result: SimpleNamespace,
     expected_lines: list[str],
 ) -> None:
-    monkeypatch.setattr("learned_tta.cli.run_next_full_run_step", lambda **_kwargs: result)
+    monkeypatch.setattr(
+        "learned_tta.run_supervisor.run_next_full_run_step",
+        lambda **_kwargs: result,
+    )
 
     main(["resume-full-run", "--config", str(CONFIG_PATH)])
     captured = capsys.readouterr()
@@ -639,7 +688,7 @@ def test_cli_resume_full_run_rejects_unknown_supervisor_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "learned_tta.cli.run_next_full_run_step",
+        "learned_tta.run_supervisor.run_next_full_run_step",
         lambda **_kwargs: SimpleNamespace(
             status="unknown",
             step_name="mystery",
@@ -761,11 +810,17 @@ artifacts:
     return config_path
 
 
-def _normalize_json_paths(value: Any) -> Any:
+def _normalize_json_paths(value: Any, extra_root: Path | None = None) -> Any:
     if isinstance(value, dict):
-        return {key: _normalize_json_paths(item) for key, item in value.items()}
+        return {
+            key: _normalize_json_paths(item, extra_root=extra_root)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [_normalize_json_paths(item) for item in value]
+        return [_normalize_json_paths(item, extra_root=extra_root) for item in value]
     if isinstance(value, str):
-        return value.replace(str(ROOT), "<repo>")
+        normalized = value.replace(str(ROOT), "<repo>")
+        if extra_root is not None:
+            normalized = normalized.replace(str(extra_root), "<tmp>")
+        return normalized
     return value

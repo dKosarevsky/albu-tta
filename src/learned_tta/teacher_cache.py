@@ -7,12 +7,11 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 
-from learned_tta.augmentations import AugmentationCandidate, load_augmentation_registry
 from learned_tta.cache import (
     TeacherShard,
     shard_is_complete,
@@ -23,6 +22,9 @@ from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest, make_teacher_dataloader
 from learned_tta.inference_backends import validate_teacher_cache_backend
 from learned_tta.teacher import TeacherBundle, load_teacher
+
+if TYPE_CHECKING:
+    from learned_tta.augmentations import AugmentationCandidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,13 +143,15 @@ def cache_teacher_from_config(
     config = load_experiment_config(config_path)
     resolved_manifest_path = manifest_path or config.artifacts.manifests_dir / f"{split}.csv"
     resolved_output_dir = output_dir or config.artifacts.teacher_cache_dir
-    candidates = load_augmentation_registry(config.augmentations.registry_path)
-    if candidate_ids is not None:
-        candidates = _filter_candidates(candidates, candidate_ids)
     teacher = load_teacher(
         model_name=config.teacher.model_name,
         pretrained=config.teacher.pretrained,
     )
+    from learned_tta.augmentations import load_augmentation_registry
+
+    candidates = load_augmentation_registry(config.augmentations.registry_path)
+    if candidate_ids is not None:
+        candidates = _filter_candidates(candidates, candidate_ids)
     return run_teacher_cache(
         split=split,
         records=load_manifest(resolved_manifest_path),

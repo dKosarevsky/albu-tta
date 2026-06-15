@@ -7,11 +7,6 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from learned_tta.augmentations import (
-    load_augmentation_registry,
-    validate_augmentation_registry,
-    write_augmentation_audit,
-)
 from learned_tta.clean_baseline import (
     check_clean_baseline_from_config,
     summarize_clean_center_crop_baseline_from_config,
@@ -29,26 +24,7 @@ from learned_tta.inference_backends import (
     build_teacher_backend_plan,
     teacher_backend_plan_to_dict,
 )
-from learned_tta.preflight import run_full_run_preflight
-from learned_tta.private_eval import evaluate_private_from_config
-from learned_tta.report_builder import build_report_from_config
-from learned_tta.run_status import full_run_status_to_dict, inspect_full_run_status
-from learned_tta.run_supervisor import run_next_full_run_step
-from learned_tta.selector_training import train_selector_from_config
-from learned_tta.smoke import run_smoke_e2e
-from learned_tta.stacking import train_aggregator_from_config
-from learned_tta.target_builder import build_selector_targets_from_config
 from learned_tta.targets import TRAINABLE_SELECTOR_TARGET_KINDS
-from learned_tta.teacher_cache import cache_teacher_from_config
-from learned_tta.teacher_cache_diagnostics import (
-    summarize_teacher_cache_diagnostics,
-    teacher_cache_diagnostics_to_dict,
-)
-from learned_tta.teacher_cache_plan import (
-    build_teacher_cache_plan,
-    teacher_cache_plan_to_dict,
-)
-from learned_tta.tta_tuning import tune_tta_from_config
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -722,6 +698,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_validate_augmentations(config_path: Path, audit_output: Path | None) -> None:
+    from learned_tta.augmentations import (
+        load_augmentation_registry,
+        validate_augmentation_registry,
+        write_augmentation_audit,
+    )
+
     config = load_experiment_config(config_path)
     candidates = load_augmentation_registry(config.augmentations.registry_path)
     validate_augmentation_registry(
@@ -745,6 +727,8 @@ def _cmd_run_smoke(
     epochs: int,
     device: str,
 ) -> None:
+    from learned_tta.smoke import run_smoke_e2e
+
     summary = run_smoke_e2e(
         config_path=config_path,
         output_dir=output_dir,
@@ -804,6 +788,8 @@ def _cmd_prepare_imagenet_val(
 
 
 def _cmd_check_full_run(config_path: Path, imagenet_val_dir: Path) -> None:
+    from learned_tta.preflight import run_full_run_preflight
+
     summary = run_full_run_preflight(
         config_path=config_path,
         imagenet_val_dir=imagenet_val_dir,
@@ -876,6 +862,8 @@ def _cmd_full_run_status(
     fail_on_incomplete: bool,
     next_command: bool,
 ) -> None:
+    from learned_tta.run_status import full_run_status_to_dict, inspect_full_run_status
+
     summary = inspect_full_run_status(config_path)
     if next_command:
         if summary.next_step is not None:
@@ -921,6 +909,11 @@ def _cmd_teacher_cache_plan(
     splits: tuple[str, ...] | None,
     output_format: str,
 ) -> None:
+    from learned_tta.teacher_cache_plan import (
+        build_teacher_cache_plan,
+        teacher_cache_plan_to_dict,
+    )
+
     plan = build_teacher_cache_plan(
         config_path=config_path,
         cache_dir=cache_dir,
@@ -984,6 +977,12 @@ def _cmd_teacher_cache_diagnostics(
     output_path: Path | None,
     output_format: str,
 ) -> None:
+    from learned_tta.augmentations import load_augmentation_registry
+    from learned_tta.teacher_cache_diagnostics import (
+        summarize_teacher_cache_diagnostics,
+        teacher_cache_diagnostics_to_dict,
+    )
+
     config = load_experiment_config(config_path)
     aug_ids = candidate_ids
     if aug_ids is None:
@@ -1044,6 +1043,8 @@ def _cmd_resume_full_run(
     background_cache: bool,
     allow_duplicate_cache: bool,
 ) -> None:
+    from learned_tta.run_supervisor import run_next_full_run_step
+
     result = run_next_full_run_step(
         config_path=config_path,
         imagenet_val_dir=imagenet_val_dir,
@@ -1087,6 +1088,8 @@ def _cmd_cache_teacher(
     device: str,
     backend: str,
 ) -> None:
+    from learned_tta.teacher_cache import cache_teacher_from_config
+
     summary = cache_teacher_from_config(
         config_path=config_path,
         split=split,
@@ -1119,6 +1122,8 @@ def _cmd_build_targets(
     candidate_ids: list[str] | None,
     target_kind: str,
 ) -> None:
+    from learned_tta.target_builder import build_selector_targets_from_config
+
     summary = build_selector_targets_from_config(
         config_path=config_path,
         cache_dir=cache_dir,
@@ -1154,6 +1159,8 @@ def _cmd_train_selector(
     rank_weight: float,
     device: str,
 ) -> None:
+    from learned_tta.selector_training import train_selector_from_config
+
     summary = train_selector_from_config(
         config_path=config_path,
         train_manifest_path=train_manifest_path,
@@ -1200,6 +1207,8 @@ def _cmd_tune_tta(
     num_workers: int,
     device: str,
 ) -> None:
+    from learned_tta.tta_tuning import tune_tta_from_config
+
     summary = tune_tta_from_config(
         config_path=config_path,
         split=split,
@@ -1234,6 +1243,8 @@ def _cmd_train_aggregator(
     active_threshold: float,
     device: str,
 ) -> None:
+    from learned_tta.stacking import train_aggregator_from_config
+
     summary = train_aggregator_from_config(
         config_path=config_path,
         split=split,
@@ -1269,6 +1280,8 @@ def _cmd_evaluate_private(
     num_workers: int,
     device: str,
 ) -> None:
+    from learned_tta.private_eval import evaluate_private_from_config
+
     summary = evaluate_private_from_config(
         config_path=config_path,
         split=split,
@@ -1311,6 +1324,8 @@ def _cmd_build_report(
     num_workers: int,
     device: str,
 ) -> None:
+    from learned_tta.report_builder import build_report_from_config
+
     summary = build_report_from_config(
         config_path=config_path,
         report_dir=report_dir,
