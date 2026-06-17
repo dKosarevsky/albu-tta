@@ -1,0 +1,10 @@
+strategy,clean_correct,tta_correct,both_right,clean_wrong_tta_right,clean_right_tta_wrong,both_wrong,num_images
+clean,20117.0,20117.0,20117.0,0.0,0.0,4883.0,25000.0
+fixed_light_tta,20117.0,20212.0,19601.0,611.0,516.0,4272.0,25000.0
+all_100_uniform,20117.0,20255.0,19968.0,287.0,149.0,4596.0,25000.0
+learned_topk_uniform,20117.0,20239.0,19878.0,361.0,239.0,4522.0,25000.0
+learned_topk_softmax_weighted,20117.0,20240.0,19876.0,364.0,241.0,4519.0,25000.0
+oracle_topk_uniform,20117.0,21873.0,20117.0,1756.0,0.0,3127.0,25000.0
+global_weighted_tta,20117.0,20372.0,19821.0,551.0,296.0,4332.0,25000.0
+class_weighted_tta,20117.0,20134.0,19615.0,519.0,502.0,4364.0,25000.0
+random_topk,20117.0,20222.0,19934.2,287.8,182.8,4595.2,25000.0

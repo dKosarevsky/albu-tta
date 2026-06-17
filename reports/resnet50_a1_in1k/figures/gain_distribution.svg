@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="360" y="28" text-anchor="middle" font-family="Arial" font-size="18" font-weight="700">Gain Distribution</text>
+<text x="18" y="180" transform="rotate(-90 18 180)" text-anchor="middle" font-family="Arial" font-size="12">count</text>
+<line x1="56" y1="306" x2="692" y2="306" stroke="#222"/>
+<line x1="56" y1="58" x2="56" y2="306" stroke="#222"/>
+<rect x="56.00" y="305.99" width="47.50" height="0.01" fill="#2f6f9f"/>
+<text x="79.75" y="322" text-anchor="middle" font-family="Arial" font-size="10">-16</text>
+<text x="79.75" y="301.99" text-anchor="middle" font-family="Arial" font-size="10">9</text>
+<rect x="109.50" y="305.96" width="47.50" height="0.04" fill="#2f6f9f"/>
+<text x="133.25" y="322" text-anchor="middle" font-family="Arial" font-size="10">-13</text>
+<text x="133.25" y="301.96" text-anchor="middle" font-family="Arial" font-size="10">64</text>
+<rect x="163.00" y="305.72" width="47.50" height="0.28" fill="#2f6f9f"/>
+<text x="186.75" y="322" text-anchor="middle" font-family="Arial" font-size="10">-11</text>
+<text x="186.75" y="301.72" text-anchor="middle" font-family="Arial" font-size="10">468</text>
+<rect x="216.50" y="304.60" width="47.50" height="1.40" fill="#2f6f9f"/>
+<text x="240.25" y="322" text-anchor="middle" font-family="Arial" font-size="10">-8</text>
+<text x="240.25" y="300.60" text-anchor="middle" font-family="Arial" font-size="10">2343</text>
+<rect x="270.00" y="300.15" width="47.50" height="5.85" fill="#2f6f9f"/>
+<text x="293.75" y="322" text-anchor="middle" font-family="Arial" font-size="10">-5.4</text>
+<text x="293.75" y="296.15" text-anchor="middle" font-family="Arial" font-size="10">9784</text>
+<rect x="323.50" y="249.35" width="47.50" height="56.65" fill="#2f6f9f"/>
+<text x="347.25" y="322" text-anchor="middle" font-family="Arial" font-size="10">-2.7</text>
+<text x="347.25" y="245.35" text-anchor="middle" font-family="Arial" font-size="10">94829</text>
+<rect x="377.00" y="74.00" width="47.50" height="232.00" fill="#2f6f9f"/>
+<text x="400.75" y="322" text-anchor="middle" font-family="Arial" font-size="10">-0.042</text>
+<text x="400.75" y="70.00" text-anchor="middle" font-family="Arial" font-size="10">388324</text>
+<rect x="430.50" y="303.92" width="47.50" height="2.08" fill="#2f6f9f"/>
+<text x="454.25" y="322" text-anchor="middle" font-family="Arial" font-size="10">2.6</text>
+<text x="454.25" y="299.92" text-anchor="middle" font-family="Arial" font-size="10">3474</text>
+<rect x="484.00" y="305.68" width="47.50" height="0.32" fill="#2f6f9f"/>
+<text x="507.75" y="322" text-anchor="middle" font-family="Arial" font-size="10">5.3</text>
+<text x="507.75" y="301.68" text-anchor="middle" font-family="Arial" font-size="10">528</text>
+<rect x="537.50" y="305.91" width="47.50" height="0.09" fill="#2f6f9f"/>
+<text x="561.25" y="322" text-anchor="middle" font-family="Arial" font-size="10">7.9</text>
+<text x="561.25" y="301.91" text-anchor="middle" font-family="Arial" font-size="10">146</text>
+<rect x="591.00" y="305.99" width="47.50" height="0.01" fill="#2f6f9f"/>
+<text x="614.75" y="322" text-anchor="middle" font-family="Arial" font-size="10">11</text>
+<text x="614.75" y="301.99" text-anchor="middle" font-family="Arial" font-size="10">24</text>
+<rect x="644.50" y="306.00" width="47.50" height="0.00" fill="#2f6f9f"/>
+<text x="668.25" y="322" text-anchor="middle" font-family="Arial" font-size="10">13</text>
+<text x="668.25" y="302.00" text-anchor="middle" font-family="Arial" font-size="10">7</text>
+</svg>
