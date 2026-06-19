@@ -5,6 +5,10 @@ Public-val oracle top-k recall: 0.1828
 
 This report is a single-architecture ImageNet validation case study. Run additional architectures before making broad leaderboard claims.
 
+## Raw per-image scores
+
+Need to eyeball what each augmentation does per image? Start with `tables/selector_public_gain_matrix.csv`: one row is one public image, and `aug_000`...`aug_099` are `clean_nll - aug_nll`. Positive means the augmentation helped that image, negative means it hurt; join `aug_*` with `tables/augmentation_impact.csv` to see the augmentation names.
+
 ## Public Validation Metrics
 
 | strategy | top1 | top5 | nll | ece | forwards_per_image | relative_compute_vs_all |
