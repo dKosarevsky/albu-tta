@@ -66,6 +66,7 @@ reports/resnet50_a1_in1k/tables/class_augmentation_weights.csv
 reports/resnet50_a1_in1k/tables/xgboost_feature_importance.csv
 reports/resnet50_a1_in1k/tables/private_metric_deltas.csv
 reports/resnet50_a1_in1k/tables/corrections.csv
+reports/resnet50_a1_in1k/tables/global_weight_topn_private_metrics.csv
 reports/resnet50_a1_in1k/tables/selector_history.csv
 reports/resnet50_a1_in1k/tables/transform_class_impact.csv
 reports/resnet50_a1_in1k/tables/transform_class_aggregation.csv
@@ -78,6 +79,11 @@ reports/resnet50_a1_in1k/figures/selector_history.svg
 reports/resnet50_a1_in1k/figures/transform_class_impact.svg
 reports/resnet50_a1_in1k/figures/transform_class_aggregation.svg
 ```
+
+`global_weight_topn_private_metrics.csv` is written by `evaluate-private`
+whenever a global aggregator artifact is available. It keeps the highest-weight
+global augmentations for each `top_n` value and reports the resulting private
+metrics plus the relative forward-pass cost.
 
 `aggregation_weights.csv` is the compact table for the article: global weight,
 active flag, mean class weight, max class weight, and class activation

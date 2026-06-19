@@ -703,7 +703,9 @@ def test_cli_resume_full_run_rejects_unknown_supervisor_status(
         main(["resume-full-run", "--config", str(CONFIG_PATH)])
 
 
-def test_cli_module_entrypoint_runs() -> None:
+def test_cli_module_entrypoint_runs(tmp_path: Path) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+
     completed = subprocess.run(
         [
             sys.executable,
@@ -711,7 +713,7 @@ def test_cli_module_entrypoint_runs() -> None:
             "learned_tta.cli",
             "full-run-status",
             "--config",
-            str(CONFIG_PATH),
+            str(config_path),
             "--next-command",
         ],
         check=True,

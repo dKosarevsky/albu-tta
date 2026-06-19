@@ -28,7 +28,7 @@ def private_eval_artifacts(tmp_path: Path) -> dict[str, Path]:
     AggregationArtifact(
         method="global-nonnegative",
         aug_ids=["aug_000", "aug_001", "aug_002"],
-        weights=np.array([0.0, 1.0, 0.0], dtype=np.float32),
+        weights=np.array([0.2, 0.7, 0.1], dtype=np.float32),
         active_threshold=1e-6,
         metrics={"nll": 0.0},
     ).save(global_aggregator_path)
@@ -93,6 +93,8 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
     assert summary.private_metrics_csv.exists()
     assert summary.compute_csv.exists()
     assert summary.corrections_csv.exists()
+    assert summary.global_topn_metrics_csv is not None
+    assert summary.global_topn_metrics_csv.exists()
     assert set(table["strategy"]) == {
         "clean",
         "fixed_light_tta",
@@ -121,6 +123,15 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
     assert random_row["clean_correct"] == pytest.approx(2.0)
     assert random_row["tta_correct"] == pytest.approx(1.5)
     assert random_row["clean_right_tta_wrong"] == pytest.approx(0.5)
+    global_topn = pd.read_csv(summary.global_topn_metrics_csv)
+    assert global_topn["top_n"].tolist() == [1, 2, 3]
+    assert global_topn["selected_aug_ids"].tolist() == [
+        "aug_001",
+        "aug_001 aug_000",
+        "aug_001 aug_000 aug_002",
+    ]
+    assert global_topn["forwards_per_image"].tolist() == pytest.approx([1.0, 2.0, 3.0])
+    assert global_topn["relative_compute_vs_all"].tolist() == pytest.approx([1 / 3, 2 / 3, 1.0])
 
 
 def test_evaluate_private_from_artifacts_rejects_public_val_split(

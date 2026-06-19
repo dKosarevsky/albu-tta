@@ -14,6 +14,7 @@ from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import load_manifest
+from learned_tta.metrics import classification_metrics, expected_calibration_error
 from learned_tta.reporting import build_compute_table, build_correction_table, build_metrics_table
 from learned_tta.split_policy import PUBLIC_VAL_SPLIT, validate_private_evaluation_split
 from learned_tta.stacking import (
@@ -43,6 +44,8 @@ from learned_tta.tta_eval import (
 )
 from learned_tta.tta_tuning import predict_selector_scores
 
+DEFAULT_GLOBAL_TOP_N_GRID = (1, 2, 4, 8, 16, 24, 32, 48, 64, 100)
+
 
 @dataclass(frozen=True, slots=True)
 class PrivateEvaluationSummary:
@@ -52,6 +55,7 @@ class PrivateEvaluationSummary:
     private_metrics_csv: Path
     compute_csv: Path
     corrections_csv: Path
+    global_topn_metrics_csv: Path | None
     metrics_by_strategy: dict[str, dict[str, float]]
 
 
@@ -107,6 +111,7 @@ def evaluate_private_from_artifacts(
     private_metrics_csv = tables_dir / "private_metrics.csv"
     compute_csv = tables_dir / "compute.csv"
     corrections_csv = tables_dir / "corrections.csv"
+    global_topn_metrics_csv: Path | None = None
     build_metrics_table(metrics_by_strategy).to_csv(private_metrics_csv, index=False)
     build_compute_table(metrics_by_strategy).to_csv(compute_csv, index=False)
     _build_private_corrections(
@@ -121,11 +126,22 @@ def evaluate_private_from_artifacts(
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
     ).to_csv(corrections_csv, index=False)
+    if global_aggregator_path is not None:
+        artifact = load_aggregation_artifact(global_aggregator_path)
+        global_topn_metrics_csv = tables_dir / "global_weight_topn_private_metrics.csv"
+        _build_global_topn_metrics(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            total_aug_ids=aug_ids,
+            artifact_aug_ids=artifact.aug_ids,
+            artifact_weights=artifact.weights,
+        ).to_csv(global_topn_metrics_csv, index=False)
     return PrivateEvaluationSummary(
         best_k=best_k,
         private_metrics_csv=private_metrics_csv,
         compute_csv=compute_csv,
         corrections_csv=corrections_csv,
+        global_topn_metrics_csv=global_topn_metrics_csv,
         metrics_by_strategy=metrics_by_strategy,
     )
 
@@ -151,6 +167,7 @@ def evaluate_private_from_config(
     """Load config and evaluate private split."""
 
     config = load_experiment_config(config_path)
+    use_config_candidate_ids = candidate_ids is None
     if candidate_ids is None:
         candidate_ids = [
             candidate.id
@@ -159,15 +176,19 @@ def evaluate_private_from_config(
     if random_seeds is None:
         random_seeds = [config.seed + offset for offset in range(5)]
     selector_dir = config.artifacts.selector_dir
-    resolved_global_aggregator_path = global_aggregator_path or _existing_path(
-        default_aggregator_path(selector_dir, split="public_val", method="global-nonnegative")
-    )
-    resolved_class_aggregator_path = class_aggregator_path or _existing_path(
-        default_aggregator_path(selector_dir, split="public_val", method="class-nonnegative")
-    )
-    resolved_xgboost_aggregator_path = xgboost_aggregator_path or _existing_path(
-        default_aggregator_path(selector_dir, split="public_val", method="xgboost-multiclass")
-    )
+    resolved_global_aggregator_path = global_aggregator_path
+    resolved_class_aggregator_path = class_aggregator_path
+    resolved_xgboost_aggregator_path = xgboost_aggregator_path
+    if use_config_candidate_ids:
+        resolved_global_aggregator_path = resolved_global_aggregator_path or _existing_path(
+            default_aggregator_path(selector_dir, split="public_val", method="global-nonnegative")
+        )
+        resolved_class_aggregator_path = resolved_class_aggregator_path or _existing_path(
+            default_aggregator_path(selector_dir, split="public_val", method="class-nonnegative")
+        )
+        resolved_xgboost_aggregator_path = resolved_xgboost_aggregator_path or _existing_path(
+            default_aggregator_path(selector_dir, split="public_val", method="xgboost-multiclass")
+        )
     return evaluate_private_from_artifacts(
         split=split,
         manifest_path=manifest_path or config.artifacts.manifests_dir / f"{split}.csv",
@@ -271,6 +292,59 @@ def _evaluate_private_strategies(
             total_augments=len(aug_ids),
         )
     return metrics
+
+
+def _build_global_topn_metrics(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    total_aug_ids: list[str],
+    artifact_aug_ids: list[str],
+    artifact_weights: np.ndarray,
+    top_n_grid: tuple[int, ...] = DEFAULT_GLOBAL_TOP_N_GRID,
+) -> pd.DataFrame:
+    weights = np.asarray(artifact_weights, dtype=np.float32)
+    if weights.shape != (len(artifact_aug_ids),):
+        raise ValueError("global aggregator weights must have shape [augmentations]")
+    ranked_indices = sorted(
+        range(len(artifact_aug_ids)),
+        key=lambda index: (-float(weights[index]), index),
+    )
+
+    rows = []
+    for top_n in _resolve_global_top_n_grid(top_n_grid, total_augments=len(artifact_aug_ids)):
+        selected_indices = ranked_indices[:top_n]
+        selected_aug_ids = [artifact_aug_ids[index] for index in selected_indices]
+        selected_weights = weights[selected_indices]
+        probabilities = global_weighted_probabilities(
+            logits_by_aug=logits_by_aug,
+            aug_ids=selected_aug_ids,
+            weights=selected_weights,
+        )
+        metrics = classification_metrics(probabilities, class_idxs, topk=(1, 5))
+        metrics["ece"] = expected_calibration_error(probabilities, class_idxs)
+        rows.append(
+            {
+                "top_n": top_n,
+                **metrics,
+                "forwards_per_image": float(top_n),
+                "relative_compute_vs_all": float(top_n) / len(total_aug_ids),
+                "selected_aug_ids": " ".join(selected_aug_ids),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _resolve_global_top_n_grid(top_n_grid: tuple[int, ...], total_augments: int) -> list[int]:
+    if total_augments < 1:
+        raise ValueError("total_augments must be positive")
+    resolved: set[int] = set()
+    for top_n in top_n_grid:
+        if top_n < 1:
+            raise ValueError("top_n values must be positive")
+        if top_n <= total_augments:
+            resolved.add(top_n)
+    resolved.add(total_augments)
+    return sorted(resolved)
 
 
 def _read_split_logits(
