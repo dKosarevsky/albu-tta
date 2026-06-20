@@ -45,12 +45,14 @@ def test_make_selector_dataloader_returns_image_target_batches(
         shuffle=False,
     )
 
-    images, targets = next(iter(dataloader))
+    images, targets, gain = next(iter(dataloader))
 
     assert images.shape == (2, 3, 16, 16)
     assert targets.shape == (2, 2)
+    assert gain.shape == (2, 2)
     assert images.dtype == torch.float32
     assert targets.dtype == torch.float32
+    assert gain.dtype == torch.float32
 
 
 def test_make_selector_dataloader_rejects_target_manifest_order_mismatch(
@@ -90,6 +92,9 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
         epochs=1,
         learning_rate=1e-3,
         rank_weight=0.2,
+        usefulness_head=True,
+        usefulness_tau=0.01,
+        usefulness_weight=0.05,
         val_cache_dir=selector_training_artifacts["cache_dir"],
         val_split="public_val",
         aug_ids=["aug_000", "aug_001"],
@@ -111,6 +116,15 @@ def test_train_selector_from_artifacts_saves_best_checkpoint(
     assert checkpoint["target_std"].tolist() == pytest.approx([1.0, 1.0])
     assert checkpoint["target_kind"] == "gain"
     assert checkpoint["higher_is_better"] is True
+    assert checkpoint["usefulness_head"] is True
+    assert checkpoint["usefulness_tau"] == pytest.approx(0.01)
+    assert checkpoint["usefulness_weight"] == pytest.approx(0.05)
+    assert "train_regression_loss" in summary.history[0]
+    assert "train_rank_loss" in summary.history[0]
+    assert "train_usefulness_bce" in summary.history[0]
+    assert "val_regression_loss" in summary.history[0]
+    assert "val_rank_loss" in summary.history[0]
+    assert "val_usefulness_bce" in summary.history[0]
     assert "val_tta_nll" in summary.history[0]
     assert summary.history[0]["val_tta_best_k"] == 1
     assert "val_tta_oracle_recall" in summary.history[0]

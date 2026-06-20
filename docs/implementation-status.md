@@ -35,8 +35,8 @@ Implemented:
   `true_logit`.
 - Selector target formulation documented as a 100-score augmentation utility predictor for ranking/top-k TTA selection, not 50-bin loss classification.
 - Public/private split-role guards for target building, selector checkpoint selection, TTA tuning, learned aggregation training, and final private evaluation.
-- Small selector CNN training with standardized targets, SmoothL1, pairwise rank loss, public-val diagnostics, and checkpoint selection by public-val learned TTA NLL.
-- TTA evaluation for clean, fixed, random, all-candidate, learned uniform, learned softmax-weighted, oracle, global non-negative aggregation, class-specific aggregation, and optional XGBoost stacker.
+- Small selector CNN training with standardized targets, SmoothL1, pairwise rank loss, optional usefulness BCE head, public-val diagnostics, and checkpoint selection by public-val learned TTA NLL.
+- TTA evaluation for clean, fixed, random, all-candidate, learned uniform, learned softmax-weighted, learned adaptive uniform, oracle, global non-negative aggregation, class-specific aggregation, and optional XGBoost stacker.
 - Private evaluation artifacts with metrics, compute, clean-vs-TTA corrections, and metric deltas against clean.
 - Final report builder with tables, SVG plots, top-N markdown summaries, transform-class impact, transform-class aggregation, selector history, XGBoost importance, and result text that avoids SOTA claims.
 - Synthetic smoke run covering manifests, teacher cache, target build, selector training, tuning, aggregation training, private evaluation, and final report generation.

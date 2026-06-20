@@ -16,7 +16,11 @@ from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest
 from learned_tta.selector_model import SelectorCNN
 from learned_tta.split_policy import validate_public_tuning_split
-from learned_tta.tta_eval import evaluate_learned_topk_uniform, select_best_k
+from learned_tta.tta_eval import (
+    evaluate_learned_adaptive_uniform,
+    evaluate_learned_topk_uniform,
+    select_best_k,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +32,18 @@ class TTATuningSummary:
     best_k: int
     results_by_k: dict[int, dict[str, float]]
     predicted_gain_shape: tuple[int, int]
+    adaptive_results: dict[str, dict[str, float]] | None = None
+    best_adaptive_threshold: float | None = None
+    best_adaptive_max_k: int | None = None
+    predicted_useful_shape: tuple[int, int] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SelectorPredictions:
+    """Selector predictions after checkpoint unstandardization."""
+
+    gain: np.ndarray
+    useful_prob: np.ndarray | None = None
 
 
 def tune_tta_from_artifacts(
@@ -41,6 +57,8 @@ def tune_tta_from_artifacts(
     image_size: int,
     batch_size: int,
     num_workers: int,
+    adaptive_threshold_grid: list[float] | None = None,
+    adaptive_max_k_grid: list[int] | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> TTATuningSummary:
@@ -51,7 +69,7 @@ def tune_tta_from_artifacts(
     output_dir.mkdir(parents=True, exist_ok=True)
     records = load_manifest(manifest_path)
     logits_by_aug, class_idxs = _read_split_logits(cache_dir, split=split, aug_ids=aug_ids)
-    predicted_gain = predict_selector_scores(
+    predictions = predict_selector_outputs(
         checkpoint_path=checkpoint_path,
         records=records,
         output_dim=len(aug_ids),
@@ -61,6 +79,7 @@ def tune_tta_from_artifacts(
         num_workers=num_workers,
         device=device,
     )
+    predicted_gain = predictions.gain
 
     results_by_k = {
         k: evaluate_learned_topk_uniform(
@@ -74,6 +93,30 @@ def tune_tta_from_artifacts(
         for k in top_k_grid
     }
     best_k = select_best_k(results_by_k, metric="nll", higher_is_better=False)
+    adaptive_results: dict[str, dict[str, float]] | None = None
+    best_adaptive_threshold: float | None = None
+    best_adaptive_max_k: int | None = None
+    if (
+        predictions.useful_prob is not None
+        and adaptive_threshold_grid is not None
+        and adaptive_max_k_grid is not None
+    ):
+        adaptive_results = {
+            _adaptive_key(threshold=threshold, max_k=max_k): evaluate_learned_adaptive_uniform(
+                logits_by_aug=logits_by_aug,
+                class_idxs=class_idxs,
+                aug_ids=aug_ids,
+                predicted_gain=predicted_gain,
+                useful_prob=predictions.useful_prob,
+                identity_aug_id=identity_aug_id,
+                threshold=threshold,
+                max_k=max_k,
+            )
+            for threshold in adaptive_threshold_grid
+            for max_k in adaptive_max_k_grid
+        }
+        best_key = min(adaptive_results, key=lambda key: adaptive_results[key]["nll"])
+        best_adaptive_threshold, best_adaptive_max_k = _parse_adaptive_key(best_key)
     result_path = output_dir / f"{split}_tta_tuning.json"
     result_path.write_text(
         json.dumps(
@@ -81,7 +124,15 @@ def tune_tta_from_artifacts(
                 "split": split,
                 "best_k": best_k,
                 "results_by_k": results_by_k,
+                "adaptive_results": adaptive_results,
+                "best_adaptive_threshold": best_adaptive_threshold,
+                "best_adaptive_max_k": best_adaptive_max_k,
                 "predicted_gain_shape": list(predicted_gain.shape),
+                "predicted_useful_shape": (
+                    list(predictions.useful_prob.shape)
+                    if predictions.useful_prob is not None
+                    else None
+                ),
             },
             indent=2,
             sort_keys=True,
@@ -94,6 +145,12 @@ def tune_tta_from_artifacts(
         best_k=best_k,
         results_by_k=results_by_k,
         predicted_gain_shape=predicted_gain.shape,
+        adaptive_results=adaptive_results,
+        best_adaptive_threshold=best_adaptive_threshold,
+        best_adaptive_max_k=best_adaptive_max_k,
+        predicted_useful_shape=(
+            predictions.useful_prob.shape if predictions.useful_prob is not None else None
+        ),
     )
 
 
@@ -106,6 +163,8 @@ def tune_tta_from_config(
     output_dir: Path | None = None,
     candidate_ids: list[str] | None = None,
     top_k_grid: list[int] | None = None,
+    adaptive_threshold_grid: list[float] | None = None,
+    adaptive_max_k_grid: list[int] | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -127,6 +186,8 @@ def tune_tta_from_config(
         output_dir=output_dir or config.artifacts.selector_dir,
         aug_ids=candidate_ids,
         top_k_grid=top_k_grid or config.selector.top_k_grid,
+        adaptive_threshold_grid=adaptive_threshold_grid or config.selector.adaptive_threshold_grid,
+        adaptive_max_k_grid=adaptive_max_k_grid or config.selector.adaptive_max_k_grid,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -148,9 +209,37 @@ def predict_selector_scores(
 ) -> np.ndarray:
     """Predict per-augmentation selector scores for clean images."""
 
+    return predict_selector_outputs(
+        checkpoint_path=checkpoint_path,
+        records=records,
+        output_dim=output_dim,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        aug_ids=aug_ids,
+        device=device,
+    ).gain
+
+
+@torch.inference_mode()
+def predict_selector_outputs(
+    checkpoint_path: Path,
+    records: list[ManifestRecord],
+    output_dim: int,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    aug_ids: list[str] | None = None,
+    device: str | torch.device = "cpu",
+) -> SelectorPredictions:
+    """Predict gain scores and optional usefulness probabilities for clean images."""
+
     torch_device = torch.device(device)
-    model = SelectorCNN(output_dim=output_dim).to(torch_device)
     checkpoint = torch.load(checkpoint_path, map_location=torch_device, weights_only=False)
+    model = SelectorCNN(
+        output_dim=output_dim,
+        usefulness_head=_checkpoint_has_usefulness_head(checkpoint),
+    ).to(torch_device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     dataloader = torch.utils.data.DataLoader(
@@ -160,10 +249,18 @@ def predict_selector_scores(
         shuffle=False,
     )
     predictions = []
+    useful_logits = []
     for images in dataloader:
-        predictions.append(model(images.to(torch_device)).cpu().numpy().astype(np.float32))
+        outputs = model.forward_heads(images.to(torch_device))
+        predictions.append(outputs.gain.cpu().numpy().astype(np.float32))
+        if outputs.useful_logits is not None:
+            useful_logits.append(outputs.useful_logits.cpu().numpy().astype(np.float32))
     target_z = np.concatenate(predictions, axis=0)
-    return _unstandardize_checkpoint_scores(target_z, checkpoint, output_dim, aug_ids=aug_ids)
+    gain = _unstandardize_checkpoint_scores(target_z, checkpoint, output_dim, aug_ids=aug_ids)
+    useful_prob = (
+        1.0 / (1.0 + np.exp(-np.concatenate(useful_logits, axis=0))) if useful_logits else None
+    )
+    return SelectorPredictions(gain=gain, useful_prob=useful_prob)
 
 
 def _unstandardize_checkpoint_scores(
@@ -193,6 +290,24 @@ def _unstandardize_checkpoint_scores(
     if checkpoint_aug_ids is not None and len(checkpoint_aug_ids) != output_dim:
         raise ValueError("checkpoint aug_ids length must match selector output_dim")
     return (target_z * std[None, :] + mean[None, :]).astype(np.float32)
+
+
+def _checkpoint_has_usefulness_head(checkpoint: dict[str, object]) -> bool:
+    if bool(checkpoint.get("usefulness_head", False)):
+        return True
+    state_dict = checkpoint.get("model_state_dict", {})
+    if not isinstance(state_dict, dict):
+        return False
+    return any(str(key).startswith("useful_head.") for key in state_dict)
+
+
+def _adaptive_key(threshold: float, max_k: int) -> str:
+    return f"threshold={threshold:g},max_k={max_k}"
+
+
+def _parse_adaptive_key(key: str) -> tuple[float, int]:
+    parts = dict(part.split("=", maxsplit=1) for part in key.split(","))
+    return float(parts["threshold"]), int(parts["max_k"])
 
 
 class _SelectorImageDataset(torch.utils.data.Dataset[torch.Tensor]):

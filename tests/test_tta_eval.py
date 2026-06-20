@@ -5,6 +5,7 @@ import pytest
 
 from learned_tta.tta_eval import (
     _mean_selection_size,
+    adaptive_topk_selection,
     average_probabilities,
     class_weighted_probabilities,
     evaluate_all_100_uniform,
@@ -12,6 +13,7 @@ from learned_tta.tta_eval import (
     evaluate_clean,
     evaluate_fixed_light_tta,
     evaluate_global_weighted_tta,
+    evaluate_learned_adaptive_uniform,
     evaluate_learned_topk_softmax_weighted,
     evaluate_learned_topk_uniform,
     evaluate_oracle_topk_uniform,
@@ -122,6 +124,43 @@ def test_learned_topk_zero_selects_identity_only(
     for key, value in clean.items():
         assert uniform[key] == pytest.approx(value)
         assert weighted[key] == pytest.approx(value)
+
+
+def test_adaptive_topk_selection_thresholds_usefulness_and_caps_by_gain(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+) -> None:
+    useful_prob = np.array(
+        [
+            [0.0, 0.9, 0.8, 0.7],
+            [0.0, 0.8, 0.9, 0.4],
+        ],
+        dtype=np.float32,
+    )
+
+    selected = adaptive_topk_selection(
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        useful_prob=useful_prob,
+        identity_aug_id="aug_000",
+        threshold=0.75,
+        max_k=1,
+    )
+    metrics = evaluate_learned_adaptive_uniform(
+        logits_by_aug=logits_by_aug,
+        class_idxs=np.array([0, 2], dtype=np.int64),
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        useful_prob=useful_prob,
+        identity_aug_id="aug_000",
+        threshold=0.75,
+        max_k=1,
+    )
+
+    assert selected == [["aug_000", "aug_002"], ["aug_000", "aug_001"]]
+    assert metrics["forwards_per_image"] == pytest.approx(2.0)
+    assert metrics["relative_compute_vs_all"] == pytest.approx(0.5)
 
 
 def test_fixed_and_random_selection_are_reproducible(aug_ids: list[str]) -> None:
@@ -348,15 +387,18 @@ def test_select_best_k_prefers_best_metric_then_lower_compute() -> None:
 
 
 def test_select_best_k_can_maximize_metric_and_rejects_empty_results() -> None:
-    assert select_best_k(
-        {
-            1: {"top1": 0.7},
-            2: {"top1": 0.8},
-            4: {"top1": 0.8},
-        },
-        metric="top1",
-        higher_is_better=True,
-    ) == 2
+    assert (
+        select_best_k(
+            {
+                1: {"top1": 0.7},
+                2: {"top1": 0.8},
+                4: {"top1": 0.8},
+            },
+            metric="top1",
+            higher_is_better=True,
+        )
+        == 2
+    )
     with pytest.raises(ValueError, match="results_by_k must not be empty"):
         select_best_k({}, metric="nll", higher_is_better=False)
 

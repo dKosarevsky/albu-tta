@@ -24,6 +24,7 @@ from learned_tta.stacking import (
     xgboost_multiclass_probabilities,
 )
 from learned_tta.tta_eval import (
+    adaptive_topk_selection,
     average_probabilities,
     class_weighted_probabilities,
     evaluate_all_100_uniform,
@@ -31,6 +32,7 @@ from learned_tta.tta_eval import (
     evaluate_clean,
     evaluate_fixed_light_tta,
     evaluate_global_weighted_tta,
+    evaluate_learned_adaptive_uniform,
     evaluate_learned_topk_softmax_weighted,
     evaluate_learned_topk_uniform,
     evaluate_oracle_topk_uniform,
@@ -42,7 +44,7 @@ from learned_tta.tta_eval import (
     random_topk_selection,
     weighted_average_probabilities,
 )
-from learned_tta.tta_tuning import predict_selector_scores
+from learned_tta.tta_tuning import predict_selector_outputs
 
 DEFAULT_GLOBAL_TOP_N_GRID = (1, 2, 4, 8, 16, 24, 32, 48, 64, 100)
 
@@ -80,10 +82,11 @@ def evaluate_private_from_artifacts(
     """Evaluate private split baselines with the frozen public-val top-k."""
 
     validate_private_evaluation_split(split, command="evaluate-private")
-    best_k = _load_best_k(tuning_path)
+    tuning = _load_tuning_payload(tuning_path)
+    best_k = int(tuning["best_k"])
     records = load_manifest(manifest_path)
     logits_by_aug, class_idxs = _read_split_logits(cache_dir, split=split, aug_ids=aug_ids)
-    predicted_gain = predict_selector_scores(
+    selector_predictions = predict_selector_outputs(
         checkpoint_path=checkpoint_path,
         records=records,
         output_dim=len(aug_ids),
@@ -93,13 +96,19 @@ def evaluate_private_from_artifacts(
         num_workers=num_workers,
         device=device,
     )
+    predicted_gain = selector_predictions.gain
+    adaptive_threshold = tuning.get("best_adaptive_threshold")
+    adaptive_max_k = tuning.get("best_adaptive_max_k")
     metrics_by_strategy = _evaluate_private_strategies(
         logits_by_aug=logits_by_aug,
         class_idxs=class_idxs,
         aug_ids=aug_ids,
         predicted_gain=predicted_gain,
+        useful_prob=selector_predictions.useful_prob,
         identity_aug_id=identity_aug_id,
         best_k=best_k,
+        adaptive_threshold=(float(adaptive_threshold) if adaptive_threshold is not None else None),
+        adaptive_max_k=int(adaptive_max_k) if adaptive_max_k is not None else None,
         random_seeds=random_seeds,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
@@ -119,8 +128,11 @@ def evaluate_private_from_artifacts(
         class_idxs=class_idxs,
         aug_ids=aug_ids,
         predicted_gain=predicted_gain,
+        useful_prob=selector_predictions.useful_prob,
         identity_aug_id=identity_aug_id,
         best_k=best_k,
+        adaptive_threshold=(float(adaptive_threshold) if adaptive_threshold is not None else None),
+        adaptive_max_k=int(adaptive_max_k) if adaptive_max_k is not None else None,
         random_seeds=random_seeds,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
@@ -214,8 +226,11 @@ def _evaluate_private_strategies(
     class_idxs: np.ndarray,
     aug_ids: list[str],
     predicted_gain: np.ndarray,
+    useful_prob: np.ndarray | None,
     identity_aug_id: str,
     best_k: int,
+    adaptive_threshold: float | None,
+    adaptive_max_k: int | None,
     random_seeds: list[int],
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
@@ -266,6 +281,17 @@ def _evaluate_private_strategies(
             k=best_k,
         ),
     }
+    if useful_prob is not None and adaptive_threshold is not None and adaptive_max_k is not None:
+        metrics["learned_adaptive_uniform"] = evaluate_learned_adaptive_uniform(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            aug_ids=aug_ids,
+            predicted_gain=predicted_gain,
+            useful_prob=useful_prob,
+            identity_aug_id=identity_aug_id,
+            threshold=adaptive_threshold,
+            max_k=adaptive_max_k,
+        )
     if global_aggregator_path is not None:
         artifact = load_aggregation_artifact(global_aggregator_path)
         metrics["global_weighted_tta"] = evaluate_global_weighted_tta(
@@ -378,8 +404,11 @@ def _build_private_corrections(
     class_idxs: np.ndarray,
     aug_ids: list[str],
     predicted_gain: np.ndarray,
+    useful_prob: np.ndarray | None,
     identity_aug_id: str,
     best_k: int,
+    adaptive_threshold: float | None,
+    adaptive_max_k: int | None,
     random_seeds: list[int],
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
@@ -390,8 +419,11 @@ def _build_private_corrections(
         class_idxs=class_idxs,
         aug_ids=aug_ids,
         predicted_gain=predicted_gain,
+        useful_prob=useful_prob,
         identity_aug_id=identity_aug_id,
         best_k=best_k,
+        adaptive_threshold=adaptive_threshold,
+        adaptive_max_k=adaptive_max_k,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
@@ -446,9 +478,7 @@ def _random_topk_correction_row(
         )
     table = pd.DataFrame(rows)
     averaged = {
-        column: float(table[column].mean())
-        for column in table.columns
-        if column != "strategy"
+        column: float(table[column].mean()) for column in table.columns if column != "strategy"
     }
     return pd.DataFrame([{"strategy": "random_topk", **averaged}])
 
@@ -458,8 +488,11 @@ def _private_probabilities_by_strategy(
     class_idxs: np.ndarray,
     aug_ids: list[str],
     predicted_gain: np.ndarray,
+    useful_prob: np.ndarray | None,
     identity_aug_id: str,
     best_k: int,
+    adaptive_threshold: float | None,
+    adaptive_max_k: int | None,
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
     xgboost_aggregator_path: Path | None,
@@ -492,6 +525,18 @@ def _private_probabilities_by_strategy(
         aug_ids=aug_ids,
         predicted_gain=predicted_gain,
     )
+    if useful_prob is not None and adaptive_threshold is not None and adaptive_max_k is not None:
+        probabilities["learned_adaptive_uniform"] = _average_per_image_probabilities(
+            logits_by_aug,
+            adaptive_topk_selection(
+                aug_ids=aug_ids,
+                predicted_gain=predicted_gain,
+                useful_prob=useful_prob,
+                identity_aug_id=identity_aug_id,
+                threshold=adaptive_threshold,
+                max_k=adaptive_max_k,
+            ),
+        )
     probabilities["oracle_topk_uniform"] = _average_per_image_probabilities(
         logits_by_aug,
         oracle_topk_selection(
@@ -541,15 +586,17 @@ def _average_per_image_probabilities(
     return np.asarray(rows, dtype=np.float32)
 
 
-def _load_best_k(tuning_path: Path) -> int:
+def _load_tuning_payload(tuning_path: Path) -> dict[str, object]:
     with Path(tuning_path).open(encoding="utf-8") as handle:
         data = json.load(handle)
     split = data.get("split")
     if split is not None and split != PUBLIC_VAL_SPLIT:
-        raise ValueError(
-            f"tuning artifact split must be {PUBLIC_VAL_SPLIT}; got {split!r}"
-        )
-    return int(data["best_k"])
+        raise ValueError(f"tuning artifact split must be {PUBLIC_VAL_SPLIT}; got {split!r}")
+    return data
+
+
+def _load_best_k(tuning_path: Path) -> int:
+    return int(_load_tuning_payload(tuning_path)["best_k"])
 
 
 def _existing_path(path: Path) -> Path | None:

@@ -134,6 +134,50 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
     assert global_topn["relative_compute_vs_all"].tolist() == pytest.approx([1 / 3, 2 / 3, 1.0])
 
 
+def test_evaluate_private_from_artifacts_adds_adaptive_strategy_when_tuned(
+    tmp_path: Path,
+    private_eval_artifacts: dict[str, Path],
+) -> None:
+    checkpoint_path = _write_selector_checkpoint(
+        tmp_path / "selector_best.pt",
+        output_dim=3,
+        usefulness_head=True,
+    )
+    tuning_path = tmp_path / "public_val_tta_tuning.json"
+    tuning_path.write_text(
+        json.dumps(
+            {
+                "split": "public_val",
+                "best_k": 1,
+                "best_adaptive_threshold": 0.25,
+                "best_adaptive_max_k": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = evaluate_private_from_artifacts(
+        split="private",
+        manifest_path=private_eval_artifacts["manifest"],
+        cache_dir=private_eval_artifacts["cache_dir"],
+        checkpoint_path=checkpoint_path,
+        tuning_path=tuning_path,
+        output_dir=tmp_path / "reports",
+        aug_ids=["aug_000", "aug_001", "aug_002"],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        random_seeds=[1],
+        device="cpu",
+    )
+    table = pd.read_csv(summary.private_metrics_csv)
+
+    assert "learned_adaptive_uniform" in set(table["strategy"])
+    assert summary.metrics_by_strategy["learned_adaptive_uniform"][
+        "forwards_per_image"
+    ] == pytest.approx(2.0)
+
+
 def test_evaluate_private_from_artifacts_rejects_public_val_split(
     tmp_path: Path,
     private_eval_artifacts: dict[str, Path],
@@ -283,8 +327,12 @@ def _write_cache(cache_dir: Path) -> Path:
     return cache_dir
 
 
-def _write_selector_checkpoint(path: Path, output_dim: int) -> Path:
-    model = SelectorCNN(output_dim=output_dim)
+def _write_selector_checkpoint(
+    path: Path,
+    output_dim: int,
+    usefulness_head: bool = False,
+) -> Path:
+    model = SelectorCNN(output_dim=output_dim, usefulness_head=usefulness_head)
     for parameter in model.parameters():
         torch.nn.init.constant_(parameter, 0.0)
     torch.save(
@@ -294,6 +342,7 @@ def _write_selector_checkpoint(path: Path, output_dim: int) -> Path:
             "aug_ids": [f"aug_{index:03d}" for index in range(output_dim)],
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": {},
+            "usefulness_head": usefulness_head,
         },
         path,
     )

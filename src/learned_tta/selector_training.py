@@ -44,7 +44,10 @@ class SelectorTrainingSummary:
     history: list[dict[str, float]]
 
 
-class SelectorImageTargetDataset(torch.utils.data.Dataset[tuple[torch.Tensor, torch.Tensor]]):
+SelectorBatch = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+
+
+class SelectorImageTargetDataset(torch.utils.data.Dataset[SelectorBatch]):
     """Clean-image selector dataset paired with precomputed target rows."""
 
     def __init__(
@@ -67,14 +70,15 @@ class SelectorImageTargetDataset(torch.utils.data.Dataset[tuple[torch.Tensor, to
     def __len__(self) -> int:
         return len(self.records)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int) -> SelectorBatch:
         record = self.records[index]
         with Image.open(record.path) as image:
             resized = image.convert("RGB").resize((self.image_size, self.image_size))
             array = np.asarray(resized, dtype=np.float32) / 255.0
         image_tensor = torch.from_numpy(array).permute(2, 0, 1)
         target_tensor = torch.from_numpy(self.targets.target_z[index].astype(np.float32))
-        return image_tensor, target_tensor
+        gain_tensor = torch.from_numpy(self.targets.gain[index].astype(np.float32))
+        return image_tensor, target_tensor, gain_tensor
 
 
 def make_selector_dataloader(
@@ -84,7 +88,7 @@ def make_selector_dataloader(
     batch_size: int,
     num_workers: int,
     shuffle: bool,
-) -> torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]]:
+) -> torch.utils.data.DataLoader[SelectorBatch]:
     """Build a selector DataLoader from a manifest and saved selector target artifact."""
 
     dataset = SelectorImageTargetDataset(
@@ -112,6 +116,9 @@ def train_selector_from_artifacts(
     epochs: int,
     learning_rate: float,
     rank_weight: float,
+    usefulness_head: bool = False,
+    usefulness_tau: float = 0.01,
+    usefulness_weight: float = 0.0,
     val_cache_dir: Path | None = None,
     val_split: str = "public_val",
     aug_ids: list[str] | None = None,
@@ -132,7 +139,8 @@ def train_selector_from_artifacts(
         raise ValueError("aug_ids must match selector target aug_ids")
     torch_device = torch.device(device)
 
-    model = SelectorCNN(output_dim=output_dim).to(torch_device)
+    identity_index = aug_ids.index(identity_aug_id)
+    model = SelectorCNN(output_dim=output_dim, usefulness_head=usefulness_head).to(torch_device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     train_dataloader = make_selector_dataloader(
         manifest_path=train_manifest_path,
@@ -172,17 +180,29 @@ def train_selector_from_artifacts(
             optimizer=optimizer,
             device=torch_device,
             rank_weight=rank_weight,
+            usefulness_tau=usefulness_tau,
+            usefulness_weight=usefulness_weight,
+            identity_index=identity_index,
         )
         val_metrics = evaluate_regression(
             model=model,
             dataloader=val_dataloader,
             device=torch_device,
             rank_weight=rank_weight,
+            usefulness_tau=usefulness_tau,
+            usefulness_weight=usefulness_weight,
+            identity_index=identity_index,
         )
         history_row = {
             "epoch": float(epoch),
             "train_loss": train_metrics["loss"],
+            "train_regression_loss": train_metrics["regression_loss"],
+            "train_rank_loss": train_metrics["rank_loss"],
+            "train_usefulness_bce": train_metrics["usefulness_bce"],
             "val_loss": val_metrics["loss"],
+            "val_regression_loss": val_metrics["regression_loss"],
+            "val_rank_loss": val_metrics["rank_loss"],
+            "val_usefulness_bce": val_metrics["usefulness_bce"],
             "val_spearman": val_metrics["spearman"],
         }
         checkpoint_metric = val_metrics["loss"]
@@ -210,6 +230,9 @@ def train_selector_from_artifacts(
             target_stats=train_targets.stats,
             target_kind=train_targets.target_kind,
             higher_is_better=train_targets.higher_is_better,
+            usefulness_head=usefulness_head,
+            usefulness_tau=usefulness_tau,
+            usefulness_weight=usefulness_weight,
         )
         history.append(history_row)
 
@@ -243,6 +266,9 @@ def train_selector_from_config(
     epochs: int = 20,
     learning_rate: float = 1e-3,
     rank_weight: float = 0.2,
+    usefulness_head: bool | None = None,
+    usefulness_tau: float | None = None,
+    usefulness_weight: float | None = None,
     device: str | torch.device = "cpu",
 ) -> SelectorTrainingSummary:
     """Load experiment config and train selector from configured artifact locations."""
@@ -254,6 +280,15 @@ def train_selector_from_config(
             candidate.id
             for candidate in load_augmentation_registry(config.augmentations.registry_path)
         ]
+    resolved_usefulness_head = (
+        config.selector.usefulness_head if usefulness_head is None else usefulness_head
+    )
+    resolved_usefulness_tau = (
+        config.selector.usefulness_tau if usefulness_tau is None else usefulness_tau
+    )
+    resolved_usefulness_weight = (
+        config.selector.usefulness_weight if usefulness_weight is None else usefulness_weight
+    )
     return train_selector_from_artifacts(
         train_manifest_path=train_manifest_path
         or config.artifacts.manifests_dir / "public_train.csv",
@@ -272,6 +307,9 @@ def train_selector_from_config(
         epochs=epochs,
         learning_rate=learning_rate,
         rank_weight=rank_weight,
+        usefulness_head=resolved_usefulness_head,
+        usefulness_tau=resolved_usefulness_tau,
+        usefulness_weight=resolved_usefulness_weight,
         device=device,
     )
 
@@ -279,7 +317,7 @@ def train_selector_from_config(
 @torch.inference_mode()
 def _evaluate_validation_tta(
     model: torch.nn.Module,
-    dataloader: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    dataloader: torch.utils.data.DataLoader[SelectorBatch],
     device: torch.device,
     target_stats: TargetStats,
     logits_by_aug: dict[str, np.ndarray],
@@ -336,13 +374,13 @@ def _evaluate_validation_tta(
 @torch.inference_mode()
 def _predict_gain(
     model: torch.nn.Module,
-    dataloader: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    dataloader: torch.utils.data.DataLoader[SelectorBatch],
     device: torch.device,
     target_stats: TargetStats,
 ) -> np.ndarray:
     model.eval()
     predictions = []
-    for images, _ in dataloader:
+    for images, _, _ in dataloader:
         predictions.append(model(images.to(device)).cpu().numpy().astype(np.float32))
     target_z = np.concatenate(predictions, axis=0)
     mean = np.asarray(target_stats.mean, dtype=np.float32)

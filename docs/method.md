@@ -36,19 +36,25 @@ candidate rather than assigning an image to a discrete loss bin.
 
 The selector is trained on standardized gain targets, but checkpoints persist
 the public-train target mean and std. Inference converts selector outputs back
-to the original gain scale before ranking augmentations for top-k TTA. During
-training, the best checkpoint is selected by public-validation
-`learned_topk_uniform` TTA NLL when the validation teacher cache is available;
-regression loss, Spearman correlation, TTA metrics, and oracle top-k recall are
-written to `selector/selector_history.csv`.
+to the original gain scale before ranking augmentations. The default selector
+objective is mixed: SmoothL1 gain regression, pairwise ranking loss, and an
+optional usefulness BCE head trained on `gain > usefulness_tau` for non-identity
+augmentations. During training, the best checkpoint is selected by
+public-validation `learned_topk_uniform` TTA NLL when the validation teacher
+cache is available; regression loss, ranking loss, usefulness BCE, Spearman
+correlation, TTA metrics, and oracle top-k recall are written to
+`selector/selector_history.csv`.
 
-The current primary baseline is the 100-output gain predictor. Target
-materialization for planned ablations after the full 5M teacher logits cache is
-implemented, but the scientific comparison of those heads is not an assumption
-baked into the main claim. `build-targets --target-kind` can currently emit
-trainable high-is-better targets for `gain`, `negative_nll`, `helpfulness`,
-`rank`, `softmax_weight`, and `true_logit`. Raw `nll` remains diagnostic-only;
-use `negative_nll` when the selector should learn a loss-derived utility.
+The current primary baseline is the 100-output gain predictor. The
+planned ablations after the full 5M teacher logits cache can compare alternative
+second-level heads, but the main claim does not depend on those variants. The
+usefulness head supports adaptive TTA: `tune-tta` selects a public-val
+`useful_prob` threshold and `max_k`, then private evaluation reports
+`learned_adaptive_uniform` only from those frozen public-val choices.
+`build-targets --target-kind` can currently emit trainable high-is-better
+targets for `gain`, `negative_nll`, `helpfulness`, `rank`, `softmax_weight`,
+and `true_logit`. Raw `nll` remains diagnostic-only; use `negative_nll` when
+the selector should learn a loss-derived utility.
 
 The implemented target variants cover the earlier planned
 100 binary helpfulness labels (`gain > 0`) and softmax-weight distillation from

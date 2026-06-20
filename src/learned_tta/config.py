@@ -56,6 +56,11 @@ class SelectorConfig:
     output_dim: int
     max_parameters: int
     top_k_grid: list[int]
+    usefulness_head: bool
+    usefulness_tau: float
+    usefulness_weight: float
+    adaptive_threshold_grid: list[float]
+    adaptive_max_k_grid: list[int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +148,16 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
             output_dim=int(selector["output_dim"]),
             max_parameters=int(selector["max_parameters"]),
             top_k_grid=[int(k) for k in selector["top_k_grid"]],
+            usefulness_head=bool(selector.get("usefulness_head", False)),
+            usefulness_tau=float(selector.get("usefulness_tau", 0.01)),
+            usefulness_weight=float(selector.get("usefulness_weight", 0.0)),
+            adaptive_threshold_grid=[
+                float(threshold)
+                for threshold in selector.get("adaptive_threshold_grid", [0.25, 0.5, 0.75])
+            ],
+            adaptive_max_k_grid=[
+                int(max_k) for max_k in selector.get("adaptive_max_k_grid", selector["top_k_grid"])
+            ],
         ),
         artifacts=ArtifactsConfig(
             root=_resolve_path(project_root, artifacts["root"]),

@@ -54,6 +54,46 @@ def test_tune_tta_from_artifacts_selects_and_writes_best_k(
     assert summary.predicted_gain_shape == (2, 2)
 
 
+def test_tune_tta_from_artifacts_writes_adaptive_public_val_tuning(
+    tmp_path: Path,
+    tuning_artifacts: dict[str, Path],
+) -> None:
+    checkpoint_path = _write_selector_checkpoint(
+        tmp_path / "selector_best.pt",
+        output_dim=2,
+        usefulness_head=True,
+    )
+
+    summary = tune_tta_from_artifacts(
+        split="public_val",
+        manifest_path=tuning_artifacts["manifest"],
+        cache_dir=tuning_artifacts["cache_dir"],
+        checkpoint_path=checkpoint_path,
+        output_dir=tmp_path / "selector",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[0, 1],
+        adaptive_threshold_grid=[0.25, 0.75],
+        adaptive_max_k_grid=[0, 1],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        device="cpu",
+    )
+    saved = json.loads(summary.result_path.read_text(encoding="utf-8"))
+
+    assert summary.best_adaptive_threshold in {0.25, 0.75}
+    assert summary.best_adaptive_max_k in {0, 1}
+    assert saved["best_adaptive_threshold"] == summary.best_adaptive_threshold
+    assert saved["best_adaptive_max_k"] == summary.best_adaptive_max_k
+    assert saved["predicted_useful_shape"] == [2, 2]
+    assert set(saved["adaptive_results"]) == {
+        "threshold=0.25,max_k=0",
+        "threshold=0.25,max_k=1",
+        "threshold=0.75,max_k=0",
+        "threshold=0.75,max_k=1",
+    }
+
+
 def test_tune_tta_from_artifacts_rejects_private_split(tmp_path: Path) -> None:
     manifest_path = _write_manifest(tmp_path, split="private", count=2)
     cache_dir = _write_cache(tmp_path / "teacher_cache", split="private")
@@ -147,6 +187,30 @@ def test_predict_selector_scores_returns_unstandardized_gain(tmp_path: Path) -> 
     )
 
 
+def test_predict_selector_scores_loads_usefulness_head_checkpoint(tmp_path: Path) -> None:
+    manifest_path = _write_manifest(tmp_path, split="public_val", count=2)
+    checkpoint_path = _write_selector_checkpoint(
+        tmp_path / "selector_best.pt",
+        output_dim=2,
+        target_mean=np.array([0.25, -0.5], dtype=np.float32),
+        target_std=np.array([2.0, 4.0], dtype=np.float32),
+        usefulness_head=True,
+    )
+
+    scores = predict_selector_scores(
+        checkpoint_path=checkpoint_path,
+        records=load_manifest(manifest_path),
+        output_dim=2,
+        aug_ids=["aug_000", "aug_001"],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        device="cpu",
+    )
+
+    assert scores.shape == (2, 2)
+
+
 def test_predict_selector_scores_rejects_checkpoint_aug_id_order_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -222,8 +286,9 @@ def _write_selector_checkpoint(
     output_dim: int,
     target_mean: np.ndarray | None = None,
     target_std: np.ndarray | None = None,
+    usefulness_head: bool = False,
 ) -> Path:
-    model = SelectorCNN(output_dim=output_dim)
+    model = SelectorCNN(output_dim=output_dim, usefulness_head=usefulness_head)
     for parameter in model.parameters():
         torch.nn.init.constant_(parameter, 0.0)
     checkpoint: dict[str, object] = {
@@ -232,6 +297,7 @@ def _write_selector_checkpoint(
         "aug_ids": [f"aug_{index:03d}" for index in range(output_dim)],
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": {},
+        "usefulness_head": usefulness_head,
     }
     if target_mean is not None and target_std is not None:
         checkpoint["target_mean"] = target_mean

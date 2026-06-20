@@ -173,6 +173,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             epochs=int(args.epochs),
             learning_rate=float(args.learning_rate),
             rank_weight=float(args.rank_weight),
+            usefulness_head=args.usefulness_head,
+            usefulness_tau=args.usefulness_tau,
+            usefulness_weight=args.usefulness_weight,
             device=str(args.device),
         )
     elif command == "tune-tta":
@@ -186,6 +189,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             output_dir=output_dir,
             candidate_ids=args.candidate_id,
             top_k_grid=args.top_k,
+            adaptive_threshold_grid=args.adaptive_threshold,
+            adaptive_max_k_grid=args.adaptive_max_k,
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
             num_workers=int(args.num_workers),
@@ -600,6 +605,16 @@ def _build_parser() -> argparse.ArgumentParser:
     train_selector.add_argument("--epochs", type=int, default=20)
     train_selector.add_argument("--learning-rate", type=float, default=1e-3)
     train_selector.add_argument("--rank-weight", type=float, default=0.2)
+    usefulness_group = train_selector.add_mutually_exclusive_group()
+    usefulness_group.add_argument("--usefulness-head", dest="usefulness_head", action="store_true")
+    usefulness_group.add_argument(
+        "--no-usefulness-head",
+        dest="usefulness_head",
+        action="store_false",
+    )
+    train_selector.set_defaults(usefulness_head=None)
+    train_selector.add_argument("--usefulness-tau", type=float)
+    train_selector.add_argument("--usefulness-weight", type=float)
     train_selector.add_argument("--device", default="cpu")
 
     tune_tta = subparsers.add_parser(
@@ -614,6 +629,8 @@ def _build_parser() -> argparse.ArgumentParser:
     tune_tta.add_argument("--output-dir")
     tune_tta.add_argument("--candidate-id", action="append")
     tune_tta.add_argument("--top-k", type=int, action="append")
+    tune_tta.add_argument("--adaptive-threshold", type=float, action="append")
+    tune_tta.add_argument("--adaptive-max-k", type=int, action="append")
     tune_tta.add_argument("--image-size", type=int, default=224)
     tune_tta.add_argument("--batch-size", type=int, default=64)
     tune_tta.add_argument("--num-workers", type=int, default=4)
@@ -1157,6 +1174,9 @@ def _cmd_train_selector(
     epochs: int,
     learning_rate: float,
     rank_weight: float,
+    usefulness_head: bool | None,
+    usefulness_tau: float | None,
+    usefulness_weight: float | None,
     device: str,
 ) -> None:
     from learned_tta.selector_training import train_selector_from_config
@@ -1178,6 +1198,9 @@ def _cmd_train_selector(
         epochs=epochs,
         learning_rate=learning_rate,
         rank_weight=rank_weight,
+        usefulness_head=usefulness_head,
+        usefulness_tau=usefulness_tau,
+        usefulness_weight=usefulness_weight,
         device=device,
     )
     print(
@@ -1202,6 +1225,8 @@ def _cmd_tune_tta(
     output_dir: Path | None,
     candidate_ids: list[str] | None,
     top_k_grid: list[int] | None,
+    adaptive_threshold_grid: list[float] | None,
+    adaptive_max_k_grid: list[int] | None,
     image_size: int,
     batch_size: int,
     num_workers: int,
@@ -1218,15 +1243,14 @@ def _cmd_tune_tta(
         output_dir=output_dir,
         candidate_ids=candidate_ids,
         top_k_grid=top_k_grid,
+        adaptive_threshold_grid=adaptive_threshold_grid,
+        adaptive_max_k_grid=adaptive_max_k_grid,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
         device=device,
     )
-    print(
-        f"tta tuning {summary.split}: best k {summary.best_k}, "
-        f"wrote {summary.result_path}"
-    )
+    print(f"tta tuning {summary.split}: best k {summary.best_k}, wrote {summary.result_path}")
 
 
 def _cmd_train_aggregator(
@@ -1300,10 +1324,7 @@ def _cmd_evaluate_private(
         num_workers=num_workers,
         device=device,
     )
-    print(
-        f"private evaluation: best k {summary.best_k}, "
-        f"wrote {summary.private_metrics_csv}"
-    )
+    print(f"private evaluation: best k {summary.best_k}, wrote {summary.private_metrics_csv}")
 
 
 def _cmd_build_report(
