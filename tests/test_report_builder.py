@@ -234,6 +234,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     )
 
     markdown = summary.results_md.read_text(encoding="utf-8")
+    assert "Next-step read: [next_steps.md](next_steps.md)." in markdown
+    assert "## Raw Per-Image Scores" in markdown
+    assert "tables/selector_public_gain_matrix.csv" in markdown
     impact = pd.read_csv(summary.augmentation_impact_csv)
     public_metrics = pd.read_csv(summary.public_metrics_csv)
     compute = pd.read_csv(summary.compute_csv)
@@ -374,9 +377,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "SquareSymmetry",
         "identity",
     ]
-    assert transform_class_aggregation["mean_global_weight"].tolist() == pytest.approx(
-        [0.45, 0.1]
-    )
+    assert transform_class_aggregation["mean_global_weight"].tolist() == pytest.approx([0.45, 0.1])
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
@@ -489,11 +490,14 @@ def test_report_builder_rejects_malformed_optional_csv_inputs(tmp_path: Path) ->
 
 
 def test_report_builder_handles_absent_optional_metadata_and_tables(tmp_path: Path) -> None:
-    assert _build_aggregation_tables(
-        aug_ids=["aug_000"],
-        global_aggregator_path=None,
-        class_aggregator_path=None,
-    ).weights is None
+    assert (
+        _build_aggregation_tables(
+            aug_ids=["aug_000"],
+            global_aggregator_path=None,
+            class_aggregator_path=None,
+        ).weights
+        is None
+    )
     assert _augmentation_metadata_table(["aug_000"], registry_path=None) is None
     table = pd.DataFrame({"aug_id": ["aug_000"], "mean_gain": [0.0]})
     assert _attach_augmentation_metadata(table, metadata=None).equals(table)
@@ -501,8 +505,7 @@ def test_report_builder_handles_absent_optional_metadata_and_tables(tmp_path: Pa
     assert _build_transform_class_aggregation_table(None) is None
     assert _build_transform_class_aggregation_table(pd.DataFrame({"aug_id": ["aug_000"]})) is None
     assert (
-        _build_xgboost_feature_importance_table(["aug_000"], xgboost_aggregator_path=None)
-        is None
+        _build_xgboost_feature_importance_table(["aug_000"], xgboost_aggregator_path=None) is None
     )
     assert _existing_path(tmp_path / "missing") is None
     existing = tmp_path / "present.txt"
@@ -570,17 +573,20 @@ def test_report_builder_rejects_bad_xgboost_importance_shape(tmp_path: Path) -> 
 
 
 def test_report_builder_summary_and_svg_edge_cases() -> None:
-    assert _augmentation_impact_summary_lines(
-        pd.DataFrame(
-            {
-                "aug_id": ["aug_000"],
-                "mean_gain": [0.0],
-                "selection_frequency": [1.0],
-                "oracle_frequency": [1.0],
-            }
-        ),
-        identity_aug_id="aug_000",
-    ) == []
+    assert (
+        _augmentation_impact_summary_lines(
+            pd.DataFrame(
+                {
+                    "aug_id": ["aug_000"],
+                    "mean_gain": [0.0],
+                    "selection_frequency": [1.0],
+                    "oracle_frequency": [1.0],
+                }
+            ),
+            identity_aug_id="aug_000",
+        )
+        == []
+    )
     assert _aggregation_weight_summary_lines(pd.DataFrame({"aug_id": ["aug_000"]})) == []
     assert "Mean Class Aggregation Weights" in _aggregation_weights_svg(
         pd.DataFrame({"aug_id": ["aug_000"], "class_mean_weight": [0.5]})

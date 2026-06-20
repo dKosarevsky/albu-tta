@@ -277,10 +277,7 @@ def build_report_from_artifacts(
             _aggregation_weights_svg(aggregation_tables.weights),
             encoding="utf-8",
         )
-    if (
-        paths.xgboost_feature_importance_svg is not None
-        and xgboost_importance is not None
-    ):
+    if paths.xgboost_feature_importance_svg is not None and xgboost_importance is not None:
         paths.xgboost_feature_importance_svg.write_text(
             _xgboost_feature_importance_svg(xgboost_importance),
             encoding="utf-8",
@@ -516,9 +513,9 @@ def _build_aggregation_tables(
     if class_weights is not None and class_active_threshold is not None:
         weights_table["class_mean_weight"] = class_weights.mean(axis=0)
         weights_table["class_max_weight"] = class_weights.max(axis=0)
-        weights_table["class_active_frequency"] = (
-            class_weights > class_active_threshold
-        ).mean(axis=0)
+        weights_table["class_active_frequency"] = (class_weights > class_active_threshold).mean(
+            axis=0
+        )
 
     class_table = None
     if class_weights is not None:
@@ -682,9 +679,7 @@ def _public_metrics_from_tuning(
     if not isinstance(best_metrics, dict):
         raise ValueError("best_k metrics must be a JSON object")
     metrics = {
-        "learned_topk_uniform": {
-            str(key): float(value) for key, value in best_metrics.items()
-        }
+        "learned_topk_uniform": {str(key): float(value) for key, value in best_metrics.items()}
     }
     if global_aggregator_path is not None:
         artifact = load_aggregation_artifact(global_aggregator_path)
@@ -801,6 +796,16 @@ def _results_markdown(
         "This report is a single-architecture ImageNet validation case study. "
         "Run additional architectures before making broad leaderboard claims.",
         "",
+        "Next-step read: [next_steps.md](next_steps.md).",
+        "",
+        "## Raw Per-Image Scores",
+        "",
+        "Need to eyeball what each augmentation does per image? Start with "
+        "`tables/selector_public_gain_matrix.csv`: one row is one public image, "
+        "and `aug_000`...`aug_099` are `clean_nll - aug_nll`. Positive means the "
+        "augmentation helped that image, negative means it hurt; join `aug_*` "
+        "with `tables/augmentation_impact.csv` to see the augmentation names.",
+        "",
         "## Public Validation Metrics",
         "",
         _markdown_table(public_table),
@@ -854,8 +859,7 @@ def _results_markdown(
         if transform_class_aggregation is not None:
             lines.extend(
                 [
-                    "- Transform-class aggregation table: "
-                    "`tables/transform_class_aggregation.csv`",
+                    "- Transform-class aggregation table: `tables/transform_class_aggregation.csv`",
                     "",
                     "![Transform-class aggregation](figures/transform_class_aggregation.svg)",
                     "",
@@ -1250,8 +1254,7 @@ def _grouped_bar_svg(
         f"{_escape_xml(y_label)}</text>",
         f'<line x1="{margin_left}" y1="{baseline_y}" '
         f'x2="{width - 28}" y2="{baseline_y}" stroke="#222"/>',
-        f'<line x1="{margin_left}" y1="70" '
-        f'x2="{margin_left}" y2="{baseline_y}" stroke="#222"/>',
+        f'<line x1="{margin_left}" y1="70" x2="{margin_left}" y2="{baseline_y}" stroke="#222"/>',
     ]
     legend_x = margin_left
     for legend_index, (name, _, color) in enumerate(series):
@@ -1310,10 +1313,7 @@ def _format_markdown_value(value: object) -> str:
 
 def _escape_xml(value: str) -> str:
     return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
+        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     )
 
 

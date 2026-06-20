@@ -1,13 +1,13 @@
 # albu-tta ResNet50 Case Study
 
 Tuned k: 16
-Public-val oracle top-k recall: 0.1828
+Public-val oracle top-k recall: 0.188475
 
 This report is a single-architecture ImageNet validation case study. Run additional architectures before making broad leaderboard claims.
 
 Next-step read: [next_steps.md](next_steps.md).
 
-## Raw per-image scores
+## Raw Per-Image Scores
 
 Need to eyeball what each augmentation does per image? Start with `tables/selector_public_gain_matrix.csv`: one row is one public image, and `aug_000`...`aug_099` are `clean_nll - aug_nll`. Positive means the augmentation helped that image, negative means it hurt; join `aug_*` with `tables/augmentation_impact.csv` to see the augmentation names.
 
@@ -15,7 +15,7 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 
 | strategy | top1 | top5 | nll | ece | forwards_per_image | relative_compute_vs_all |
 | --- | --- | --- | --- | --- | --- | --- |
-| learned_topk_uniform | 0.8174 | 0.9566 | 0.749915 | 0.0389969 | 17 | 0.17 |
+| learned_topk_uniform | 0.819 | 0.9576 | 0.745703 | 0.0405037 | 17 | 0.17 |
 | global_weighted_tta | 0.824 | 0.9596 | 0.703692 | 0.0270465 | 100 | 1 |
 | class_weighted_tta | 0.894 | 0.9804 | 0.425668 | 0.0527389 | 100 | 1 |
 
@@ -27,9 +27,10 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | fixed_light_tta | 0.80848 | 0.94052 | 0.857318 | 0.0460779 | 17 | 0.17 |
 | random_topk | 0.80888 | 0.945448 | 0.821023 | 0.0307059 | 17 | 0.17 |
 | all_100_uniform | 0.8102 | 0.94696 | 0.791093 | 0.0265595 | 100 | 1 |
-| learned_topk_uniform | 0.80956 | 0.94904 | 0.82498 | 0.0449992 | 17 | 0.17 |
-| learned_topk_softmax_weighted | 0.8096 | 0.94912 | 0.824894 | 0.0445476 | 17 | 0.17 |
+| learned_topk_uniform | 0.81008 | 0.94856 | 0.819431 | 0.0431775 | 17 | 0.17 |
+| learned_topk_softmax_weighted | 0.81032 | 0.9484 | 0.81952 | 0.042699 | 17 | 0.17 |
 | oracle_topk_uniform | 0.87492 | 0.96312 | 0.489845 | 0.0135182 | 17 | 0.17 |
+| learned_adaptive_uniform | 0.80524 | 0.94604 | 0.931983 | 0.0847688 | 1.43844 | 0.0143844 |
 | global_weighted_tta | 0.81488 | 0.94984 | 0.771035 | 0.0289746 | 100 | 1 |
 | class_weighted_tta | 0.80536 | 0.94128 | 0.839763 | 0.030029 | 100 | 1 |
 
@@ -43,9 +44,10 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | fixed_light_tta | 0.0038 | -0.0054 | -0.0821228 | -0.0406743 | 17 | 0.17 |
 | random_topk | 0.0042 | -0.000472 | -0.118418 | -0.0560463 | 17 | 0.17 |
 | all_100_uniform | 0.00552 | 0.00104 | -0.148347 | -0.0601927 | 100 | 1 |
-| learned_topk_uniform | 0.00488 | 0.00312 | -0.114461 | -0.041753 | 17 | 0.17 |
-| learned_topk_softmax_weighted | 0.00492 | 0.0032 | -0.114547 | -0.0422045 | 17 | 0.17 |
+| learned_topk_uniform | 0.0054 | 0.00264 | -0.12001 | -0.0435747 | 17 | 0.17 |
+| learned_topk_softmax_weighted | 0.00564 | 0.00248 | -0.119921 | -0.0440532 | 17 | 0.17 |
 | oracle_topk_uniform | 0.07024 | 0.0172 | -0.449596 | -0.073234 | 17 | 0.17 |
+| learned_adaptive_uniform | 0.00056 | 0.00012 | -0.00745744 | -0.00198336 | 1.43844 | 0.0143844 |
 | global_weighted_tta | 0.0102 | 0.00392 | -0.168406 | -0.0577776 | 100 | 1 |
 | class_weighted_tta | 0.00068 | -0.00464 | -0.0996776 | -0.0567231 | 100 | 1 |
 
@@ -63,6 +65,7 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | private | learned_topk_uniform | 17 | 0.17 |
 | private | learned_topk_softmax_weighted | 17 | 0.17 |
 | private | oracle_topk_uniform | 17 | 0.17 |
+| private | learned_adaptive_uniform | 1.43844 | 0.0143844 |
 | private | global_weighted_tta | 100 | 1 |
 | private | class_weighted_tta | 100 | 1 |
 
@@ -84,11 +87,11 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 
 | aug_id | augmentation_name | transform_class | selection_frequency |
 | --- | --- | --- | --- |
-| aug_010 | rotate_minus_20 | Rotate | 0.9214 |
-| aug_078 | median_blur_3 | MedianBlur | 0.8774 |
-| aug_009 | rotate_plus_10 | Rotate | 0.7952 |
-| aug_066 | planckian_warm_blackbody | PlanckianJitter | 0.7768 |
-| aug_069 | planckian_warm_cied | PlanckianJitter | 0.7644 |
+| aug_020 | scale_080 | Affine | 0.9502 |
+| aug_086 | sharpen_medium | Sharpen | 0.8978 |
+| aug_085 | sharpen_light | Sharpen | 0.7734 |
+| aug_010 | rotate_minus_20 | Rotate | 0.7314 |
+| aug_032 | brightness_minus_20 | RandomBrightnessContrast | 0.7286 |
 
 ### Top oracle-selection augmentations
 
@@ -111,10 +114,10 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | transform_class | candidate_count | mean_gain | selection_frequency | oracle_frequency |
 | --- | --- | --- | --- | --- |
 | identity | 1 | 0 | 1 | 1 |
-| RandomGamma | 4 | -0.00208149 | 0.00045 | 0.1325 |
-| UnsharpMask | 1 | -0.00408824 | 0 | 0.073 |
-| RGBShift | 6 | -0.00673984 | 0.00126667 | 0.148267 |
-| Enhance | 1 | -0.00780114 | 0.0048 | 0.1342 |
+| RandomGamma | 4 | -0.00208149 | 0.0067 | 0.1325 |
+| UnsharpMask | 1 | -0.00408824 | 0.0014 | 0.073 |
+| RGBShift | 6 | -0.00673984 | 0.0416 | 0.148267 |
+| Enhance | 1 | -0.00780114 | 0.2758 | 0.1342 |
 
 ![Transform-class impact](figures/transform_class_impact.svg)
 
