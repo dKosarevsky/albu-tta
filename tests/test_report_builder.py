@@ -117,6 +117,56 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         ]
     ).to_csv(selector_history_csv, index=False)
 
+    selector_ablation_csv = tmp_path / "selector_loss_ablation.csv"
+    pd.DataFrame(
+        [
+            {
+                "variant": "gain_only",
+                "rank_weight": 0.0,
+                "usefulness_head": False,
+                "usefulness_tau": 0.01,
+                "usefulness_weight": 0.0,
+                "best_epoch": 1,
+                "best_val_loss": 0.8,
+                "best_val_nll": 0.9,
+            },
+            {
+                "variant": "gain_rank_bce",
+                "rank_weight": 0.2,
+                "usefulness_head": True,
+                "usefulness_tau": 0.01,
+                "usefulness_weight": 0.05,
+                "best_epoch": 2,
+                "best_val_loss": 0.5,
+                "best_val_nll": 0.4,
+            },
+        ]
+    ).to_csv(selector_ablation_csv, index=False)
+
+    selector_diagnostics_json = tmp_path / "selector_diagnostics.json"
+    selector_diagnostics_json.write_text(
+        json.dumps(
+            {
+                "gain_pearson": 0.25,
+                "gain_spearman": 0.1,
+                "topk_hit_rate_by_k": {"1": 0.2},
+            }
+        ),
+        encoding="utf-8",
+    )
+    adaptive_selection_counts_csv = tmp_path / "adaptive_selection_counts.csv"
+    pd.DataFrame(
+        [
+            {
+                "threshold": 0.1,
+                "mean_forwards_per_image": 2.0,
+                "median_forwards_per_image": 2.0,
+                "p90_forwards_per_image": 3.0,
+                "max_forwards_per_image": 4.0,
+            }
+        ]
+    ).to_csv(adaptive_selection_counts_csv, index=False)
+
     tuning_json = tmp_path / "public_val_tta_tuning.json"
     tuning_json.write_text(
         json.dumps(
@@ -199,6 +249,9 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         "private_metrics": private_metrics_csv,
         "corrections": corrections_csv,
         "selector_history": selector_history_csv,
+        "selector_ablation": selector_ablation_csv,
+        "selector_diagnostics": selector_diagnostics_json,
+        "adaptive_selection_counts": adaptive_selection_counts_csv,
         "tuning": tuning_json,
         "manifest": manifest_path,
         "targets": targets_path,
@@ -230,6 +283,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         xgboost_aggregator_path=report_artifacts["xgboost_aggregator"],
         corrections_path=report_artifacts["corrections"],
         selector_history_path=report_artifacts["selector_history"],
+        selector_ablation_path=report_artifacts["selector_ablation"],
+        selector_diagnostics_path=report_artifacts["selector_diagnostics"],
+        adaptive_selection_counts_path=report_artifacts["adaptive_selection_counts"],
         device="cpu",
     )
 
@@ -248,6 +304,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.corrections_csv is not None
     assert summary.corrections_svg is not None
     assert summary.selector_history_csv is not None
+    assert summary.selector_ablation_csv is not None
+    assert summary.selector_diagnostics_json is not None
+    assert summary.adaptive_selection_counts_csv is not None
     assert summary.selector_history_svg is not None
     assert summary.transform_class_impact_csv is not None
     assert summary.transform_class_impact_svg is not None
@@ -258,6 +317,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     xgboost_importance = pd.read_csv(summary.xgboost_feature_importance_csv)
     corrections = pd.read_csv(summary.corrections_csv)
     selector_history = pd.read_csv(summary.selector_history_csv)
+    selector_ablation = pd.read_csv(summary.selector_ablation_csv)
+    adaptive_selection_counts = pd.read_csv(summary.adaptive_selection_counts_csv)
     transform_class_impact = pd.read_csv(summary.transform_class_impact_csv)
     transform_class_aggregation = pd.read_csv(summary.transform_class_aggregation_csv)
 
@@ -276,6 +337,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.corrections_csv.exists()
     assert summary.corrections_svg.exists()
     assert summary.selector_history_csv.exists()
+    assert summary.selector_ablation_csv.exists()
+    assert summary.selector_diagnostics_json.exists()
+    assert summary.adaptive_selection_counts_csv.exists()
     assert summary.selector_history_svg.exists()
     assert summary.transform_class_impact_csv.exists()
     assert summary.transform_class_impact_svg.exists()
@@ -381,6 +445,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
+    assert selector_ablation["variant"].tolist() == ["gain_only", "gain_rank_bce"]
+    assert adaptive_selection_counts["mean_forwards_per_image"].tolist() == pytest.approx([2.0])
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
     assert "figures/aggregation_weights.svg" in markdown
@@ -412,6 +478,12 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "xgboost_feature_importance.csv" in markdown
     assert "corrections.csv" in markdown
     assert "selector_history.csv" in markdown
+    assert "selector_loss_ablation.csv" in markdown
+    assert "selector_diagnostics.json" in markdown
+    assert "adaptive_selection_counts.csv" in markdown
+    assert "Selector Prediction Diagnostics" in markdown
+    assert "Selector Baseline Decision" in markdown
+    assert "learned_topk_uniform" in markdown
     assert "augmentation_impact.csv" in markdown
     assert "transform_class_impact.csv" in markdown
     assert "transform_class_aggregation.csv" in markdown
@@ -439,6 +511,12 @@ def test_build_report_cli_writes_final_results(
             str(report_artifacts["corrections"]),
             "--selector-history",
             str(report_artifacts["selector_history"]),
+            "--selector-ablation",
+            str(report_artifacts["selector_ablation"]),
+            "--selector-diagnostics",
+            str(report_artifacts["selector_diagnostics"]),
+            "--adaptive-selection-counts",
+            str(report_artifacts["adaptive_selection_counts"]),
             "--tuning",
             str(report_artifacts["tuning"]),
             "--impact-targets",
@@ -469,6 +547,9 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "tables" / "aggregation_weights.csv").exists()
     assert (report_dir / "tables" / "corrections.csv").exists()
     assert (report_dir / "tables" / "selector_history.csv").exists()
+    assert (report_dir / "tables" / "selector_loss_ablation.csv").exists()
+    assert (report_dir / "tables" / "selector_diagnostics.json").exists()
+    assert (report_dir / "tables" / "adaptive_selection_counts.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
     assert (report_dir / "figures" / "aggregation_weights.svg").exists()
     assert (report_dir / "tables" / "xgboost_feature_importance.csv").exists()

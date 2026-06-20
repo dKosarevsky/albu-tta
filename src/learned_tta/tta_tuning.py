@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from PIL import Image
 
@@ -36,6 +37,9 @@ class TTATuningSummary:
     best_adaptive_threshold: float | None = None
     best_adaptive_max_k: int | None = None
     predicted_useful_shape: tuple[int, int] | None = None
+    selector_diagnostics: dict[str, object] | None = None
+    diagnostics_path: Path | None = None
+    selection_counts_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +84,12 @@ def tune_tta_from_artifacts(
         device=device,
     )
     predicted_gain = predictions.gain
+    true_gain = _gain_from_logits(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        identity_aug_id=identity_aug_id,
+    )
 
     results_by_k = {
         k: evaluate_learned_topk_uniform(
@@ -117,6 +127,25 @@ def tune_tta_from_artifacts(
         }
         best_key = min(adaptive_results, key=lambda key: adaptive_results[key]["nll"])
         best_adaptive_threshold, best_adaptive_max_k = _parse_adaptive_key(best_key)
+    selector_diagnostics = _selector_diagnostics(
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        true_gain=true_gain,
+        useful_prob=predictions.useful_prob,
+        top_k_grid=top_k_grid,
+        adaptive_threshold_grid=adaptive_threshold_grid or [],
+        identity_aug_id=identity_aug_id,
+    )
+    diagnostics_path = output_dir / f"{split}_selector_diagnostics.json"
+    selection_counts_path = output_dir / f"{split}_adaptive_selection_counts.csv"
+    diagnostics_path.write_text(
+        json.dumps(selector_diagnostics, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    pd.DataFrame(selector_diagnostics["adaptive_selection_counts"]).to_csv(
+        selection_counts_path,
+        index=False,
+    )
     result_path = output_dir / f"{split}_tta_tuning.json"
     result_path.write_text(
         json.dumps(
@@ -127,6 +156,7 @@ def tune_tta_from_artifacts(
                 "adaptive_results": adaptive_results,
                 "best_adaptive_threshold": best_adaptive_threshold,
                 "best_adaptive_max_k": best_adaptive_max_k,
+                "selector_diagnostics": selector_diagnostics,
                 "predicted_gain_shape": list(predicted_gain.shape),
                 "predicted_useful_shape": (
                     list(predictions.useful_prob.shape)
@@ -151,6 +181,9 @@ def tune_tta_from_artifacts(
         predicted_useful_shape=(
             predictions.useful_prob.shape if predictions.useful_prob is not None else None
         ),
+        selector_diagnostics=selector_diagnostics,
+        diagnostics_path=diagnostics_path,
+        selection_counts_path=selection_counts_path,
     )
 
 
@@ -308,6 +341,150 @@ def _adaptive_key(threshold: float, max_k: int) -> str:
 def _parse_adaptive_key(key: str) -> tuple[float, int]:
     parts = dict(part.split("=", maxsplit=1) for part in key.split(","))
     return float(parts["threshold"]), int(parts["max_k"])
+
+
+def _gain_from_logits(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    identity_aug_id: str,
+) -> np.ndarray:
+    if identity_aug_id not in logits_by_aug:
+        raise ValueError(f"identity aug_id {identity_aug_id!r} is missing from logits")
+    clean_nll = _true_class_nll(logits_by_aug[identity_aug_id], class_idxs)
+    gains = []
+    for aug_id in aug_ids:
+        aug_nll = _true_class_nll(logits_by_aug[aug_id], class_idxs)
+        gains.append(clean_nll - aug_nll)
+    return np.stack(gains, axis=1).astype(np.float32)
+
+
+def _true_class_nll(logits: np.ndarray, class_idxs: np.ndarray) -> np.ndarray:
+    shifted = logits - np.max(logits, axis=1, keepdims=True)
+    logsumexp = np.log(np.exp(shifted).sum(axis=1)) + np.max(logits, axis=1)
+    return (logsumexp - logits[np.arange(logits.shape[0]), class_idxs]).astype(np.float32)
+
+
+def _selector_diagnostics(
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    true_gain: np.ndarray,
+    useful_prob: np.ndarray | None,
+    top_k_grid: list[int],
+    adaptive_threshold_grid: list[float],
+    identity_aug_id: str,
+    usefulness_tau: float = 0.01,
+) -> dict[str, object]:
+    identity_index = aug_ids.index(identity_aug_id)
+    nonidentity = np.array(
+        [index for index, aug_id in enumerate(aug_ids) if aug_id != identity_aug_id],
+        dtype=np.int64,
+    )
+    topk_hit_rate_by_k = {
+        str(k): _topk_hit_rate(predicted_gain[:, nonidentity], true_gain[:, nonidentity], k=k)
+        for k in top_k_grid
+        if k > 0
+    }
+    diagnostics: dict[str, object] = {
+        "gain_pearson": _safe_corr(predicted_gain.ravel(), true_gain.ravel()),
+        "gain_spearman": _safe_corr(
+            _rankdata(predicted_gain.ravel()),
+            _rankdata(true_gain.ravel()),
+        ),
+        "topk_hit_rate_by_k": topk_hit_rate_by_k,
+        "usefulness_calibration": {
+            "threshold": usefulness_tau,
+            "bins": [],
+        },
+        "adaptive_selection_counts": [],
+    }
+    if useful_prob is None:
+        return diagnostics
+
+    useful_nonidentity = useful_prob[:, nonidentity]
+    actual_useful = true_gain[:, nonidentity] > usefulness_tau
+    diagnostics["usefulness_calibration"] = {
+        "threshold": usefulness_tau,
+        "bins": _calibration_bins(useful_nonidentity.ravel(), actual_useful.ravel()),
+    }
+    diagnostics["adaptive_selection_counts"] = [
+        _selection_count_row(useful_nonidentity, threshold=threshold)
+        for threshold in adaptive_threshold_grid
+    ]
+    diagnostics["identity_index"] = int(identity_index)
+    return diagnostics
+
+
+def _topk_hit_rate(predicted_gain: np.ndarray, true_gain: np.ndarray, k: int) -> float:
+    if k <= 0 or predicted_gain.shape[1] == 0:
+        return 0.0
+    capped_k = min(k, predicted_gain.shape[1])
+    predicted_order = np.argsort(-predicted_gain, axis=1)[:, :capped_k]
+    oracle_order = np.argsort(-true_gain, axis=1)[:, :capped_k]
+    overlaps = [
+        len(set(predicted_order[row]).intersection(set(oracle_order[row]))) / capped_k
+        for row in range(predicted_gain.shape[0])
+    ]
+    return float(np.mean(overlaps))
+
+
+def _safe_corr(left: np.ndarray, right: np.ndarray) -> float:
+    left = np.asarray(left, dtype=np.float64)
+    right = np.asarray(right, dtype=np.float64)
+    left_std = float(left.std())
+    right_std = float(right.std())
+    if left.size == 0 or left_std == 0.0 or right_std == 0.0:
+        return 0.0
+    return float(np.corrcoef(left, right)[0, 1])
+
+
+def _rankdata(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values)
+    order = np.argsort(values, kind="mergesort")
+    ranks = np.empty(values.shape[0], dtype=np.float64)
+    ranks[order] = np.arange(values.shape[0], dtype=np.float64)
+    return ranks
+
+
+def _calibration_bins(
+    predicted_prob: np.ndarray,
+    actual_positive: np.ndarray,
+    bins: int = 5,
+) -> list[dict[str, float]]:
+    edges = np.linspace(0.0, 1.0, bins + 1)
+    rows = []
+    for index in range(bins):
+        lower = edges[index]
+        upper = edges[index + 1]
+        if index == bins - 1:
+            mask = (predicted_prob >= lower) & (predicted_prob <= upper)
+        else:
+            mask = (predicted_prob >= lower) & (predicted_prob < upper)
+        count = int(mask.sum())
+        rows.append(
+            {
+                "prob_min": float(lower),
+                "prob_max": float(upper),
+                "count": count,
+                "mean_predicted_prob": float(predicted_prob[mask].mean()) if count else 0.0,
+                "observed_positive_rate": float(actual_positive[mask].mean()) if count else 0.0,
+            }
+        )
+    return rows
+
+
+def _selection_count_row(
+    useful_prob: np.ndarray,
+    threshold: float,
+) -> dict[str, float]:
+    selected_counts = 1 + (useful_prob > threshold).sum(axis=1)
+    return {
+        "threshold": float(threshold),
+        "mean_forwards_per_image": float(selected_counts.mean()),
+        "median_forwards_per_image": float(np.median(selected_counts)),
+        "p90_forwards_per_image": float(np.quantile(selected_counts, 0.9)),
+        "max_forwards_per_image": float(selected_counts.max()),
+    }
 
 
 class _SelectorImageDataset(torch.utils.data.Dataset[torch.Tensor]):

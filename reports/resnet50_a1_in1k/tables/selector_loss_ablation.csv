@@ -1,0 +1,4 @@
+variant,rank_weight,usefulness_head,usefulness_tau,usefulness_weight,best_epoch,best_val_loss,best_val_nll
+gain_only,0.0,False,0.01,0.0,4,0.1498502557507798,0.7851622700691223
+gain_rank,0.2,False,0.01,0.0,2,0.2850510085685344,0.7486779689788818
+gain_rank_bce,0.2,True,0.01,0.05,2,0.3080865982212598,0.7511284947395325

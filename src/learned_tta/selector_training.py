@@ -44,6 +44,47 @@ class SelectorTrainingSummary:
     history: list[dict[str, float]]
 
 
+@dataclass(frozen=True, slots=True)
+class SelectorLossAblationSpec:
+    """One selector loss variant for ablation training."""
+
+    variant: str
+    rank_weight: float
+    usefulness_head: bool
+    usefulness_tau: float = 0.01
+    usefulness_weight: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class SelectorLossAblationSummary:
+    """Summary of a selector loss ablation run."""
+
+    results_csv: Path
+    rows: list[dict[str, object]]
+
+
+DEFAULT_SELECTOR_LOSS_ABLATIONS = (
+    SelectorLossAblationSpec(
+        variant="gain_only",
+        rank_weight=0.0,
+        usefulness_head=False,
+        usefulness_weight=0.0,
+    ),
+    SelectorLossAblationSpec(
+        variant="gain_rank",
+        rank_weight=0.2,
+        usefulness_head=False,
+        usefulness_weight=0.0,
+    ),
+    SelectorLossAblationSpec(
+        variant="gain_rank_bce",
+        rank_weight=0.2,
+        usefulness_head=True,
+        usefulness_weight=0.05,
+    ),
+)
+
+
 SelectorBatch = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
@@ -249,6 +290,73 @@ def train_selector_from_artifacts(
     )
 
 
+def train_selector_loss_ablation_from_artifacts(
+    train_manifest_path: Path,
+    val_manifest_path: Path,
+    train_targets_path: Path,
+    val_targets_path: Path,
+    output_dir: Path,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    epochs: int,
+    learning_rate: float,
+    val_cache_dir: Path | None = None,
+    val_split: str = "public_val",
+    aug_ids: list[str] | None = None,
+    top_k_grid: list[int] | None = None,
+    identity_aug_id: str = "aug_000",
+    device: str | torch.device = "cpu",
+    specs: tuple[SelectorLossAblationSpec, ...] = DEFAULT_SELECTOR_LOSS_ABLATIONS,
+) -> SelectorLossAblationSummary:
+    """Train selector loss variants and write a compact comparison table."""
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, object]] = []
+    for spec in specs:
+        variant_dir = output_dir / spec.variant
+        summary = train_selector_from_artifacts(
+            train_manifest_path=train_manifest_path,
+            val_manifest_path=val_manifest_path,
+            train_targets_path=train_targets_path,
+            val_targets_path=val_targets_path,
+            output_dir=variant_dir,
+            image_size=image_size,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            rank_weight=spec.rank_weight,
+            usefulness_head=spec.usefulness_head,
+            usefulness_tau=spec.usefulness_tau,
+            usefulness_weight=spec.usefulness_weight,
+            val_cache_dir=val_cache_dir,
+            val_split=val_split,
+            aug_ids=aug_ids,
+            top_k_grid=top_k_grid,
+            identity_aug_id=identity_aug_id,
+            device=device,
+        )
+        rows.append(
+            {
+                "variant": spec.variant,
+                "rank_weight": spec.rank_weight,
+                "usefulness_head": spec.usefulness_head,
+                "usefulness_tau": spec.usefulness_tau,
+                "usefulness_weight": spec.usefulness_weight,
+                "best_epoch": summary.best_epoch,
+                "best_val_loss": summary.best_val_loss,
+                "best_val_nll": summary.best_val_nll,
+                "checkpoint_path": str(summary.checkpoint_path),
+                "history_csv": str(summary.history_csv),
+            }
+        )
+    results_csv = output_dir / "selector_loss_ablation.csv"
+    pd.DataFrame(rows).to_csv(results_csv, index=False)
+    return SelectorLossAblationSummary(results_csv=results_csv, rows=rows)
+
+
 def train_selector_from_config(
     config_path: Path,
     train_manifest_path: Path | None = None,
@@ -310,6 +418,54 @@ def train_selector_from_config(
         usefulness_head=resolved_usefulness_head,
         usefulness_tau=resolved_usefulness_tau,
         usefulness_weight=resolved_usefulness_weight,
+        device=device,
+    )
+
+
+def train_selector_loss_ablation_from_config(
+    config_path: Path,
+    train_manifest_path: Path | None = None,
+    val_manifest_path: Path | None = None,
+    train_targets_path: Path | None = None,
+    val_targets_path: Path | None = None,
+    cache_dir: Path | None = None,
+    output_dir: Path | None = None,
+    val_split: str = "public_val",
+    candidate_ids: list[str] | None = None,
+    top_k_grid: list[int] | None = None,
+    image_size: int = 224,
+    batch_size: int = 64,
+    num_workers: int = 4,
+    epochs: int = 5,
+    learning_rate: float = 1e-3,
+    device: str | torch.device = "cpu",
+) -> SelectorLossAblationSummary:
+    """Load experiment config and train the default selector loss ablation set."""
+
+    config = load_experiment_config(config_path)
+    selector_dir = config.artifacts.selector_dir
+    if candidate_ids is None:
+        candidate_ids = [
+            candidate.id
+            for candidate in load_augmentation_registry(config.augmentations.registry_path)
+        ]
+    return train_selector_loss_ablation_from_artifacts(
+        train_manifest_path=train_manifest_path
+        or config.artifacts.manifests_dir / "public_train.csv",
+        val_manifest_path=val_manifest_path or config.artifacts.manifests_dir / "public_val.csv",
+        train_targets_path=train_targets_path or selector_dir / "public_train_targets.npz",
+        val_targets_path=val_targets_path or selector_dir / "public_val_targets.npz",
+        output_dir=output_dir or selector_dir / "loss_ablation",
+        val_cache_dir=cache_dir or config.artifacts.teacher_cache_dir,
+        val_split=val_split,
+        aug_ids=candidate_ids,
+        top_k_grid=top_k_grid or config.selector.top_k_grid,
+        identity_aug_id=config.augmentations.identity_id,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        epochs=epochs,
+        learning_rate=learning_rate,
         device=device,
     )
 

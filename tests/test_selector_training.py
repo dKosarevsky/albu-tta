@@ -13,6 +13,7 @@ from learned_tta.selector_training import (
     SelectorTrainingSummary,
     make_selector_dataloader,
     train_selector_from_artifacts,
+    train_selector_loss_ablation_from_artifacts,
 )
 from learned_tta.targets import TargetStats, save_selector_targets
 
@@ -210,6 +211,94 @@ def test_train_selector_cli_writes_checkpoint(
     assert "best val nll" in captured.out
     assert (output_dir / "selector_best.pt").exists()
     assert (output_dir / "selector_history.csv").exists()
+
+
+def test_train_selector_loss_ablation_from_artifacts_writes_variant_table(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    summary = train_selector_loss_ablation_from_artifacts(
+        train_manifest_path=selector_training_artifacts["train_manifest"],
+        val_manifest_path=selector_training_artifacts["val_manifest"],
+        train_targets_path=selector_training_artifacts["train_targets"],
+        val_targets_path=selector_training_artifacts["val_targets"],
+        output_dir=tmp_path / "selector_ablation",
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        epochs=1,
+        learning_rate=1e-3,
+        val_cache_dir=selector_training_artifacts["cache_dir"],
+        val_split="public_val",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[1],
+        identity_aug_id="aug_000",
+        device="cpu",
+    )
+    table = pd.read_csv(summary.results_csv)
+
+    assert summary.results_csv.exists()
+    assert table["variant"].tolist() == ["gain_only", "gain_rank", "gain_rank_bce"]
+    assert table["usefulness_head"].tolist() == [False, False, True]
+    assert table["rank_weight"].tolist() == pytest.approx([0.0, 0.2, 0.2])
+    assert set(table.columns) >= {
+        "variant",
+        "best_epoch",
+        "best_val_loss",
+        "best_val_nll",
+        "checkpoint_path",
+        "history_csv",
+    }
+    for checkpoint_path in table["checkpoint_path"]:
+        assert Path(checkpoint_path).exists()
+
+
+def test_train_selector_loss_ablation_cli_writes_variant_table(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from learned_tta.cli import main
+
+    output_dir = tmp_path / "selector_ablation"
+
+    main(
+        [
+            "train-selector-ablation",
+            "--config",
+            str(Path(__file__).resolve().parents[1] / "configs/experiment/resnet50_a1_in1k.yaml"),
+            "--train-manifest",
+            str(selector_training_artifacts["train_manifest"]),
+            "--val-manifest",
+            str(selector_training_artifacts["val_manifest"]),
+            "--train-targets",
+            str(selector_training_artifacts["train_targets"]),
+            "--val-targets",
+            str(selector_training_artifacts["val_targets"]),
+            "--cache-dir",
+            str(selector_training_artifacts["cache_dir"]),
+            "--output-dir",
+            str(output_dir),
+            "--candidate-id",
+            "aug_000",
+            "--candidate-id",
+            "aug_001",
+            "--top-k",
+            "1",
+            "--epochs",
+            "1",
+            "--batch-size",
+            "2",
+            "--num-workers",
+            "0",
+            "--image-size",
+            "16",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert "selector ablation: wrote" in captured.out
+    assert (output_dir / "selector_loss_ablation.csv").exists()
 
 
 def _write_manifest(root: Path, split: str, count: int) -> Path:

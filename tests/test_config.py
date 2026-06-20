@@ -26,7 +26,17 @@ def test_load_experiment_config_resolves_project_relative_paths() -> None:
     assert config.selector.usefulness_head is True
     assert config.selector.usefulness_tau == 0.01
     assert config.selector.usefulness_weight == 0.05
-    assert config.selector.adaptive_threshold_grid == [0.25, 0.5, 0.75]
+    assert config.selector.adaptive_threshold_grid == [
+        0.01,
+        0.03,
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.25,
+        0.5,
+        0.75,
+    ]
     assert config.selector.adaptive_max_k_grid == [0, 1, 2, 4, 8, 16]
     assert config.augmentations.registry_path == (
         ROOT / "configs" / "augmentations" / "imagenet100.yaml"

@@ -94,6 +94,49 @@ def test_tune_tta_from_artifacts_writes_adaptive_public_val_tuning(
     }
 
 
+def test_tune_tta_from_artifacts_writes_selector_diagnostics(
+    tmp_path: Path,
+    tuning_artifacts: dict[str, Path],
+) -> None:
+    checkpoint_path = _write_selector_checkpoint(
+        tmp_path / "selector_best.pt",
+        output_dim=2,
+        usefulness_head=True,
+    )
+
+    summary = tune_tta_from_artifacts(
+        split="public_val",
+        manifest_path=tuning_artifacts["manifest"],
+        cache_dir=tuning_artifacts["cache_dir"],
+        checkpoint_path=checkpoint_path,
+        output_dir=tmp_path / "selector",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[0, 1],
+        adaptive_threshold_grid=[0.25, 0.75],
+        adaptive_max_k_grid=[0, 1],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        device="cpu",
+    )
+    saved = json.loads(summary.result_path.read_text(encoding="utf-8"))
+
+    assert summary.diagnostics_path is not None
+    assert summary.selection_counts_path is not None
+    assert summary.diagnostics_path.exists()
+    assert summary.selection_counts_path.exists()
+    assert saved["selector_diagnostics"]["gain_pearson"] == pytest.approx(
+        summary.selector_diagnostics["gain_pearson"]
+    )
+    assert set(saved["selector_diagnostics"]["topk_hit_rate_by_k"]) == {"1"}
+    assert saved["selector_diagnostics"]["usefulness_calibration"]["threshold"] == pytest.approx(
+        0.01
+    )
+    selection_counts = pd.read_csv(summary.selection_counts_path)
+    assert selection_counts["threshold"].tolist() == [0.25, 0.75]
+    assert "mean_forwards_per_image" in selection_counts.columns
+
+
 def test_tune_tta_from_artifacts_rejects_private_split(tmp_path: Path) -> None:
     manifest_path = _write_manifest(tmp_path, split="private", count=2)
     cache_dir = _write_cache(tmp_path / "teacher_cache", split="private")

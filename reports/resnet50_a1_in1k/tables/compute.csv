@@ -9,6 +9,6 @@ private,all_100_uniform,100.0,1.0
 private,learned_topk_uniform,17.0,0.17
 private,learned_topk_softmax_weighted,17.0,0.17
 private,oracle_topk_uniform,17.0,0.17
-private,learned_adaptive_uniform,1.43844,0.0143843999999999
+private,learned_adaptive_uniform,17.0,0.17
 private,global_weighted_tta,100.0,1.0
 private,class_weighted_tta,100.0,1.0

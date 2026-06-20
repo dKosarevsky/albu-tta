@@ -153,7 +153,10 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
             usefulness_weight=float(selector.get("usefulness_weight", 0.0)),
             adaptive_threshold_grid=[
                 float(threshold)
-                for threshold in selector.get("adaptive_threshold_grid", [0.25, 0.5, 0.75])
+                for threshold in selector.get(
+                    "adaptive_threshold_grid",
+                    [0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 0.75],
+                )
             ],
             adaptive_max_k_grid=[
                 int(max_k) for max_k in selector.get("adaptive_max_k_grid", selector["top_k_grid"])

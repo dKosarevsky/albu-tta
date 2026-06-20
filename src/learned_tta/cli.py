@@ -178,6 +178,26 @@ def main(argv: Sequence[str] | None = None) -> None:
             usefulness_weight=args.usefulness_weight,
             device=str(args.device),
         )
+    elif command == "train-selector-ablation":
+        output_dir = Path(args.output_dir) if args.output_dir is not None else None
+        _cmd_train_selector_ablation(
+            config_path=Path(args.config),
+            train_manifest_path=_optional_path(args.train_manifest),
+            val_manifest_path=_optional_path(args.val_manifest),
+            train_targets_path=_optional_path(args.train_targets),
+            val_targets_path=_optional_path(args.val_targets),
+            cache_dir=_optional_path(args.cache_dir),
+            output_dir=output_dir,
+            val_split=str(args.val_split),
+            candidate_ids=args.candidate_id,
+            top_k_grid=args.top_k,
+            image_size=int(args.image_size),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            epochs=int(args.epochs),
+            learning_rate=float(args.learning_rate),
+            device=str(args.device),
+        )
     elif command == "tune-tta":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_tune_tta(
@@ -240,6 +260,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             private_metrics_path=_optional_path(args.private_metrics),
             corrections_path=_optional_path(args.corrections),
             selector_history_path=_optional_path(args.selector_history),
+            selector_ablation_path=_optional_path(args.selector_ablation),
+            selector_diagnostics_path=_optional_path(args.selector_diagnostics),
+            adaptive_selection_counts_path=_optional_path(args.adaptive_selection_counts),
             tuning_path=_optional_path(args.tuning),
             impact_targets_path=_optional_path(args.impact_targets),
             impact_manifest_path=_optional_path(args.impact_manifest),
@@ -617,6 +640,31 @@ def _build_parser() -> argparse.ArgumentParser:
     train_selector.add_argument("--usefulness-weight", type=float)
     train_selector.add_argument("--device", default="cpu")
 
+    train_selector_ablation = subparsers.add_parser(
+        "train-selector-ablation",
+        help="Train gain-only, gain+rank, and gain+rank+BCE selector loss ablations.",
+    )
+    train_selector_ablation.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    train_selector_ablation.add_argument("--train-manifest")
+    train_selector_ablation.add_argument("--val-manifest")
+    train_selector_ablation.add_argument("--train-targets")
+    train_selector_ablation.add_argument("--val-targets")
+    train_selector_ablation.add_argument("--cache-dir")
+    train_selector_ablation.add_argument("--output-dir")
+    train_selector_ablation.add_argument("--val-split", default="public_val")
+    train_selector_ablation.add_argument("--candidate-id", action="append")
+    train_selector_ablation.add_argument("--top-k", type=int, action="append")
+    train_selector_ablation.add_argument("--image-size", type=int, default=224)
+    train_selector_ablation.add_argument("--batch-size", type=int, default=64)
+    train_selector_ablation.add_argument("--num-workers", type=int, default=4)
+    train_selector_ablation.add_argument("--epochs", type=int, default=5)
+    train_selector_ablation.add_argument("--learning-rate", type=float, default=1e-3)
+    train_selector_ablation.add_argument("--device", default="cpu")
+
     tune_tta = subparsers.add_parser(
         "tune-tta",
         help="Tune learned TTA top-k on a validation split.",
@@ -700,6 +748,9 @@ def _build_parser() -> argparse.ArgumentParser:
     build_report.add_argument("--private-metrics")
     build_report.add_argument("--corrections")
     build_report.add_argument("--selector-history")
+    build_report.add_argument("--selector-ablation")
+    build_report.add_argument("--selector-diagnostics")
+    build_report.add_argument("--adaptive-selection-counts")
     build_report.add_argument("--tuning")
     build_report.add_argument("--impact-targets")
     build_report.add_argument("--impact-manifest")
@@ -1210,6 +1261,47 @@ def _cmd_train_selector(
     )
 
 
+def _cmd_train_selector_ablation(
+    config_path: Path,
+    train_manifest_path: Path | None,
+    val_manifest_path: Path | None,
+    train_targets_path: Path | None,
+    val_targets_path: Path | None,
+    cache_dir: Path | None,
+    output_dir: Path | None,
+    val_split: str,
+    candidate_ids: list[str] | None,
+    top_k_grid: list[int] | None,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    epochs: int,
+    learning_rate: float,
+    device: str,
+) -> None:
+    from learned_tta.selector_training import train_selector_loss_ablation_from_config
+
+    summary = train_selector_loss_ablation_from_config(
+        config_path=config_path,
+        train_manifest_path=train_manifest_path,
+        val_manifest_path=val_manifest_path,
+        train_targets_path=train_targets_path,
+        val_targets_path=val_targets_path,
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        val_split=val_split,
+        candidate_ids=candidate_ids,
+        top_k_grid=top_k_grid,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        device=device,
+    )
+    print(f"selector ablation: wrote {summary.results_csv}")
+
+
 def _optional_path(value: str | None) -> Path | None:
     if value is None:
         return None
@@ -1333,6 +1425,9 @@ def _cmd_build_report(
     private_metrics_path: Path | None,
     corrections_path: Path | None,
     selector_history_path: Path | None,
+    selector_ablation_path: Path | None,
+    selector_diagnostics_path: Path | None,
+    adaptive_selection_counts_path: Path | None,
     tuning_path: Path | None,
     impact_targets_path: Path | None,
     impact_manifest_path: Path | None,
@@ -1353,6 +1448,9 @@ def _cmd_build_report(
         private_metrics_path=private_metrics_path,
         corrections_path=corrections_path,
         selector_history_path=selector_history_path,
+        selector_ablation_path=selector_ablation_path,
+        selector_diagnostics_path=selector_diagnostics_path,
+        adaptive_selection_counts_path=adaptive_selection_counts_path,
         tuning_path=tuning_path,
         impact_targets_path=impact_targets_path,
         impact_manifest_path=impact_manifest_path,

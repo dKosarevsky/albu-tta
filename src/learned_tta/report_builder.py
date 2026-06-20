@@ -47,6 +47,9 @@ class ReportBuildSummary:
     xgboost_feature_importance_csv: Path | None
     corrections_csv: Path | None
     selector_history_csv: Path | None
+    selector_ablation_csv: Path | None
+    selector_diagnostics_json: Path | None
+    adaptive_selection_counts_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
     aggregation_weights_svg: Path | None
@@ -80,6 +83,9 @@ def build_report_from_artifacts(
     xgboost_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
     selector_history_path: Path | None = None,
+    selector_ablation_path: Path | None = None,
+    selector_diagnostics_path: Path | None = None,
+    adaptive_selection_counts_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> ReportBuildSummary:
@@ -162,6 +168,19 @@ def build_report_from_artifacts(
     selector_history = (
         _read_selector_history_csv(selector_history_path) if selector_history_path else None
     )
+    selector_ablation = (
+        _read_selector_ablation_csv(selector_ablation_path) if selector_ablation_path else None
+    )
+    selector_diagnostics = (
+        _read_selector_diagnostics_json(selector_diagnostics_path)
+        if selector_diagnostics_path
+        else None
+    )
+    adaptive_selection_counts = (
+        _read_adaptive_selection_counts_csv(adaptive_selection_counts_path)
+        if adaptive_selection_counts_path
+        else None
+    )
     private_metric_deltas = _build_private_metric_deltas_table(private_metrics)
 
     paths = ReportBuildSummary(
@@ -199,6 +218,17 @@ def build_report_from_artifacts(
         corrections_csv=tables_dir / "corrections.csv" if corrections_table is not None else None,
         selector_history_csv=(
             tables_dir / "selector_history.csv" if selector_history is not None else None
+        ),
+        selector_ablation_csv=(
+            tables_dir / "selector_loss_ablation.csv" if selector_ablation is not None else None
+        ),
+        selector_diagnostics_json=(
+            tables_dir / "selector_diagnostics.json" if selector_diagnostics is not None else None
+        ),
+        adaptive_selection_counts_csv=(
+            tables_dir / "adaptive_selection_counts.csv"
+            if adaptive_selection_counts is not None
+            else None
         ),
         gain_distribution_svg=figures_dir / "gain_distribution.svg",
         oracle_overlap_svg=figures_dir / "oracle_overlap.svg",
@@ -264,6 +294,15 @@ def build_report_from_artifacts(
         corrections_table.to_csv(paths.corrections_csv, index=False)
     if paths.selector_history_csv is not None and selector_history is not None:
         selector_history.to_csv(paths.selector_history_csv, index=False)
+    if paths.selector_ablation_csv is not None and selector_ablation is not None:
+        selector_ablation.to_csv(paths.selector_ablation_csv, index=False)
+    if paths.selector_diagnostics_json is not None and selector_diagnostics is not None:
+        paths.selector_diagnostics_json.write_text(
+            json.dumps(selector_diagnostics, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+    if paths.adaptive_selection_counts_csv is not None and adaptive_selection_counts is not None:
+        adaptive_selection_counts.to_csv(paths.adaptive_selection_counts_csv, index=False)
     paths.gain_distribution_svg.write_text(
         _gain_distribution_svg(targets.gain),
         encoding="utf-8",
@@ -318,6 +357,9 @@ def build_report_from_artifacts(
             transform_class_aggregation=transform_class_aggregation,
             aggregation_weights=aggregation_tables.weights,
             xgboost_importance=xgboost_importance,
+            selector_ablation=selector_ablation,
+            selector_diagnostics=selector_diagnostics,
+            adaptive_selection_counts=adaptive_selection_counts,
             identity_aug_id=identity_aug_id,
             has_class_weights=aggregation_tables.class_weights is not None,
             has_corrections=corrections_table is not None,
@@ -341,6 +383,9 @@ def build_report_from_config(
     xgboost_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
     selector_history_path: Path | None = None,
+    selector_ablation_path: Path | None = None,
+    selector_diagnostics_path: Path | None = None,
+    adaptive_selection_counts_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -388,6 +433,16 @@ def build_report_from_config(
         or _existing_path(resolved_report_dir / "tables" / "corrections.csv"),
         selector_history_path=selector_history_path
         or _existing_path(config.artifacts.selector_dir / "selector_history.csv"),
+        selector_ablation_path=selector_ablation_path
+        or _existing_path(
+            config.artifacts.selector_dir / "loss_ablation" / "selector_loss_ablation.csv"
+        ),
+        selector_diagnostics_path=selector_diagnostics_path
+        or _existing_path(config.artifacts.selector_dir / "public_val_selector_diagnostics.json"),
+        adaptive_selection_counts_path=adaptive_selection_counts_path
+        or _existing_path(
+            config.artifacts.selector_dir / "public_val_adaptive_selection_counts.csv"
+        ),
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -475,6 +530,68 @@ def _read_selector_history_csv(path: Path) -> pd.DataFrame:
             "val_tta_nll",
             "val_tta_ece",
             "val_tta_oracle_recall",
+        ]
+    ].copy()
+
+
+def _read_selector_ablation_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "variant",
+        "rank_weight",
+        "usefulness_head",
+        "usefulness_tau",
+        "usefulness_weight",
+        "best_epoch",
+        "best_val_loss",
+        "best_val_nll",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"selector ablation CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "variant",
+            "rank_weight",
+            "usefulness_head",
+            "usefulness_tau",
+            "usefulness_weight",
+            "best_epoch",
+            "best_val_loss",
+            "best_val_nll",
+        ]
+    ].copy()
+
+
+def _read_selector_diagnostics_json(path: Path) -> dict[str, Any]:
+    with Path(path).open(encoding="utf-8") as handle:
+        payload = dict(json.load(handle))
+    required_keys = {"gain_pearson", "gain_spearman", "topk_hit_rate_by_k"}
+    missing = required_keys - set(payload)
+    if missing:
+        raise ValueError(f"selector diagnostics JSON is missing keys: {sorted(missing)}")
+    return payload
+
+
+def _read_adaptive_selection_counts_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "threshold",
+        "mean_forwards_per_image",
+        "median_forwards_per_image",
+        "p90_forwards_per_image",
+        "max_forwards_per_image",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"adaptive selection counts CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "threshold",
+            "mean_forwards_per_image",
+            "median_forwards_per_image",
+            "p90_forwards_per_image",
+            "max_forwards_per_image",
         ]
     ].copy()
 
@@ -775,6 +892,9 @@ def _results_markdown(
     transform_class_aggregation: pd.DataFrame | None,
     aggregation_weights: pd.DataFrame | None,
     xgboost_importance: pd.DataFrame | None,
+    selector_ablation: pd.DataFrame | None,
+    selector_diagnostics: dict[str, Any] | None,
+    adaptive_selection_counts: pd.DataFrame | None,
     identity_aug_id: str,
     has_class_weights: bool,
     has_corrections: bool,
@@ -805,6 +925,13 @@ def _results_markdown(
         "and `aug_000`...`aug_099` are `clean_nll - aug_nll`. Positive means the "
         "augmentation helped that image, negative means it hurt; join `aug_*` "
         "with `tables/augmentation_impact.csv` to see the augmentation names.",
+        "",
+        "## Selector Baseline Decision",
+        "",
+        "Current selector baseline: `learned_topk_uniform` with the tuned `k` above. "
+        "`learned_adaptive_uniform` is kept as an ablation because its low-compute "
+        "thresholds still lose too much quality; learned aggregation strategies are "
+        "stronger comparison baselines, not the selector baseline.",
         "",
         "## Public Validation Metrics",
         "",
@@ -884,6 +1011,41 @@ def _results_markdown(
                 "",
             ]
         )
+    if selector_ablation is not None:
+        lines.extend(
+            [
+                "## Selector Loss Ablation",
+                "",
+                "- Table: `tables/selector_loss_ablation.csv`",
+                "",
+                _markdown_table(selector_ablation),
+                "",
+            ]
+        )
+    if selector_diagnostics is not None or adaptive_selection_counts is not None:
+        lines.extend(
+            [
+                "## Selector Prediction Diagnostics",
+                "",
+            ]
+        )
+        if selector_diagnostics is not None:
+            lines.extend(
+                [
+                    "- JSON: `tables/selector_diagnostics.json`",
+                    "",
+                    *_selector_diagnostics_summary_lines(selector_diagnostics),
+                ]
+            )
+        if adaptive_selection_counts is not None:
+            lines.extend(
+                [
+                    "- Adaptive selection-count table: `tables/adaptive_selection_counts.csv`",
+                    "",
+                    _markdown_table(adaptive_selection_counts),
+                    "",
+                ]
+            )
     if has_corrections:
         lines.extend(
             [
@@ -934,6 +1096,33 @@ def _augmentation_impact_summary_lines(
             ]
         )
     return lines
+
+
+def _selector_diagnostics_summary_lines(diagnostics: dict[str, Any]) -> list[str]:
+    topk_hit_rate = diagnostics.get("topk_hit_rate_by_k", {})
+    if not isinstance(topk_hit_rate, Mapping):
+        topk_hit_rate = {}
+    rows = [
+        {
+            "metric": "gain_pearson",
+            "value": float(diagnostics["gain_pearson"]),
+        },
+        {
+            "metric": "gain_spearman",
+            "value": float(diagnostics["gain_spearman"]),
+        },
+    ]
+    rows.extend(
+        {
+            "metric": f"top{k}_hit_rate",
+            "value": float(value),
+        }
+        for k, value in sorted(topk_hit_rate.items(), key=lambda item: int(item[0]))
+    )
+    return [
+        _markdown_table(pd.DataFrame(rows)),
+        "",
+    ]
 
 
 def _transform_class_summary_lines(
