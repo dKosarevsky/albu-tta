@@ -32,9 +32,39 @@ def test_selector_targets_build_gain_logit_margin_and_top1_fix() -> None:
 def test_selector_targets_reject_shape_mismatch() -> None:
     from learned_tta.selector_targets import build_selector_targets
 
+    with pytest.raises(ValueError, match="clean_logits"):
+        build_selector_targets(
+            clean_logits=np.zeros(2, dtype=np.float32),
+            aug_logits=np.zeros((2, 2, 3), dtype=np.float32),
+            labels=np.zeros(2, dtype=np.int64),
+        )
     with pytest.raises(ValueError, match="aug_logits"):
         build_selector_targets(
             clean_logits=np.zeros((2, 3), dtype=np.float32),
             aug_logits=np.zeros((2, 3), dtype=np.float32),
             labels=np.zeros(2, dtype=np.int64),
+        )
+    with pytest.raises(ValueError, match="labels"):
+        build_selector_targets(
+            clean_logits=np.zeros((2, 3), dtype=np.float32),
+            aug_logits=np.zeros((2, 2, 3), dtype=np.float32),
+            labels=np.zeros((2, 1), dtype=np.int64),
+        )
+    with pytest.raises(ValueError, match="image count"):
+        build_selector_targets(
+            clean_logits=np.zeros((2, 3), dtype=np.float32),
+            aug_logits=np.zeros((1, 2, 3), dtype=np.float32),
+            labels=np.zeros(2, dtype=np.int64),
+        )
+    with pytest.raises(ValueError, match="class dimension"):
+        build_selector_targets(
+            clean_logits=np.zeros((2, 3), dtype=np.float32),
+            aug_logits=np.zeros((2, 2, 4), dtype=np.float32),
+            labels=np.zeros(2, dtype=np.int64),
+        )
+    with pytest.raises(ValueError, match="outside"):
+        build_selector_targets(
+            clean_logits=np.zeros((2, 3), dtype=np.float32),
+            aug_logits=np.zeros((2, 2, 3), dtype=np.float32),
+            labels=np.array([0, 3], dtype=np.int64),
         )

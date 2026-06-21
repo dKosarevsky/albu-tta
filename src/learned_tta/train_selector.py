@@ -367,8 +367,9 @@ def _forward_selector_heads(
     model: nn.Module,
     images: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
-    if hasattr(model, "forward_heads"):
-        outputs = model.forward_heads(images)  # type: ignore[attr-defined]
+    forward_heads = getattr(model, "forward_heads", None)
+    if callable(forward_heads):
+        outputs = forward_heads(images)
         return outputs.gain, outputs.useful_logits
     return model(images), None
 

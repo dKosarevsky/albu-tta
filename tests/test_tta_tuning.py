@@ -123,6 +123,7 @@ def test_tune_tta_from_artifacts_writes_selector_diagnostics(
 
     assert summary.diagnostics_path is not None
     assert summary.selection_counts_path is not None
+    assert summary.selector_diagnostics is not None
     assert summary.diagnostics_path.exists()
     assert summary.selection_counts_path.exists()
     assert saved["selector_diagnostics"]["gain_pearson"] == pytest.approx(

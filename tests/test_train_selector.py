@@ -10,6 +10,8 @@ from learned_tta.selector_model import SelectorCNN
 from learned_tta.targets import TargetStats
 from learned_tta.train_selector import (
     CheckpointState,
+    _unpack_selector_batch,
+    _usefulness_bce_loss,
     evaluate_regression,
     listwise_topk_loss,
     pairwise_rank_loss,
@@ -121,6 +123,41 @@ def test_listwise_topk_loss_is_lower_when_topk_membership_matches() -> None:
         targets,
         top_k=2,
     )
+
+
+def test_listwise_topk_loss_validates_inputs() -> None:
+    with pytest.raises(ValueError, match="matching shapes"):
+        listwise_topk_loss(torch.zeros(1, 2), torch.zeros(1, 3), top_k=2)
+    with pytest.raises(ValueError, match="shape"):
+        listwise_topk_loss(torch.zeros(3), torch.zeros(3), top_k=2)
+    assert listwise_topk_loss(
+        torch.zeros(1, 2), torch.zeros(1, 2), top_k=0
+    ).item() == pytest.approx(0.0)
+
+
+def test_usefulness_bce_loss_validates_inputs() -> None:
+    gain = torch.tensor([[0.0, 0.1]], dtype=torch.float32)
+
+    assert _usefulness_bce_loss(None, gain, 0.01, identity_index=None).item() == pytest.approx(0.0)
+    with pytest.raises(ValueError, match="gain is required"):
+        _usefulness_bce_loss(torch.zeros(1, 2), None, 0.01, identity_index=None)
+    with pytest.raises(ValueError, match="matching shapes"):
+        _usefulness_bce_loss(torch.zeros(1, 3), gain, 0.01, identity_index=None)
+    with pytest.raises(ValueError, match="shape"):
+        _usefulness_bce_loss(torch.zeros(2), torch.zeros(2), 0.01, identity_index=None)
+    with pytest.raises(ValueError, match="out of bounds"):
+        _usefulness_bce_loss(torch.zeros(1, 2), gain, 0.01, identity_index=3)
+    assert _usefulness_bce_loss(
+        torch.zeros(1, 1),
+        torch.ones(1, 1),
+        0.01,
+        identity_index=0,
+    ).item() == pytest.approx(0.0)
+
+
+def test_unpack_selector_batch_rejects_bad_tuple_size() -> None:
+    with pytest.raises(ValueError, match="selector batch"):
+        _unpack_selector_batch((torch.zeros(1, 2),))
 
 
 @pytest.mark.parametrize(

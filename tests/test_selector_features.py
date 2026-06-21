@@ -33,6 +33,8 @@ def test_clean_logit_features_reject_bad_inputs() -> None:
         clean_logit_features(np.array([1.0, 2.0], dtype=np.float32))
     with pytest.raises(ValueError, match="top_k"):
         clean_logit_features(np.zeros((2, 3), dtype=np.float32), top_k=0)
+    with pytest.raises(ValueError, match="at least one class"):
+        clean_logit_features(np.zeros((2, 0), dtype=np.float32))
 
 
 def test_selector_feature_cache_roundtrip(tmp_path) -> None:
@@ -64,6 +66,15 @@ def test_selector_feature_cache_roundtrip(tmp_path) -> None:
 def test_selector_feature_cache_rejects_shape_mismatch(tmp_path) -> None:
     from learned_tta.selector_features import save_selector_features
 
+    with pytest.raises(ValueError, match="shape"):
+        save_selector_features(
+            path=tmp_path / "features_1d.npz",
+            split="public_train",
+            model_name="resnet50.a1_in1k",
+            image_ids=["img-1"],
+            features=np.zeros(3, dtype=np.float32),
+            feature_names=["f0", "f1", "f2"],
+        )
     with pytest.raises(ValueError, match="image_ids"):
         save_selector_features(
             path=tmp_path / "features.npz",
@@ -73,3 +84,53 @@ def test_selector_feature_cache_rejects_shape_mismatch(tmp_path) -> None:
             features=np.zeros((2, 3), dtype=np.float32),
             feature_names=["f0", "f1", "f2"],
         )
+    with pytest.raises(ValueError, match="feature_names"):
+        save_selector_features(
+            path=tmp_path / "features_names.npz",
+            split="public_train",
+            model_name="resnet50.a1_in1k",
+            image_ids=["img-1", "img-2"],
+            features=np.zeros((2, 3), dtype=np.float32),
+            feature_names=["f0", "f1"],
+        )
+
+
+def test_selector_feature_cache_rejects_corrupt_npz(tmp_path) -> None:
+    from learned_tta.selector_features import load_selector_features
+
+    def write_npz(path, *, features, image_ids, feature_names, metadata_json="[{}]") -> None:
+        np.savez_compressed(
+            path,
+            version=np.array([1], dtype=np.int64),
+            split=np.array(["public_train"]),
+            model_name=np.array(["fake"]),
+            image_ids=np.asarray(image_ids, dtype=str),
+            features=np.asarray(features, dtype=np.float32),
+            feature_names=np.asarray(feature_names, dtype=str),
+            metadata_json=np.array([metadata_json]),
+        )
+
+    path = tmp_path / "bad_features.npz"
+    write_npz(path, features=np.zeros(3), image_ids=["img-1"], feature_names=["f0"])
+    with pytest.raises(ValueError, match="shape"):
+        load_selector_features(path)
+
+    write_npz(
+        path, features=np.zeros((2, 3)), image_ids=["img-1"], feature_names=["f0", "f1", "f2"]
+    )
+    with pytest.raises(ValueError, match="image_ids"):
+        load_selector_features(path)
+
+    write_npz(path, features=np.zeros((2, 3)), image_ids=["img-1", "img-2"], feature_names=["f0"])
+    with pytest.raises(ValueError, match="feature_names"):
+        load_selector_features(path)
+
+    write_npz(
+        path,
+        features=np.zeros((1, 1)),
+        image_ids=["img-1"],
+        feature_names=["f0"],
+        metadata_json="[]",
+    )
+    with pytest.raises(ValueError, match="metadata"):
+        load_selector_features(path)

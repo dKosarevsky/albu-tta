@@ -24,9 +24,15 @@ from learned_tta.report_builder import (
     _complete_metrics,
     _existing_path,
     _json_int,
+    _oracle_gap_capture_summary_lines,
     _public_metrics_from_tuning,
+    _read_adaptive_selection_counts_csv,
+    _read_compute_policy_frontier_csv,
     _read_corrections_csv,
+    _read_selector_ablation_csv,
+    _read_selector_diagnostics_json,
     _read_selector_history_csv,
+    _selector_kpi_summary_table,
     _validate_aggregator_aug_ids,
     build_report_from_artifacts,
 )
@@ -624,11 +630,63 @@ def test_report_builder_rejects_malformed_optional_csv_inputs(tmp_path: Path) ->
     pd.DataFrame([{"strategy": "clean"}]).to_csv(bad_corrections, index=False)
     bad_history = tmp_path / "selector_history.csv"
     pd.DataFrame([{"epoch": 1}]).to_csv(bad_history, index=False)
+    bad_ablation = tmp_path / "selector_loss_ablation.csv"
+    pd.DataFrame([{"variant": "gain_only"}]).to_csv(bad_ablation, index=False)
+    bad_diagnostics = tmp_path / "selector_diagnostics.json"
+    bad_diagnostics.write_text(json.dumps({"gain_pearson": 0.0}), encoding="utf-8")
+    bad_counts = tmp_path / "adaptive_selection_counts.csv"
+    pd.DataFrame([{"threshold": 0.5}]).to_csv(bad_counts, index=False)
+    bad_frontier = tmp_path / "compute_policy_frontier.csv"
+    pd.DataFrame([{"strategy": "clean"}]).to_csv(bad_frontier, index=False)
 
     with pytest.raises(ValueError, match="corrections CSV is missing columns"):
         _read_corrections_csv(bad_corrections)
     with pytest.raises(ValueError, match="selector history CSV is missing columns"):
         _read_selector_history_csv(bad_history)
+    with pytest.raises(ValueError, match="selector ablation CSV is missing columns"):
+        _read_selector_ablation_csv(bad_ablation)
+    with pytest.raises(ValueError, match="selector diagnostics JSON is missing keys"):
+        _read_selector_diagnostics_json(bad_diagnostics)
+    with pytest.raises(ValueError, match="adaptive selection counts CSV is missing columns"):
+        _read_adaptive_selection_counts_csv(bad_counts)
+    with pytest.raises(ValueError, match="compute policy frontier CSV is missing columns"):
+        _read_compute_policy_frontier_csv(bad_frontier)
+
+
+def test_report_builder_defaults_legacy_ablation_columns_and_empty_kpi(tmp_path: Path) -> None:
+    legacy_ablation = tmp_path / "selector_loss_ablation.csv"
+    pd.DataFrame(
+        [
+            {
+                "variant": "gain_only",
+                "rank_weight": 0.0,
+                "usefulness_head": False,
+                "usefulness_tau": 0.01,
+                "usefulness_weight": 0.0,
+                "best_epoch": 1,
+                "best_val_loss": 0.2,
+                "best_val_nll": 0.3,
+            }
+        ]
+    ).to_csv(legacy_ablation, index=False)
+
+    table = _read_selector_ablation_csv(legacy_ablation)
+    frontier = pd.DataFrame(
+        [
+            {
+                "strategy": "clean",
+                "k": 0,
+                "top1_oracle_capture": 0.0,
+                "top1_delta_pp_vs_clean": 0.0,
+            }
+        ]
+    )
+
+    assert table["feature_mode"].tolist() == ["image"]
+    assert table["target_mode"].tolist() == ["nll_gain"]
+    assert table["model_family"].tolist() == ["image_cnn"]
+    assert _oracle_gap_capture_summary_lines(frontier)[0].startswith("No learned selector")
+    assert _selector_kpi_summary_table(frontier).empty
 
 
 def test_report_builder_handles_absent_optional_metadata_and_tables(tmp_path: Path) -> None:

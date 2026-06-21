@@ -83,7 +83,7 @@ def evaluate_private_from_artifacts(
 
     validate_private_evaluation_split(split, command="evaluate-private")
     tuning = _load_tuning_payload(tuning_path)
-    best_k = int(tuning["best_k"])
+    best_k = _required_payload_int(tuning, "best_k")
     records = load_manifest(manifest_path)
     logits_by_aug, class_idxs = _read_split_logits(cache_dir, split=split, aug_ids=aug_ids)
     selector_predictions = predict_selector_outputs(
@@ -97,8 +97,8 @@ def evaluate_private_from_artifacts(
         device=device,
     )
     predicted_gain = selector_predictions.gain
-    adaptive_threshold = tuning.get("best_adaptive_threshold")
-    adaptive_max_k = tuning.get("best_adaptive_max_k")
+    adaptive_threshold = _optional_payload_float(tuning, "best_adaptive_threshold")
+    adaptive_max_k = _optional_payload_int(tuning, "best_adaptive_max_k")
     metrics_by_strategy = _evaluate_private_strategies(
         logits_by_aug=logits_by_aug,
         class_idxs=class_idxs,
@@ -107,8 +107,8 @@ def evaluate_private_from_artifacts(
         useful_prob=selector_predictions.useful_prob,
         identity_aug_id=identity_aug_id,
         best_k=best_k,
-        adaptive_threshold=(float(adaptive_threshold) if adaptive_threshold is not None else None),
-        adaptive_max_k=int(adaptive_max_k) if adaptive_max_k is not None else None,
+        adaptive_threshold=adaptive_threshold,
+        adaptive_max_k=adaptive_max_k,
         random_seeds=random_seeds,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
@@ -131,8 +131,8 @@ def evaluate_private_from_artifacts(
         useful_prob=selector_predictions.useful_prob,
         identity_aug_id=identity_aug_id,
         best_k=best_k,
-        adaptive_threshold=(float(adaptive_threshold) if adaptive_threshold is not None else None),
-        adaptive_max_k=int(adaptive_max_k) if adaptive_max_k is not None else None,
+        adaptive_threshold=adaptive_threshold,
+        adaptive_max_k=adaptive_max_k,
         random_seeds=random_seeds,
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
@@ -596,7 +596,36 @@ def _load_tuning_payload(tuning_path: Path) -> dict[str, object]:
 
 
 def _load_best_k(tuning_path: Path) -> int:
-    return int(_load_tuning_payload(tuning_path)["best_k"])
+    return _required_payload_int(_load_tuning_payload(tuning_path), "best_k")
+
+
+def _required_payload_int(payload: dict[str, object], key: str) -> int:
+    value = payload.get(key)
+    if value is None:
+        raise ValueError(f"tuning artifact is missing {key!r}")
+    return _coerce_payload_int(value, key)
+
+
+def _optional_payload_int(payload: dict[str, object], key: str) -> int | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_payload_int(value, key)
+
+
+def _optional_payload_float(payload: dict[str, object], key: str) -> float | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ValueError(f"tuning artifact {key!r} must be numeric")
+    return float(value)
+
+
+def _coerce_payload_int(value: object, key: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ValueError(f"tuning artifact {key!r} must be an integer")
+    return int(value)
 
 
 def _existing_path(path: Path) -> Path | None:

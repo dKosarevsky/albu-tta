@@ -9,15 +9,21 @@ import torch
 from PIL import Image
 
 from learned_tta.cache import TeacherShard, write_teacher_shard
+from learned_tta.data import ManifestRecord
 from learned_tta.selector_features import save_selector_features
 from learned_tta.selector_training import (
     DEFAULT_SELECTOR_LOSS_ABLATIONS,
+    SelectorFeatureTargetDataset,
+    SelectorImageTargetDataset,
     SelectorTrainingSummary,
+    _read_completed_selector_training_summary,
+    make_pretrained_feature_selector_dataloader,
     make_selector_dataloader,
+    select_selector_loss_ablation_specs,
     train_selector_from_artifacts,
     train_selector_loss_ablation_from_artifacts,
 )
-from learned_tta.targets import TargetStats, save_selector_targets
+from learned_tta.targets import SavedSelectorTargets, TargetStats, save_selector_targets
 
 
 @pytest.fixture
@@ -76,6 +82,189 @@ def test_make_selector_dataloader_rejects_target_manifest_order_mismatch(
             batch_size=2,
             num_workers=0,
             shuffle=False,
+        )
+
+
+def test_selector_ablation_spec_selection_rejects_unknown_variant() -> None:
+    with pytest.raises(ValueError, match="unknown selector ablation"):
+        select_selector_loss_ablation_specs(("does_not_exist",))
+
+
+def test_completed_selector_training_summary_handles_missing_and_empty(tmp_path: Path) -> None:
+    output_dir = tmp_path / "selector"
+    output_dir.mkdir()
+
+    assert _read_completed_selector_training_summary(output_dir) is None
+    (output_dir / "selector_best.pt").write_bytes(b"checkpoint")
+    pd.DataFrame(columns=["epoch", "val_loss"]).to_csv(
+        output_dir / "selector_history.csv",
+        index=False,
+    )
+
+    assert _read_completed_selector_training_summary(output_dir) is None
+
+
+def test_selector_datasets_reject_row_count_and_missing_image_ids(tmp_path: Path) -> None:
+    image_path = tmp_path / "image.png"
+    Image.fromarray(np.zeros((4, 4, 3), dtype=np.uint8), mode="RGB").save(image_path)
+    records = [
+        ManifestRecord(
+            split="public_train",
+            image_id="public_train-0",
+            class_idx=0,
+            class_name="class-0",
+            path=image_path,
+        )
+    ]
+    targets = SavedSelectorTargets(
+        aug_ids=["aug_000"],
+        image_ids=[],
+        gain=np.zeros((1, 1), dtype=np.float32),
+        target_z=np.zeros((1, 1), dtype=np.float32),
+        stats=TargetStats(
+            mean=np.zeros(1, dtype=np.float32),
+            std=np.ones(1, dtype=np.float32),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="include image_ids"):
+        SelectorImageTargetDataset(records=records, targets=targets, image_size=4)
+    row_mismatch_targets = SavedSelectorTargets(
+        aug_ids=["aug_000"],
+        image_ids=["public_train-0", "public_train-1"],
+        gain=np.zeros((2, 1), dtype=np.float32),
+        target_z=np.zeros((2, 1), dtype=np.float32),
+        stats=TargetStats(
+            mean=np.zeros(1, dtype=np.float32),
+            std=np.ones(1, dtype=np.float32),
+        ),
+    )
+    with pytest.raises(ValueError, match="row count"):
+        SelectorImageTargetDataset(records=records, targets=row_mismatch_targets, image_size=4)
+    with pytest.raises(ValueError, match="feature row count"):
+        SelectorFeatureTargetDataset(
+            features=np.zeros((2, 1), dtype=np.float32),
+            targets=targets,
+        )
+
+
+def test_make_pretrained_feature_selector_dataloader_rejects_mismatches(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _write_manifest(tmp_path, split="public_train", count=2)
+    targets_path = _write_targets(tmp_path / "public_train_targets.npz", rows=2)
+    features_path = tmp_path / "features.npz"
+
+    save_selector_features(
+        path=features_path,
+        split="public_train",
+        model_name="fake",
+        image_ids=["public_train-1", "public_train-0"],
+        features=np.zeros((2, 3), dtype=np.float32),
+        feature_names=["f0", "f1", "f2"],
+    )
+    with pytest.raises(ValueError, match="pretrained feature image_ids"):
+        make_pretrained_feature_selector_dataloader(
+            manifest_path=manifest_path,
+            targets_path=targets_path,
+            features_path=features_path,
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+    mismatched_targets_path = _write_targets(
+        tmp_path / "mismatched_targets.npz",
+        rows=2,
+        image_ids=["public_train-1", "public_train-0"],
+    )
+    save_selector_features(
+        path=features_path,
+        split="public_train",
+        model_name="fake",
+        image_ids=["public_train-0", "public_train-1"],
+        features=np.zeros((2, 3), dtype=np.float32),
+        feature_names=["f0", "f1", "f2"],
+    )
+    with pytest.raises(ValueError, match="selector target image_ids"):
+        make_pretrained_feature_selector_dataloader(
+            manifest_path=manifest_path,
+            targets_path=mismatched_targets_path,
+            features_path=features_path,
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+    save_selector_features(
+        path=features_path,
+        split="public_val",
+        model_name="fake",
+        image_ids=["public_train-0", "public_train-1"],
+        features=np.zeros((2, 3), dtype=np.float32),
+        feature_names=["f0", "f1", "f2"],
+    )
+    with pytest.raises(ValueError, match="split"):
+        make_pretrained_feature_selector_dataloader(
+            manifest_path=manifest_path,
+            targets_path=targets_path,
+            features_path=features_path,
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+
+def test_train_selector_from_artifacts_rejects_invalid_modes(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    def call_train(
+        *,
+        feature_mode: str = "image",
+        model_family: str = "image_cnn",
+        aug_ids: list[str] | None = None,
+        val_cache_dir: Path | None = None,
+        top_k_grid: list[int] | None = None,
+    ) -> None:
+        train_selector_from_artifacts(
+            train_manifest_path=selector_training_artifacts["train_manifest"],
+            val_manifest_path=selector_training_artifacts["val_manifest"],
+            train_targets_path=selector_training_artifacts["train_targets"],
+            val_targets_path=selector_training_artifacts["val_targets"],
+            output_dir=tmp_path / "selector",
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            epochs=1,
+            learning_rate=1e-3,
+            rank_weight=0.0,
+            feature_mode=feature_mode,
+            model_family=model_family,
+            val_cache_dir=val_cache_dir,
+            aug_ids=aug_ids,
+            top_k_grid=top_k_grid,
+            device="cpu",
+        )
+
+    with pytest.raises(ValueError, match="aug_ids must match"):
+        call_train(aug_ids=["aug_000"])
+    with pytest.raises(ValueError, match="image feature_mode"):
+        call_train(feature_mode="image", model_family="mlp")
+    with pytest.raises(ValueError, match="clean_logits feature_mode"):
+        call_train(feature_mode="clean_logits", model_family="image_cnn")
+    with pytest.raises(ValueError, match="cache_dir is required"):
+        call_train(feature_mode="clean_logits", model_family="mlp")
+    with pytest.raises(ValueError, match="pretrained feature_mode"):
+        call_train(feature_mode="pretrained", model_family="image_cnn")
+    with pytest.raises(ValueError, match="train_features_path"):
+        call_train(feature_mode="pretrained", model_family="mlp")
+    with pytest.raises(ValueError, match="feature_mode"):
+        call_train(feature_mode="hybrid")
+    with pytest.raises(ValueError, match="top_k_grid"):
+        call_train(
+            val_cache_dir=selector_training_artifacts["cache_dir"],
+            top_k_grid=None,
         )
 
 

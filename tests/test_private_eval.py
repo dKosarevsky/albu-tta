@@ -178,6 +178,31 @@ def test_evaluate_private_from_artifacts_adds_adaptive_strategy_when_tuned(
     ] == pytest.approx(2.0)
 
 
+def test_private_tuning_payload_coercion_rejects_bad_values(tmp_path: Path) -> None:
+    from learned_tta.private_eval import (
+        _load_best_k,
+        _optional_payload_float,
+        _optional_payload_int,
+    )
+
+    missing_path = tmp_path / "missing_best_k.json"
+    missing_path.write_text(json.dumps({"split": "public_val"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="missing 'best_k'"):
+        _load_best_k(missing_path)
+
+    assert _optional_payload_float(
+        {"best_adaptive_threshold": "0.25"},
+        "best_adaptive_threshold",
+    ) == pytest.approx(0.25)
+    assert _optional_payload_int({"best_adaptive_max_k": "4"}, "best_adaptive_max_k") == 4
+    assert _optional_payload_float({}, "best_adaptive_threshold") is None
+    assert _optional_payload_int({}, "best_adaptive_max_k") is None
+    with pytest.raises(ValueError, match="numeric"):
+        _optional_payload_float({"best_adaptive_threshold": []}, "best_adaptive_threshold")
+    with pytest.raises(ValueError, match="integer"):
+        _optional_payload_int({"best_adaptive_max_k": []}, "best_adaptive_max_k")
+
+
 def test_evaluate_private_from_artifacts_rejects_public_val_split(
     tmp_path: Path,
     private_eval_artifacts: dict[str, Path],
