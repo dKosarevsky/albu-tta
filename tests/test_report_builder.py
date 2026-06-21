@@ -685,6 +685,8 @@ def test_report_builder_defaults_legacy_ablation_columns_and_empty_kpi(tmp_path:
     assert table["feature_mode"].tolist() == ["image"]
     assert table["target_mode"].tolist() == ["nll_gain"]
     assert table["model_family"].tolist() == ["image_cnn"]
+    assert "val_tta_top1" in table.columns
+    assert pd.isna(table.loc[0, "val_tta_top1"])
     assert _oracle_gap_capture_summary_lines(frontier)[0].startswith("No learned selector")
     assert _selector_kpi_summary_table(frontier).empty
 

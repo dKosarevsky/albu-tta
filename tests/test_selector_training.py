@@ -16,7 +16,10 @@ from learned_tta.selector_training import (
     SelectorFeatureTargetDataset,
     SelectorImageTargetDataset,
     SelectorTrainingSummary,
+    _best_summary_history_row,
     _read_completed_selector_training_summary,
+    make_clean_logit_selector_dataloader,
+    make_hybrid_feature_selector_dataloader,
     make_pretrained_feature_selector_dataloader,
     make_selector_dataloader,
     select_selector_loss_ablation_specs,
@@ -102,6 +105,30 @@ def test_completed_selector_training_summary_handles_missing_and_empty(tmp_path:
     )
 
     assert _read_completed_selector_training_summary(output_dir) is None
+
+
+def test_best_summary_history_row_handles_empty_and_missing_metrics(tmp_path: Path) -> None:
+    summary = SelectorTrainingSummary(
+        checkpoint_path=tmp_path / "selector_best.pt",
+        history_csv=tmp_path / "selector_history.csv",
+        best_epoch=0,
+        best_val_loss=0.0,
+        best_val_nll=0.0,
+        history=[],
+    )
+
+    assert _best_summary_history_row(summary) == {}
+
+    summary = SelectorTrainingSummary(
+        checkpoint_path=tmp_path / "selector_best.pt",
+        history_csv=tmp_path / "selector_history.csv",
+        best_epoch=0,
+        best_val_loss=0.0,
+        best_val_nll=0.0,
+        history=[{"epoch": 1}],
+    )
+
+    assert _best_summary_history_row(summary) == {}
 
 
 def test_selector_datasets_reject_row_count_and_missing_image_ids(tmp_path: Path) -> None:
@@ -215,6 +242,142 @@ def test_make_pretrained_feature_selector_dataloader_rejects_mismatches(
         )
 
 
+def test_make_clean_logit_selector_dataloader_rejects_invalid_manifests(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    empty_manifest = tmp_path / "empty_manifest.csv"
+    pd.DataFrame(columns=["split", "image_id", "class_idx", "class_name", "path"]).to_csv(
+        empty_manifest,
+        index=False,
+    )
+    empty_targets = _write_targets(
+        tmp_path / "empty_targets.npz",
+        rows=0,
+        image_ids=[],
+    )
+    with pytest.raises(ValueError, match="manifest must contain at least one row"):
+        make_clean_logit_selector_dataloader(
+            manifest_path=empty_manifest,
+            targets_path=empty_targets,
+            cache_dir=selector_training_artifacts["cache_dir"],
+            identity_aug_id="aug_000",
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+    manifest_path = _write_manifest(tmp_path, split="public_train", count=2)
+    mismatched_targets = _write_targets(
+        tmp_path / "mismatched_targets.npz",
+        rows=2,
+        image_ids=["public_train-1", "public_train-0"],
+    )
+    with pytest.raises(ValueError, match="selector target image_ids"):
+        make_clean_logit_selector_dataloader(
+            manifest_path=manifest_path,
+            targets_path=mismatched_targets,
+            cache_dir=selector_training_artifacts["cache_dir"],
+            identity_aug_id="aug_000",
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+    mixed_manifest = tmp_path / "mixed_manifest.csv"
+    manifest = pd.read_csv(manifest_path)
+    manifest.loc[1, "split"] = "public_val"
+    manifest.to_csv(mixed_manifest, index=False)
+    with pytest.raises(ValueError, match="single split"):
+        make_clean_logit_selector_dataloader(
+            manifest_path=mixed_manifest,
+            targets_path=_write_targets(
+                tmp_path / "mixed_targets.npz",
+                rows=2,
+                image_ids=["public_train-0", "public_train-1"],
+            ),
+            cache_dir=selector_training_artifacts["cache_dir"],
+            identity_aug_id="aug_000",
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+
+def test_make_hybrid_feature_selector_dataloader_concatenates_features(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    features_path = _write_selector_features(
+        tmp_path / "public_train_features.npz",
+        split="public_train",
+        rows=4,
+    )
+
+    dataloader, input_dim = make_hybrid_feature_selector_dataloader(
+        manifest_path=selector_training_artifacts["train_manifest"],
+        targets_path=selector_training_artifacts["train_targets"],
+        cache_dir=selector_training_artifacts["cache_dir"],
+        identity_aug_id="aug_000",
+        features_path=features_path,
+        batch_size=2,
+        num_workers=0,
+        shuffle=False,
+    )
+    features, targets, gain = next(iter(dataloader))
+
+    assert input_dim == 12
+    assert features.shape == (2, 12)
+    assert targets.shape == (2, 2)
+    assert gain.shape == (2, 2)
+
+
+def test_make_hybrid_feature_selector_dataloader_rejects_feature_mismatches(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    features_path = tmp_path / "bad_features.npz"
+    save_selector_features(
+        path=features_path,
+        split="public_train",
+        model_name="fake",
+        image_ids=["public_train-1", "public_train-0", "public_train-2", "public_train-3"],
+        features=np.zeros((4, 3), dtype=np.float32),
+        feature_names=["f0", "f1", "f2"],
+    )
+    with pytest.raises(ValueError, match="pretrained feature image_ids"):
+        make_hybrid_feature_selector_dataloader(
+            manifest_path=selector_training_artifacts["train_manifest"],
+            targets_path=selector_training_artifacts["train_targets"],
+            cache_dir=selector_training_artifacts["cache_dir"],
+            identity_aug_id="aug_000",
+            features_path=features_path,
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+    save_selector_features(
+        path=features_path,
+        split="public_val",
+        model_name="fake",
+        image_ids=[f"public_train-{index}" for index in range(4)],
+        features=np.zeros((4, 3), dtype=np.float32),
+        feature_names=["f0", "f1", "f2"],
+    )
+    with pytest.raises(ValueError, match="pretrained feature split"):
+        make_hybrid_feature_selector_dataloader(
+            manifest_path=selector_training_artifacts["train_manifest"],
+            targets_path=selector_training_artifacts["train_targets"],
+            cache_dir=selector_training_artifacts["cache_dir"],
+            identity_aug_id="aug_000",
+            features_path=features_path,
+            batch_size=2,
+            num_workers=0,
+            shuffle=False,
+        )
+
+
 def test_train_selector_from_artifacts_rejects_invalid_modes(
     tmp_path: Path,
     selector_training_artifacts: dict[str, Path],
@@ -266,6 +429,59 @@ def test_train_selector_from_artifacts_rejects_invalid_modes(
             val_cache_dir=selector_training_artifacts["cache_dir"],
             top_k_grid=None,
         )
+
+
+def test_train_selector_from_artifacts_rejects_invalid_hybrid_requirements(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    train_features = _write_selector_features(
+        tmp_path / "public_train_features.npz",
+        split="public_train",
+        rows=4,
+    )
+    val_features = _write_selector_features(
+        tmp_path / "public_val_features.npz",
+        split="public_val",
+        rows=2,
+    )
+
+    def call_train(
+        *,
+        model_family: str = "mlp",
+        val_cache_dir: Path | None = selector_training_artifacts["cache_dir"],
+        train_features_path: Path | None = train_features,
+        val_features_path: Path | None = val_features,
+    ) -> None:
+        train_selector_from_artifacts(
+            train_manifest_path=selector_training_artifacts["train_manifest"],
+            val_manifest_path=selector_training_artifacts["val_manifest"],
+            train_targets_path=selector_training_artifacts["train_targets"],
+            val_targets_path=selector_training_artifacts["val_targets"],
+            output_dir=tmp_path / f"hybrid_{model_family}_{val_cache_dir is None}",
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            epochs=1,
+            learning_rate=1e-3,
+            rank_weight=0.0,
+            feature_mode="hybrid",
+            model_family=model_family,
+            train_features_path=train_features_path,
+            val_features_path=val_features_path,
+            val_cache_dir=val_cache_dir,
+            val_split="public_val",
+            aug_ids=["aug_000", "aug_001"],
+            top_k_grid=[1],
+            device="cpu",
+        )
+
+    with pytest.raises(ValueError, match="model_family='mlp'"):
+        call_train(model_family="image_cnn")
+    with pytest.raises(ValueError, match="cache_dir is required"):
+        call_train(val_cache_dir=None)
+    with pytest.raises(ValueError, match="train_features_path and val_features_path"):
+        call_train(train_features_path=None)
 
 
 def test_train_selector_from_artifacts_saves_best_checkpoint(
@@ -466,9 +682,17 @@ def test_train_selector_loss_ablation_from_artifacts_writes_variant_table(
         "best_epoch",
         "best_val_loss",
         "best_val_nll",
+        "val_tta_best_k",
+        "val_tta_top1",
+        "val_tta_top5",
+        "val_tta_nll",
+        "val_tta_ece",
+        "val_tta_oracle_recall",
         "checkpoint_path",
         "history_csv",
     }
+    assert table["val_tta_nll"].notna().all()
+    assert table["val_tta_best_k"].notna().all()
     for checkpoint_path in table["checkpoint_path"]:
         assert Path(checkpoint_path).exists()
 
@@ -586,8 +810,26 @@ def test_train_selector_loss_ablation_from_artifacts_skips_completed_variant(
     checkpoint_path.write_bytes(b"already-trained")
     pd.DataFrame(
         [
-            {"epoch": 1, "val_loss": 0.9, "val_tta_nll": 0.7},
-            {"epoch": 2, "val_loss": 0.8, "val_tta_nll": 0.6},
+            {
+                "epoch": 1,
+                "val_loss": 0.9,
+                "val_tta_best_k": 1,
+                "val_tta_top1": 0.55,
+                "val_tta_top5": 0.8,
+                "val_tta_nll": 0.7,
+                "val_tta_ece": 0.12,
+                "val_tta_oracle_recall": 0.2,
+            },
+            {
+                "epoch": 2,
+                "val_loss": 0.8,
+                "val_tta_best_k": 4,
+                "val_tta_top1": 0.65,
+                "val_tta_top5": 0.9,
+                "val_tta_nll": 0.6,
+                "val_tta_ece": 0.08,
+                "val_tta_oracle_recall": 0.3,
+            },
         ]
     ).to_csv(variant_dir / "selector_history.csv", index=False)
 
@@ -617,6 +859,12 @@ def test_train_selector_loss_ablation_from_artifacts_skips_completed_variant(
     assert table["best_epoch"].tolist() == [2]
     assert table["best_val_loss"].tolist() == pytest.approx([0.8])
     assert table["best_val_nll"].tolist() == pytest.approx([0.6])
+    assert table["val_tta_best_k"].tolist() == pytest.approx([4])
+    assert table["val_tta_top1"].tolist() == pytest.approx([0.65])
+    assert table["val_tta_top5"].tolist() == pytest.approx([0.9])
+    assert table["val_tta_nll"].tolist() == pytest.approx([0.6])
+    assert table["val_tta_ece"].tolist() == pytest.approx([0.08])
+    assert table["val_tta_oracle_recall"].tolist() == pytest.approx([0.3])
     assert checkpoint_path.read_bytes() == b"already-trained"
 
 
@@ -755,6 +1003,73 @@ def test_train_selector_loss_ablation_cli_accepts_pretrained_feature_paths(
     assert "selector ablation: wrote" in captured.out
     assert table["variant"].tolist() == ["pretrained_mlp_gain_rank"]
     assert table["feature_mode"].tolist() == ["pretrained"]
+
+
+def test_train_selector_loss_ablation_cli_accepts_hybrid_feature_paths(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from learned_tta.cli import main
+
+    output_dir = tmp_path / "selector_ablation"
+    train_features = _write_selector_features(
+        tmp_path / "public_train_features.npz",
+        split="public_train",
+        rows=4,
+    )
+    val_features = _write_selector_features(
+        tmp_path / "public_val_features.npz",
+        split="public_val",
+        rows=2,
+    )
+
+    main(
+        [
+            "train-selector-ablation",
+            "--config",
+            str(Path(__file__).resolve().parents[1] / "configs/experiment/resnet50_a1_in1k.yaml"),
+            "--train-manifest",
+            str(selector_training_artifacts["train_manifest"]),
+            "--val-manifest",
+            str(selector_training_artifacts["val_manifest"]),
+            "--train-targets",
+            str(selector_training_artifacts["train_targets"]),
+            "--val-targets",
+            str(selector_training_artifacts["val_targets"]),
+            "--cache-dir",
+            str(selector_training_artifacts["cache_dir"]),
+            "--output-dir",
+            str(output_dir),
+            "--candidate-id",
+            "aug_000",
+            "--candidate-id",
+            "aug_001",
+            "--top-k",
+            "1",
+            "--epochs",
+            "1",
+            "--batch-size",
+            "2",
+            "--num-workers",
+            "0",
+            "--image-size",
+            "16",
+            "--ablation-variant",
+            "hybrid_mlp_gain_rank",
+            "--train-features",
+            str(train_features),
+            "--val-features",
+            str(val_features),
+            "--force",
+        ]
+    )
+    captured = capsys.readouterr()
+    table = pd.read_csv(output_dir / "selector_loss_ablation.csv")
+
+    assert "selector ablation: wrote" in captured.out
+    assert table["variant"].tolist() == ["hybrid_mlp_gain_rank"]
+    assert table["feature_mode"].tolist() == ["hybrid"]
 
 
 def _write_manifest(root: Path, split: str, count: int) -> Path:

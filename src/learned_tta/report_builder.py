@@ -573,6 +573,12 @@ def _read_selector_ablation_csv(path: Path) -> pd.DataFrame:
         "model_family": "image_cnn",
         "listwise_weight": 0.0,
         "listwise_top_k": 1,
+        "val_tta_best_k": np.nan,
+        "val_tta_top1": np.nan,
+        "val_tta_top5": np.nan,
+        "val_tta_nll": np.nan,
+        "val_tta_ece": np.nan,
+        "val_tta_oracle_recall": np.nan,
     }
     for column, value in defaults.items():
         if column not in table.columns:
@@ -592,6 +598,12 @@ def _read_selector_ablation_csv(path: Path) -> pd.DataFrame:
             "best_epoch",
             "best_val_loss",
             "best_val_nll",
+            "val_tta_best_k",
+            "val_tta_top1",
+            "val_tta_top5",
+            "val_tta_nll",
+            "val_tta_ece",
+            "val_tta_oracle_recall",
         ]
     ].copy()
 

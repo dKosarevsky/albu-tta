@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -42,7 +43,7 @@ class SelectorTrainingSummary:
     best_epoch: int
     best_val_loss: float
     best_val_nll: float
-    history: list[dict[str, float]]
+    history: list[dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +68,16 @@ class SelectorLossAblationSummary:
 
     results_csv: Path
     rows: list[dict[str, object]]
+
+
+SELECTOR_POLICY_METRIC_COLUMNS = (
+    "val_tta_best_k",
+    "val_tta_top1",
+    "val_tta_top5",
+    "val_tta_nll",
+    "val_tta_ece",
+    "val_tta_oracle_recall",
+)
 
 
 DEFAULT_SELECTOR_LOSS_ABLATIONS = (
@@ -134,7 +145,31 @@ PRETRAINED_SELECTOR_LOSS_ABLATIONS = (
 )
 
 
-ALL_SELECTOR_LOSS_ABLATIONS = DEFAULT_SELECTOR_LOSS_ABLATIONS + PRETRAINED_SELECTOR_LOSS_ABLATIONS
+HYBRID_SELECTOR_LOSS_ABLATIONS = (
+    SelectorLossAblationSpec(
+        variant="hybrid_mlp_gain_rank",
+        rank_weight=0.2,
+        usefulness_head=False,
+        feature_mode="hybrid",
+        model_family="mlp",
+    ),
+    SelectorLossAblationSpec(
+        variant="hybrid_mlp_gain_listwise",
+        rank_weight=0.2,
+        usefulness_head=False,
+        feature_mode="hybrid",
+        model_family="mlp",
+        listwise_weight=0.1,
+        listwise_top_k=16,
+    ),
+)
+
+
+ALL_SELECTOR_LOSS_ABLATIONS = (
+    DEFAULT_SELECTOR_LOSS_ABLATIONS
+    + PRETRAINED_SELECTOR_LOSS_ABLATIONS
+    + HYBRID_SELECTOR_LOSS_ABLATIONS
+)
 
 
 def select_selector_loss_ablation_specs(
@@ -145,7 +180,10 @@ def select_selector_loss_ablation_specs(
 
     if not variant_names:
         return specs
-    specs_by_name = {spec.variant: spec for spec in (*specs, *PRETRAINED_SELECTOR_LOSS_ABLATIONS)}
+    specs_by_name = {
+        spec.variant: spec
+        for spec in (*specs, *PRETRAINED_SELECTOR_LOSS_ABLATIONS, *HYBRID_SELECTOR_LOSS_ABLATIONS)
+    }
     unknown = [name for name in variant_names if name not in specs_by_name]
     if unknown:
         available = ", ".join(sorted(specs_by_name))
@@ -180,6 +218,25 @@ def _read_completed_selector_training_summary(output_dir: Path) -> SelectorTrain
         best_val_nll=float(best_row[metric_column]),
         history=history_df.to_dict("records"),
     )
+
+
+def _best_summary_history_row(summary: SelectorTrainingSummary) -> dict[str, Any]:
+    if not summary.history:
+        return {}
+    metric_column = (
+        "val_tta_nll" if any("val_tta_nll" in row for row in summary.history) else "val_loss"
+    )
+    candidates = [row for row in summary.history if metric_column in row]
+    if not candidates:
+        return {}
+    best_candidate = candidates[0]
+    best_metric = float(best_candidate[metric_column])
+    for candidate in candidates[1:]:
+        metric = float(candidate[metric_column])
+        if metric < best_metric:
+            best_candidate = candidate
+            best_metric = metric
+    return best_candidate
 
 
 SelectorBatch = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
@@ -336,6 +393,52 @@ def make_pretrained_feature_selector_dataloader(
     )
 
 
+def make_hybrid_feature_selector_dataloader(
+    manifest_path: Path,
+    targets_path: Path,
+    cache_dir: Path,
+    identity_aug_id: str,
+    features_path: Path,
+    batch_size: int,
+    num_workers: int,
+    shuffle: bool,
+) -> tuple[torch.utils.data.DataLoader[SelectorBatch], int]:
+    """Build a selector DataLoader from clean-logit and pretrained image features."""
+
+    records = load_manifest(manifest_path)
+    targets = load_selector_targets(targets_path)
+    pretrained_features = load_selector_features(features_path)
+    if not records:
+        raise ValueError("manifest must contain at least one row")
+    manifest_image_ids = [record.image_id for record in records]
+    if targets.image_ids != manifest_image_ids:
+        raise ValueError("selector target image_ids must match manifest image_ids")
+    if pretrained_features.image_ids != manifest_image_ids:
+        raise ValueError("pretrained feature image_ids must match manifest image_ids")
+    split = records[0].split
+    if any(record.split != split for record in records):
+        raise ValueError("manifest must contain a single split")
+    if pretrained_features.split != split:
+        raise ValueError("pretrained feature split must match manifest split")
+    paths = teacher_shard_paths(cache_dir, split=split, aug_id=identity_aug_id)
+    shard = read_teacher_shard(paths.metadata_path, paths.logits_path)
+    shard_image_ids = [str(image_id) for image_id in shard.metadata["image_id"].tolist()]
+    if shard_image_ids != manifest_image_ids:
+        raise ValueError("clean-logit shard image_ids must match manifest image_ids")
+    clean_features, _ = clean_logit_features(shard.logits)
+    features = np.concatenate([clean_features, pretrained_features.features], axis=1)
+    dataset = SelectorFeatureTargetDataset(features=features, targets=targets)
+    return (
+        torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=shuffle,
+        ),
+        int(features.shape[1]),
+    )
+
+
 def train_selector_from_artifacts(
     train_manifest_path: Path,
     val_manifest_path: Path,
@@ -458,8 +561,40 @@ def train_selector_from_artifacts(
             output_dim=output_dim,
             usefulness_head=usefulness_head,
         ).to(torch_device)
+    elif feature_mode == "hybrid":
+        if model_family != "mlp":
+            raise ValueError("hybrid feature_mode requires model_family='mlp'")
+        if val_cache_dir is None:
+            raise ValueError("cache_dir is required for hybrid feature_mode")
+        if train_features_path is None or val_features_path is None:
+            raise ValueError("train_features_path and val_features_path are required")
+        train_dataloader, input_dim = make_hybrid_feature_selector_dataloader(
+            manifest_path=train_manifest_path,
+            targets_path=train_targets_path,
+            cache_dir=val_cache_dir,
+            identity_aug_id=identity_aug_id,
+            features_path=train_features_path,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=True,
+        )
+        val_dataloader, _ = make_hybrid_feature_selector_dataloader(
+            manifest_path=val_manifest_path,
+            targets_path=val_targets_path,
+            cache_dir=val_cache_dir,
+            identity_aug_id=identity_aug_id,
+            features_path=val_features_path,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+        )
+        model = SelectorMLP(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            usefulness_head=usefulness_head,
+        ).to(torch_device)
     else:
-        raise ValueError("feature_mode must be 'image', 'clean_logits', or 'pretrained'")
+        raise ValueError("feature_mode must be 'image', 'clean_logits', 'pretrained', or 'hybrid'")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
@@ -476,7 +611,7 @@ def train_selector_from_artifacts(
             split=val_split,
             aug_ids=aug_ids,
         )
-    history = []
+    history: list[dict[str, Any]] = []
     for epoch in range(1, epochs + 1):
         train_metrics = train_one_epoch(
             model=model,
@@ -627,26 +762,29 @@ def train_selector_loss_ablation_from_artifacts(
                 identity_aug_id=identity_aug_id,
                 device=device,
             )
-        rows.append(
-            {
-                "variant": spec.variant,
-                "status": status,
-                "rank_weight": spec.rank_weight,
-                "usefulness_head": spec.usefulness_head,
-                "usefulness_tau": spec.usefulness_tau,
-                "usefulness_weight": spec.usefulness_weight,
-                "feature_mode": spec.feature_mode,
-                "target_mode": spec.target_mode,
-                "model_family": spec.model_family,
-                "listwise_weight": spec.listwise_weight,
-                "listwise_top_k": spec.listwise_top_k,
-                "best_epoch": summary.best_epoch,
-                "best_val_loss": summary.best_val_loss,
-                "best_val_nll": summary.best_val_nll,
-                "checkpoint_path": str(summary.checkpoint_path),
-                "history_csv": str(summary.history_csv),
-            }
+        best_history_row = _best_summary_history_row(summary)
+        row: dict[str, object] = {
+            "variant": spec.variant,
+            "status": status,
+            "rank_weight": spec.rank_weight,
+            "usefulness_head": spec.usefulness_head,
+            "usefulness_tau": spec.usefulness_tau,
+            "usefulness_weight": spec.usefulness_weight,
+            "feature_mode": spec.feature_mode,
+            "target_mode": spec.target_mode,
+            "model_family": spec.model_family,
+            "listwise_weight": spec.listwise_weight,
+            "listwise_top_k": spec.listwise_top_k,
+            "best_epoch": summary.best_epoch,
+            "best_val_loss": summary.best_val_loss,
+            "best_val_nll": summary.best_val_nll,
+            "checkpoint_path": str(summary.checkpoint_path),
+            "history_csv": str(summary.history_csv),
+        }
+        row.update(
+            {column: best_history_row.get(column) for column in SELECTOR_POLICY_METRIC_COLUMNS}
         )
+        rows.append(row)
     results_csv = output_dir / "selector_loss_ablation.csv"
     pd.DataFrame(rows).to_csv(results_csv, index=False)
     return SelectorLossAblationSummary(results_csv=results_csv, rows=rows)

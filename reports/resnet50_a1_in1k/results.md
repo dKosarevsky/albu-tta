@@ -202,16 +202,18 @@ The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image bud
 
 - Table: `tables/selector_loss_ablation.csv`
 
-| variant | rank_weight | usefulness_head | usefulness_tau | usefulness_weight | feature_mode | target_mode | model_family | listwise_weight | listwise_top_k | best_epoch | best_val_loss | best_val_nll |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gain_only | 0 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 1 | 0.150008 | 0.783793 |
-| gain_rank | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.285051 | 0.748678 |
-| gain_rank_bce | 0.2 | True | 0.01 | 0.05 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.308087 | 0.751128 |
-| gain_listwise_topk | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0.1 | 16 | 3 | 0.728801 | 0.792789 |
-| clean_logits_mlp_gain_rank | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0 | 1 | 1 | 2.25635 | 0.747847 |
-| clean_logits_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0.1 | 16 | 1 | 2.35949 | 0.751865 |
-| pretrained_mlp_gain_rank | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0 | 1 | 1 | 0.289176 | 0.763589 |
-| pretrained_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0.1 | 16 | 5 | 0.724327 | 0.749623 |
+| variant | rank_weight | usefulness_head | usefulness_tau | usefulness_weight | feature_mode | target_mode | model_family | listwise_weight | listwise_top_k | best_epoch | best_val_loss | best_val_nll | val_tta_best_k | val_tta_top1 | val_tta_top5 | val_tta_nll | val_tta_ece | val_tta_oracle_recall |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| gain_only | 0 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 1 | 0.150008 | 0.783793 | 16 | 0.8162 | 0.9554 | 0.783793 | 0.0610657 | 0.163362 |
+| gain_rank | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.285051 | 0.748678 | 16 | 0.8168 | 0.9566 | 0.748678 | 0.0409977 | 0.1766 |
+| gain_rank_bce | 0.2 | True | 0.01 | 0.05 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.308087 | 0.751128 | 16 | 0.818 | 0.9546 | 0.751128 | 0.0356758 | 0.171375 |
+| gain_listwise_topk | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0.1 | 16 | 3 | 0.728801 | 0.792789 | 8 | 0.8074 | 0.9492 | 0.792789 | 0.0355111 | 0.109575 |
+| clean_logits_mlp_gain_rank | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0 | 1 | 1 | 2.25635 | 0.747847 | 16 | 0.8182 | 0.9526 | 0.747847 | 0.021244 | 0.160163 |
+| clean_logits_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0.1 | 16 | 1 | 2.35949 | 0.751865 | 16 | 0.8166 | 0.9536 | 0.751865 | 0.0181933 | 0.156663 |
+| pretrained_mlp_gain_rank | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0 | 1 | 1 | 0.289176 | 0.763589 | 16 | 0.8162 | 0.9528 | 0.763589 | 0.0478611 | 0.184475 |
+| pretrained_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0.1 | 16 | 5 | 0.724327 | 0.749623 | 16 | 0.8154 | 0.9548 | 0.749623 | 0.0237352 | 0.172025 |
+| hybrid_mlp_gain_rank | 0.2 | False | 0.01 | 0 | hybrid | nll_gain | mlp | 0 | 1 | 5 | 0.2886 | 0.743726 | 16 | 0.8184 | 0.956 | 0.743726 | 0.0426846 | 0.181888 |
+| hybrid_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | hybrid | nll_gain | mlp | 0.1 | 16 | 2 | 0.742844 | 0.749411 | 16 | 0.8156 | 0.955 | 0.749411 | 0.0262514 | 0.1631 |
 
 ## Selector Prediction Diagnostics
 
