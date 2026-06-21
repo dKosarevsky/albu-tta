@@ -108,6 +108,47 @@ def adaptive_topk_selection(
     return selections
 
 
+def confidence_adaptive_topk_selection(
+    clean_logits: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    identity_aug_id: str,
+    low_confidence_threshold: float,
+    high_confidence_threshold: float,
+    low_confidence_k: int,
+    mid_confidence_k: int,
+    high_confidence_k: int,
+) -> list[list[str]]:
+    """Select per-image top-k using clean confidence buckets."""
+
+    clean_logits = np.asarray(clean_logits, dtype=np.float32)
+    predicted_gain = np.asarray(predicted_gain, dtype=np.float32)
+    if clean_logits.ndim != 2:
+        raise ValueError("clean_logits must have shape [images, classes]")
+    if predicted_gain.shape != (clean_logits.shape[0], len(aug_ids)):
+        raise ValueError("predicted_gain shape must match clean_logits rows and aug_ids")
+    if not 0.0 <= low_confidence_threshold <= high_confidence_threshold <= 1.0:
+        raise ValueError("confidence thresholds must satisfy 0 <= low <= high <= 1")
+    if min(low_confidence_k, mid_confidence_k, high_confidence_k) < 0:
+        raise ValueError("confidence-adaptive k values must be non-negative")
+
+    clean_confidence = _softmax(clean_logits).max(axis=1)
+    identity_index = aug_ids.index(identity_aug_id)
+    selections = []
+    for confidence, image_gain in zip(clean_confidence, predicted_gain, strict=True):
+        if confidence < low_confidence_threshold:
+            k = low_confidence_k
+        elif confidence < high_confidence_threshold:
+            k = mid_confidence_k
+        else:
+            k = high_confidence_k
+        ranked_indices = [
+            index for index in np.argsort(image_gain)[::-1].tolist() if index != identity_index
+        ][:k]
+        selections.append([identity_aug_id, *[aug_ids[index] for index in ranked_indices]])
+    return selections
+
+
 def fixed_light_tta_selection(aug_ids: list[str], identity_aug_id: str, k: int) -> list[str]:
     """Select identity plus the first k non-identity augmentations."""
 
@@ -366,6 +407,34 @@ def evaluate_learned_adaptive_uniform(
         identity_aug_id=identity_aug_id,
         threshold=threshold,
         max_k=max_k,
+    )
+    return evaluate_selected_tta(logits_by_aug, selected_aug_ids, class_idxs)
+
+
+def evaluate_confidence_adaptive_topk_uniform(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    identity_aug_id: str,
+    low_confidence_threshold: float,
+    high_confidence_threshold: float,
+    low_confidence_k: int,
+    mid_confidence_k: int,
+    high_confidence_k: int,
+) -> dict[str, float]:
+    """Evaluate confidence-bucketed learned top-k selection with uniform averaging."""
+
+    selected_aug_ids = confidence_adaptive_topk_selection(
+        clean_logits=logits_by_aug[identity_aug_id],
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id=identity_aug_id,
+        low_confidence_threshold=low_confidence_threshold,
+        high_confidence_threshold=high_confidence_threshold,
+        low_confidence_k=low_confidence_k,
+        mid_confidence_k=mid_confidence_k,
+        high_confidence_k=high_confidence_k,
     )
     return evaluate_selected_tta(logits_by_aug, selected_aug_ids, class_idxs)
 

@@ -337,3 +337,26 @@ Expected: branch `codex/adaptive-selector-loss` contains implementation, refresh
 - Spec coverage: the eight user-facing goals are covered by Tasks 1-8.
 - Placeholder scan: no implementation task depends on an unspecified future artifact.
 - Type consistency: feature mode, target mode, model family, listwise loss, and oracle-capture names are defined before report integration.
+
+## 2026-06-21 Pairwise Policy Follow-Up
+
+The follow-up 5-point implementation focused on the pairwise augmentation
+ranker, not the earlier image-CNN selector baseline:
+
+- [x] Stronger optional image features: pairwise bundles can append cached
+  pretrained image features and deterministically random-project them for compact
+  MLP inputs.
+- [x] Listwise top-k objective: pairwise training supports an additional
+  per-image target-top-k membership cross-entropy.
+- [x] Confidence-aware policy/evaluation: evaluation can lower selected k for
+  high-confidence clean predictions and reports actual forwards/image.
+- [x] Per-image selected-logit weighting: pairwise evaluation now reports
+  softmax-weighted aggregation over selected logits in addition to uniform TTA.
+- [x] Hard-example mining: pairwise training can upweight clean-wrong or
+  low-confidence images.
+
+Empirically, the new listwise/hard-example training variants did not beat the
+existing public-val-selected top-1-delta checkpoint. The useful improvement came
+from inference policy: the existing checkpoint with softmax-weighted selected
+logits reaches 0.82828 private top-1 at k=16, and the best observed private
+trade-off is k=8 softmax-weighted with 0.82912 top-1 at 9 forwards/image.

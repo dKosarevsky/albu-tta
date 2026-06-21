@@ -225,6 +225,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             identity_aug_id=str(args.identity_aug_id),
             train_features_path=_optional_path(args.train_features),
             val_features_path=_optional_path(args.val_features),
+            feature_projection_dim=args.feature_projection_dim,
+            feature_projection_seed=int(args.feature_projection_seed),
             top_k_grid=args.top_k,
             batch_size=int(args.batch_size),
             epochs=int(args.epochs),
@@ -233,6 +235,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             usefulness_tau=float(args.usefulness_tau),
             usefulness_weight=float(args.usefulness_weight),
             positive_gain_weight=float(args.positive_gain_weight),
+            listwise_weight=float(args.listwise_weight),
+            listwise_top_k=int(args.listwise_top_k),
+            hard_example_weight=float(args.hard_example_weight),
+            hard_example_confidence_threshold=float(args.hard_example_confidence_threshold),
             target_mode=str(args.target_mode),
             selection_metric=str(args.selection_metric),
             device=str(args.device),
@@ -248,6 +254,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             identity_aug_id=str(args.identity_aug_id),
             train_features_path=_optional_path(args.train_features),
             val_features_path=_optional_path(args.val_features),
+            feature_projection_dim=args.feature_projection_dim,
+            feature_projection_seed=int(args.feature_projection_seed),
             top_k_grid=args.top_k,
             batch_size=int(args.batch_size),
             epochs=int(args.epochs),
@@ -256,6 +264,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             usefulness_tau=float(args.usefulness_tau),
             usefulness_weight=float(args.usefulness_weight),
             positive_gain_weight=float(args.positive_gain_weight),
+            listwise_weight=float(args.listwise_weight),
+            listwise_top_k=int(args.listwise_top_k),
+            hard_example_weight=float(args.hard_example_weight),
+            hard_example_confidence_threshold=float(args.hard_example_confidence_threshold),
             device=str(args.device),
         )
     elif command == "evaluate-pairwise-selector":
@@ -266,9 +278,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             output_dir=Path(args.output_dir),
             identity_aug_id=str(args.identity_aug_id),
             features_path=_optional_path(args.features),
+            feature_projection_dim=args.feature_projection_dim,
+            feature_projection_seed=int(args.feature_projection_seed),
             top_k=int(args.top_k),
             batch_size=int(args.batch_size),
             strategy_name=str(args.strategy_name),
+            confidence_low_threshold=float(args.confidence_low_threshold),
+            confidence_high_threshold=float(args.confidence_high_threshold),
+            confidence_low_k=args.confidence_low_k,
+            confidence_mid_k=args.confidence_mid_k,
+            confidence_high_k=int(args.confidence_high_k),
             device=str(args.device),
         )
     elif command == "tune-tta":
@@ -787,6 +806,8 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_selector.add_argument("--val-targets", required=True)
     train_pairwise_selector.add_argument("--train-features")
     train_pairwise_selector.add_argument("--val-features")
+    train_pairwise_selector.add_argument("--feature-projection-dim", type=int)
+    train_pairwise_selector.add_argument("--feature-projection-seed", type=int, default=0)
     train_pairwise_selector.add_argument("--cache-dir", required=True)
     train_pairwise_selector.add_argument("--output-dir", required=True)
     train_pairwise_selector.add_argument("--identity-aug-id", default="aug_000")
@@ -799,6 +820,14 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_selector.add_argument("--usefulness-tau", type=float, default=0.01)
     train_pairwise_selector.add_argument("--usefulness-weight", type=float, default=0.0)
     train_pairwise_selector.add_argument("--positive-gain-weight", type=float, default=0.0)
+    train_pairwise_selector.add_argument("--listwise-weight", type=float, default=0.0)
+    train_pairwise_selector.add_argument("--listwise-top-k", type=int, default=16)
+    train_pairwise_selector.add_argument("--hard-example-weight", type=float, default=0.0)
+    train_pairwise_selector.add_argument(
+        "--hard-example-confidence-threshold",
+        type=float,
+        default=0.75,
+    )
     train_pairwise_selector.add_argument(
         "--target-mode",
         choices=["nll_gain", "top1_delta"],
@@ -821,6 +850,8 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_comparison.add_argument("--val-targets", required=True)
     train_pairwise_comparison.add_argument("--train-features")
     train_pairwise_comparison.add_argument("--val-features")
+    train_pairwise_comparison.add_argument("--feature-projection-dim", type=int)
+    train_pairwise_comparison.add_argument("--feature-projection-seed", type=int, default=0)
     train_pairwise_comparison.add_argument("--cache-dir", required=True)
     train_pairwise_comparison.add_argument("--output-dir", required=True)
     train_pairwise_comparison.add_argument("--identity-aug-id", default="aug_000")
@@ -833,6 +864,14 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_comparison.add_argument("--usefulness-tau", type=float, default=0.01)
     train_pairwise_comparison.add_argument("--usefulness-weight", type=float, default=0.0)
     train_pairwise_comparison.add_argument("--positive-gain-weight", type=float, default=0.0)
+    train_pairwise_comparison.add_argument("--listwise-weight", type=float, default=0.0)
+    train_pairwise_comparison.add_argument("--listwise-top-k", type=int, default=16)
+    train_pairwise_comparison.add_argument("--hard-example-weight", type=float, default=0.0)
+    train_pairwise_comparison.add_argument(
+        "--hard-example-confidence-threshold",
+        type=float,
+        default=0.75,
+    )
     train_pairwise_comparison.add_argument("--device", default="cpu")
 
     evaluate_pairwise = subparsers.add_parser(
@@ -845,9 +884,16 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_pairwise.add_argument("--output-dir", required=True)
     evaluate_pairwise.add_argument("--identity-aug-id", default="aug_000")
     evaluate_pairwise.add_argument("--features")
+    evaluate_pairwise.add_argument("--feature-projection-dim", type=int)
+    evaluate_pairwise.add_argument("--feature-projection-seed", type=int, default=0)
     evaluate_pairwise.add_argument("--top-k", type=int, default=16)
     evaluate_pairwise.add_argument("--batch-size", type=int, default=8192)
     evaluate_pairwise.add_argument("--strategy-name", default="pairwise_topk_uniform")
+    evaluate_pairwise.add_argument("--confidence-low-threshold", type=float, default=0.75)
+    evaluate_pairwise.add_argument("--confidence-high-threshold", type=float, default=0.9)
+    evaluate_pairwise.add_argument("--confidence-low-k", type=int)
+    evaluate_pairwise.add_argument("--confidence-mid-k", type=int)
+    evaluate_pairwise.add_argument("--confidence-high-k", type=int, default=8)
     evaluate_pairwise.add_argument("--device", default="cpu")
 
     tune_tta = subparsers.add_parser(
@@ -1548,6 +1594,8 @@ def _cmd_train_pairwise_selector(
     identity_aug_id: str,
     train_features_path: Path | None,
     val_features_path: Path | None,
+    feature_projection_dim: int | None,
+    feature_projection_seed: int,
     top_k_grid: list[int] | None,
     batch_size: int,
     epochs: int,
@@ -1556,6 +1604,10 @@ def _cmd_train_pairwise_selector(
     usefulness_tau: float,
     usefulness_weight: float,
     positive_gain_weight: float,
+    listwise_weight: float,
+    listwise_top_k: int,
+    hard_example_weight: float,
+    hard_example_confidence_threshold: float,
     target_mode: str,
     selection_metric: str,
     device: str,
@@ -1572,6 +1624,8 @@ def _cmd_train_pairwise_selector(
         identity_aug_id=identity_aug_id,
         train_features_path=train_features_path,
         val_features_path=val_features_path,
+        feature_projection_dim=feature_projection_dim,
+        feature_projection_seed=feature_projection_seed,
         top_k_grid=top_k_grid,
         batch_size=batch_size,
         epochs=epochs,
@@ -1580,6 +1634,10 @@ def _cmd_train_pairwise_selector(
         usefulness_tau=usefulness_tau,
         usefulness_weight=usefulness_weight,
         positive_gain_weight=positive_gain_weight,
+        listwise_weight=listwise_weight,
+        listwise_top_k=listwise_top_k,
+        hard_example_weight=hard_example_weight,
+        hard_example_confidence_threshold=hard_example_confidence_threshold,
         target_mode=target_mode,
         selection_metric=selection_metric,
         device=device,
@@ -1597,6 +1655,8 @@ def _cmd_train_pairwise_selector_comparison(
     identity_aug_id: str,
     train_features_path: Path | None,
     val_features_path: Path | None,
+    feature_projection_dim: int | None,
+    feature_projection_seed: int,
     top_k_grid: list[int] | None,
     batch_size: int,
     epochs: int,
@@ -1605,6 +1665,10 @@ def _cmd_train_pairwise_selector_comparison(
     usefulness_tau: float,
     usefulness_weight: float,
     positive_gain_weight: float,
+    listwise_weight: float,
+    listwise_top_k: int,
+    hard_example_weight: float,
+    hard_example_confidence_threshold: float,
     device: str,
 ) -> None:
     from learned_tta.pairwise_selector import train_pairwise_selector_comparison_from_artifacts
@@ -1619,6 +1683,8 @@ def _cmd_train_pairwise_selector_comparison(
         identity_aug_id=identity_aug_id,
         train_features_path=train_features_path,
         val_features_path=val_features_path,
+        feature_projection_dim=feature_projection_dim,
+        feature_projection_seed=feature_projection_seed,
         top_k_grid=top_k_grid,
         batch_size=batch_size,
         epochs=epochs,
@@ -1627,6 +1693,10 @@ def _cmd_train_pairwise_selector_comparison(
         usefulness_tau=usefulness_tau,
         usefulness_weight=usefulness_weight,
         positive_gain_weight=positive_gain_weight,
+        listwise_weight=listwise_weight,
+        listwise_top_k=listwise_top_k,
+        hard_example_weight=hard_example_weight,
+        hard_example_confidence_threshold=hard_example_confidence_threshold,
         device=device,
     )
     print(f"pairwise selector comparison: wrote {summary.results_csv}")
@@ -1639,9 +1709,16 @@ def _cmd_evaluate_pairwise_selector(
     output_dir: Path,
     identity_aug_id: str,
     features_path: Path | None,
+    feature_projection_dim: int | None,
+    feature_projection_seed: int,
     top_k: int,
     batch_size: int,
     strategy_name: str,
+    confidence_low_threshold: float,
+    confidence_high_threshold: float,
+    confidence_low_k: int | None,
+    confidence_mid_k: int | None,
+    confidence_high_k: int,
     device: str,
 ) -> None:
     from learned_tta.pairwise_selector import evaluate_pairwise_selector_from_artifacts
@@ -1653,9 +1730,16 @@ def _cmd_evaluate_pairwise_selector(
         output_dir=output_dir,
         identity_aug_id=identity_aug_id,
         features_path=features_path,
+        feature_projection_dim=feature_projection_dim,
+        feature_projection_seed=feature_projection_seed,
         top_k=top_k,
         batch_size=batch_size,
         strategy_name=strategy_name,
+        confidence_low_threshold=confidence_low_threshold,
+        confidence_high_threshold=confidence_high_threshold,
+        confidence_low_k=confidence_low_k,
+        confidence_mid_k=confidence_mid_k,
+        confidence_high_k=confidence_high_k,
         device=device,
     )
     print(f"pairwise selector evaluation: wrote {summary.metrics_csv}")

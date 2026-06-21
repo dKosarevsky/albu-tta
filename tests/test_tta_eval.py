@@ -8,9 +8,11 @@ from learned_tta.tta_eval import (
     adaptive_topk_selection,
     average_probabilities,
     class_weighted_probabilities,
+    confidence_adaptive_topk_selection,
     evaluate_all_100_uniform,
     evaluate_class_weighted_tta,
     evaluate_clean,
+    evaluate_confidence_adaptive_topk_uniform,
     evaluate_fixed_light_tta,
     evaluate_global_weighted_tta,
     evaluate_learned_adaptive_uniform,
@@ -161,6 +163,57 @@ def test_adaptive_topk_selection_thresholds_usefulness_and_caps_by_gain(
     assert selected == [["aug_000", "aug_002"], ["aug_000", "aug_001"]]
     assert metrics["forwards_per_image"] == pytest.approx(2.0)
     assert metrics["relative_compute_vs_all"] == pytest.approx(0.5)
+
+
+def test_confidence_adaptive_topk_uses_larger_k_for_low_confidence(
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+) -> None:
+    clean_logits = np.array(
+        [
+            [3.0, 0.0, 0.0],
+            [0.4, 0.3, 0.3],
+        ],
+        dtype=np.float32,
+    )
+
+    selected = confidence_adaptive_topk_selection(
+        clean_logits=clean_logits,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        low_confidence_threshold=0.75,
+        high_confidence_threshold=0.9,
+        low_confidence_k=2,
+        mid_confidence_k=1,
+        high_confidence_k=0,
+    )
+
+    assert selected == [
+        ["aug_000"],
+        ["aug_000", "aug_003", "aug_001"],
+    ]
+
+
+def test_evaluate_confidence_adaptive_topk_uniform_reports_variable_compute(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+) -> None:
+    metrics = evaluate_confidence_adaptive_topk_uniform(
+        logits_by_aug=logits_by_aug,
+        class_idxs=np.array([0, 2], dtype=np.int64),
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        low_confidence_threshold=0.75,
+        high_confidence_threshold=0.9,
+        low_confidence_k=2,
+        mid_confidence_k=1,
+        high_confidence_k=0,
+    )
+
+    assert metrics["forwards_per_image"] == pytest.approx(1.5)
 
 
 def test_fixed_and_random_selection_are_reproducible(aug_ids: list[str]) -> None:

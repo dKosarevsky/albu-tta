@@ -13,8 +13,10 @@ from learned_tta.pairwise_selector import (
     PairwiseFeatureBundle,
     PairwiseSelectorMLP,
     build_pairwise_feature_bundle,
+    build_pairwise_hard_example_weights,
     build_pairwise_inference_bundle,
     evaluate_pairwise_selector_from_artifacts,
+    pairwise_listwise_topk_loss,
     pairwise_policy_loss,
     train_pairwise_selector_comparison_from_artifacts,
 )
@@ -116,6 +118,37 @@ def test_build_pairwise_inference_bundle_accepts_precomputed_features(tmp_path: 
     assert "pre_f0" in bundle.feature_names
 
 
+def test_build_pairwise_feature_bundle_projects_precomputed_features(tmp_path: Path) -> None:
+    artifacts = _write_pairwise_artifacts(tmp_path)
+    features_path = save_selector_features(
+        tmp_path / "features.npz",
+        split="public_train",
+        model_name="fake",
+        image_ids=["image-0", "image-1"],
+        features=np.asarray(
+            [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]],
+            dtype=np.float32,
+        ),
+        feature_names=["pre_f0", "pre_f1", "pre_f2", "pre_f3"],
+    )
+
+    bundle = build_pairwise_feature_bundle(
+        manifest_path=artifacts["manifest"],
+        targets_path=artifacts["targets"],
+        cache_dir=artifacts["cache_dir"],
+        identity_aug_id="aug_000",
+        features_path=features_path,
+        feature_projection_dim=2,
+        feature_projection_seed=123,
+    )
+
+    assert bundle.features.shape == (4, 16)
+    assert bundle.feature_names[-4:-2] == [
+        "projected_feature_0000",
+        "projected_feature_0001",
+    ]
+
+
 def test_pairwise_score_matrix_rejects_wrong_row_count(tmp_path: Path) -> None:
     artifacts = _write_pairwise_inference_artifacts(tmp_path)
     bundle = build_pairwise_inference_bundle(
@@ -127,6 +160,25 @@ def test_pairwise_score_matrix_rejects_wrong_row_count(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="row_scores shape"):
         bundle.score_matrix(np.zeros(3, dtype=np.float32))
+
+
+def test_build_pairwise_hard_example_weights_upweights_clean_wrong_images(tmp_path: Path) -> None:
+    artifacts = _write_pairwise_inference_artifacts(tmp_path)
+    bundle = build_pairwise_inference_bundle(
+        manifest_path=artifacts["manifest"],
+        cache_dir=artifacts["cache_dir"],
+        aug_ids=["aug_000", "aug_001"],
+        identity_aug_id="aug_000",
+    )
+
+    weights = build_pairwise_hard_example_weights(
+        bundle,
+        hard_example_weight=2.0,
+        confidence_threshold=0.75,
+    )
+
+    np.testing.assert_allclose(weights.reshape(2, 2)[0], np.ones(2))
+    np.testing.assert_allclose(weights.reshape(2, 2)[1], np.full(2, 3.0))
 
 
 def test_pairwise_selector_mlp_scores_one_row_per_image_aug_pair() -> None:
@@ -176,6 +228,18 @@ def test_pairwise_policy_loss_adds_usefulness_bce() -> None:
     assert with_bce["loss"] > without_bce["loss"]
 
 
+def test_pairwise_listwise_topk_loss_rewards_matching_topk_membership() -> None:
+    targets = torch.tensor([[0.0, 1.0, 0.5]], dtype=torch.float32)
+    good_scores = torch.tensor([[0.0, 2.0, 1.0]], dtype=torch.float32)
+    bad_scores = torch.tensor([[2.0, 0.0, 1.0]], dtype=torch.float32)
+
+    assert pairwise_listwise_topk_loss(good_scores, targets, top_k=2) < pairwise_listwise_topk_loss(
+        bad_scores,
+        targets,
+        top_k=2,
+    )
+
+
 def test_pairwise_policy_loss_validates_shapes() -> None:
     with pytest.raises(ValueError, match="same shape"):
         pairwise_policy_loss(torch.zeros(2), torch.zeros(1))
@@ -203,6 +267,17 @@ def test_train_pairwise_selector_cli_writes_summary(
     from learned_tta.cli import main
 
     artifacts = _write_pairwise_artifacts(tmp_path)
+    features_path = save_selector_features(
+        tmp_path / "features.npz",
+        split="public_train",
+        model_name="fake",
+        image_ids=["image-0", "image-1"],
+        features=np.asarray(
+            [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]],
+            dtype=np.float32,
+        ),
+        feature_names=["pre_f0", "pre_f1", "pre_f2", "pre_f3"],
+    )
     output_dir = tmp_path / "pairwise"
 
     main(
@@ -220,6 +295,22 @@ def test_train_pairwise_selector_cli_writes_summary(
             str(artifacts["cache_dir"]),
             "--output-dir",
             str(output_dir),
+            "--train-features",
+            str(features_path),
+            "--val-features",
+            str(features_path),
+            "--feature-projection-dim",
+            "2",
+            "--feature-projection-seed",
+            "123",
+            "--listwise-weight",
+            "0.1",
+            "--listwise-top-k",
+            "1",
+            "--hard-example-weight",
+            "2.0",
+            "--hard-example-confidence-threshold",
+            "0.75",
             "--candidate-id",
             "aug_000",
             "--candidate-id",
@@ -291,6 +382,8 @@ def test_evaluate_pairwise_selector_from_artifacts_writes_metrics_and_error_anal
     assert metrics["strategy"].tolist() == [
         "clean",
         "pairwise_topk_uniform",
+        "pairwise_topk_uniform_softmax_weighted",
+        "pairwise_topk_uniform_confidence_adaptive",
         "oracle_topk_uniform",
     ]
     assert summary.metrics["top1"] == pytest.approx(1.0)
@@ -375,6 +468,10 @@ def test_evaluate_pairwise_selector_cli_writes_metrics(
             str(checkpoint_path),
             "--output-dir",
             str(output_dir),
+            "--feature-projection-dim",
+            "2",
+            "--feature-projection-seed",
+            "123",
             "--top-k",
             "1",
             "--batch-size",

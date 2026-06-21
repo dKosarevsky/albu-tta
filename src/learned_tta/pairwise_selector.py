@@ -19,6 +19,8 @@ from learned_tta.selector_features import clean_logit_uncertainty_features, load
 from learned_tta.targets import load_selector_targets
 from learned_tta.tta_eval import (
     evaluate_clean,
+    evaluate_confidence_adaptive_topk_uniform,
+    evaluate_learned_topk_softmax_weighted,
     evaluate_learned_topk_uniform,
     evaluate_oracle_topk_uniform,
 )
@@ -112,6 +114,8 @@ def build_pairwise_feature_bundle(
     identity_aug_id: str,
     features_path: Path | None = None,
     target_mode: str = "nll_gain",
+    feature_projection_dim: int | None = None,
+    feature_projection_seed: int = 0,
 ) -> PairwiseFeatureBundle:
     """Build flattened `(image, augmentation)` features from cached teacher outputs."""
 
@@ -148,8 +152,14 @@ def build_pairwise_feature_bundle(
             raise ValueError("pretrained feature split must match manifest split")
         if pretrained.image_ids != image_ids:
             raise ValueError("pretrained feature image_ids must match manifest image_ids")
-        image_features.append(pretrained.features)
-        image_feature_names.extend(pretrained.feature_names)
+        optional_features, optional_feature_names = _prepare_optional_image_features(
+            features=pretrained.features,
+            feature_names=pretrained.feature_names,
+            projection_dim=feature_projection_dim,
+            projection_seed=feature_projection_seed,
+        )
+        image_features.append(optional_features)
+        image_feature_names.extend(optional_feature_names)
 
     if target_mode == "nll_gain":
         target_matrix = targets.gain.astype(np.float32)
@@ -181,6 +191,8 @@ def build_pairwise_inference_bundle(
     aug_ids: list[str],
     identity_aug_id: str,
     features_path: Path | None = None,
+    feature_projection_dim: int | None = None,
+    feature_projection_seed: int = 0,
 ) -> PairwiseFeatureBundle:
     """Build flattened pairwise features for inference without selector targets."""
 
@@ -214,8 +226,14 @@ def build_pairwise_inference_bundle(
             raise ValueError("pretrained feature split must match manifest split")
         if pretrained.image_ids != image_ids:
             raise ValueError("pretrained feature image_ids must match manifest image_ids")
-        image_features.append(pretrained.features)
-        image_feature_names.extend(pretrained.feature_names)
+        optional_features, optional_feature_names = _prepare_optional_image_features(
+            features=pretrained.features,
+            feature_names=pretrained.feature_names,
+            projection_dim=feature_projection_dim,
+            projection_seed=feature_projection_seed,
+        )
+        image_features.append(optional_features)
+        image_feature_names.extend(optional_feature_names)
 
     per_image_features = np.concatenate(image_features, axis=1).astype(np.float32)
     target_matrix = np.zeros((len(image_ids), len(aug_ids)), dtype=np.float32)
@@ -236,9 +254,16 @@ def evaluate_pairwise_selector_from_artifacts(
     output_dir: Path,
     identity_aug_id: str = "aug_000",
     features_path: Path | None = None,
+    feature_projection_dim: int | None = None,
+    feature_projection_seed: int = 0,
     top_k: int = 16,
     batch_size: int = 8192,
     strategy_name: str = "pairwise_topk_uniform",
+    confidence_low_threshold: float = 0.75,
+    confidence_high_threshold: float = 0.9,
+    confidence_low_k: int | None = None,
+    confidence_mid_k: int | None = None,
+    confidence_high_k: int = 8,
     device: str | torch.device = "cpu",
 ) -> PairwiseEvaluationSummary:
     """Evaluate a pairwise selector checkpoint on a target-free cached split."""
@@ -260,6 +285,8 @@ def evaluate_pairwise_selector_from_artifacts(
         aug_ids=checkpoint.aug_ids,
         identity_aug_id=identity_aug_id,
         features_path=features_path,
+        feature_projection_dim=feature_projection_dim,
+        feature_projection_seed=feature_projection_seed,
     )
     if bundle.feature_names != checkpoint.feature_names:
         raise ValueError("checkpoint feature_names must match inference feature_names")
@@ -278,6 +305,8 @@ def evaluate_pairwise_selector_from_artifacts(
         aug_ids=bundle.aug_ids,
         image_ids=bundle.image_ids,
     )
+    low_k = top_k if confidence_low_k is None else confidence_low_k
+    mid_k = top_k if confidence_mid_k is None else confidence_mid_k
     metrics_by_strategy = {
         "clean": evaluate_clean(
             logits_by_aug=logits_by_aug,
@@ -291,6 +320,26 @@ def evaluate_pairwise_selector_from_artifacts(
             predicted_gain=predicted_gain,
             identity_aug_id=identity_aug_id,
             k=top_k,
+        ),
+        f"{strategy_name}_softmax_weighted": evaluate_learned_topk_softmax_weighted(
+            logits_by_aug=logits_by_aug,
+            class_idxs=bundle.class_idxs,
+            aug_ids=bundle.aug_ids,
+            predicted_gain=predicted_gain,
+            identity_aug_id=identity_aug_id,
+            k=top_k,
+        ),
+        f"{strategy_name}_confidence_adaptive": evaluate_confidence_adaptive_topk_uniform(
+            logits_by_aug=logits_by_aug,
+            class_idxs=bundle.class_idxs,
+            aug_ids=bundle.aug_ids,
+            predicted_gain=predicted_gain,
+            identity_aug_id=identity_aug_id,
+            low_confidence_threshold=confidence_low_threshold,
+            high_confidence_threshold=confidence_high_threshold,
+            low_confidence_k=low_k,
+            mid_confidence_k=mid_k,
+            high_confidence_k=confidence_high_k,
         ),
         "oracle_topk_uniform": evaluate_oracle_topk_uniform(
             logits_by_aug=logits_by_aug,
@@ -336,6 +385,8 @@ def train_pairwise_selector_from_artifacts(
     identity_aug_id: str = "aug_000",
     train_features_path: Path | None = None,
     val_features_path: Path | None = None,
+    feature_projection_dim: int | None = None,
+    feature_projection_seed: int = 0,
     top_k_grid: list[int] | None = None,
     batch_size: int = 1024,
     epochs: int = 5,
@@ -344,6 +395,10 @@ def train_pairwise_selector_from_artifacts(
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
     positive_gain_weight: float = 0.0,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 16,
+    hard_example_weight: float = 0.0,
+    hard_example_confidence_threshold: float = 0.75,
     target_mode: str = "nll_gain",
     selection_metric: str = "val_tta_nll",
     device: str | torch.device = "cpu",
@@ -359,6 +414,8 @@ def train_pairwise_selector_from_artifacts(
         identity_aug_id=identity_aug_id,
         features_path=train_features_path,
         target_mode=target_mode,
+        feature_projection_dim=feature_projection_dim,
+        feature_projection_seed=feature_projection_seed,
     )
     val_bundle = build_pairwise_feature_bundle(
         manifest_path=val_manifest_path,
@@ -367,21 +424,28 @@ def train_pairwise_selector_from_artifacts(
         identity_aug_id=identity_aug_id,
         features_path=val_features_path,
         target_mode=target_mode,
+        feature_projection_dim=feature_projection_dim,
+        feature_projection_seed=feature_projection_seed,
     )
     model = PairwiseSelectorMLP(input_dim=train_bundle.features.shape[1], hidden_dim=hidden_dim)
     torch_device = torch.device(device)
     model.to(torch_device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    dataloader = cast(
-        "torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]]",
+    row_weights = build_pairwise_hard_example_weights(
+        train_bundle,
+        hard_example_weight=hard_example_weight,
+        confidence_threshold=hard_example_confidence_threshold,
+    )
+    image_batch_size = max(1, int(batch_size) // max(1, len(train_bundle.aug_ids)))
+    dataloader: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = (
         torch.utils.data.DataLoader(
-            torch.utils.data.TensorDataset(
-                torch.from_numpy(train_bundle.features),
-                torch.from_numpy(train_bundle.targets),
+            _PairwiseImageBatchDataset(
+                bundle=train_bundle,
+                row_weights=row_weights,
             ),
-            batch_size=batch_size,
+            batch_size=image_batch_size,
             shuffle=True,
-        ),
+        )
     )
     rows: list[dict[str, float | int]] = []
     checkpoint_path = output_dir / "pairwise_selector_best.pt"
@@ -408,6 +472,8 @@ def train_pairwise_selector_from_artifacts(
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
             positive_gain_weight=positive_gain_weight,
+            listwise_weight=listwise_weight,
+            listwise_top_k=listwise_top_k,
         )
         val_scores = predict_pairwise_scores(
             model=model,
@@ -451,6 +517,10 @@ def train_pairwise_selector_from_artifacts(
                     "hidden_dim": hidden_dim,
                     "aug_ids": train_bundle.aug_ids,
                     "feature_names": train_bundle.feature_names,
+                    "listwise_weight": listwise_weight,
+                    "listwise_top_k": listwise_top_k,
+                    "hard_example_weight": hard_example_weight,
+                    "hard_example_confidence_threshold": hard_example_confidence_threshold,
                 },
                 checkpoint_path,
             )
@@ -476,6 +546,8 @@ def train_pairwise_selector_comparison_from_artifacts(
     identity_aug_id: str = "aug_000",
     train_features_path: Path | None = None,
     val_features_path: Path | None = None,
+    feature_projection_dim: int | None = None,
+    feature_projection_seed: int = 0,
     top_k_grid: list[int] | None = None,
     batch_size: int = 1024,
     epochs: int = 5,
@@ -484,6 +556,10 @@ def train_pairwise_selector_comparison_from_artifacts(
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
     positive_gain_weight: float = 0.0,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 16,
+    hard_example_weight: float = 0.0,
+    hard_example_confidence_threshold: float = 0.75,
     device: str | torch.device = "cpu",
 ) -> PairwiseComparisonSummary:
     """Train NLL-gain and top-1-delta pairwise selector variants."""
@@ -507,6 +583,8 @@ def train_pairwise_selector_comparison_from_artifacts(
             identity_aug_id=identity_aug_id,
             train_features_path=train_features_path,
             val_features_path=val_features_path,
+            feature_projection_dim=feature_projection_dim,
+            feature_projection_seed=feature_projection_seed,
             top_k_grid=top_k_grid,
             batch_size=batch_size,
             epochs=epochs,
@@ -515,6 +593,10 @@ def train_pairwise_selector_comparison_from_artifacts(
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
             positive_gain_weight=positive_gain_weight,
+            listwise_weight=listwise_weight,
+            listwise_top_k=listwise_top_k,
+            hard_example_weight=hard_example_weight,
+            hard_example_confidence_threshold=hard_example_confidence_threshold,
             target_mode=target_mode,
             selection_metric=selection_metric,
             device=device,
@@ -524,6 +606,10 @@ def train_pairwise_selector_comparison_from_artifacts(
                 "variant": variant,
                 "target_mode": target_mode,
                 "selection_metric": selection_metric,
+                "listwise_weight": listwise_weight,
+                "listwise_top_k": listwise_top_k,
+                "hard_example_weight": hard_example_weight,
+                "hard_example_confidence_threshold": hard_example_confidence_threshold,
                 "best_epoch": summary.best_epoch,
                 "best_val_top1": summary.best_val_top1,
                 "best_val_nll": summary.best_val_nll,
@@ -606,31 +692,115 @@ def pairwise_policy_loss(
     }
 
 
+def pairwise_listwise_topk_loss(
+    predicted_gain: torch.Tensor,
+    target_gain: torch.Tensor,
+    *,
+    top_k: int,
+) -> torch.Tensor:
+    """Cross-entropy over target top-k membership for per-image augmentation scores."""
+
+    predicted_gain = predicted_gain.float()
+    target_gain = target_gain.float()
+    if predicted_gain.shape != target_gain.shape:
+        raise ValueError("predicted_gain and target_gain must have the same shape")
+    if predicted_gain.ndim != 2:
+        raise ValueError("predicted_gain must have shape [images, augmentations]")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive")
+    capped_top_k = min(top_k, target_gain.shape[1])
+    target_topk = target_gain.topk(k=capped_top_k, dim=1).indices
+    target_distribution = torch.zeros_like(target_gain)
+    target_distribution.scatter_(dim=1, index=target_topk, value=1.0 / float(capped_top_k))
+    return torch.sum(
+        -target_distribution * torch.nn.functional.log_softmax(predicted_gain, dim=1), dim=1
+    ).mean()
+
+
+def build_pairwise_hard_example_weights(
+    bundle: PairwiseFeatureBundle,
+    *,
+    hard_example_weight: float,
+    confidence_threshold: float,
+) -> np.ndarray:
+    """Build row weights that emphasize clean-wrong or low-confidence images."""
+
+    if hard_example_weight <= 0.0:
+        return np.ones_like(bundle.targets, dtype=np.float32)
+    if not 0.0 <= confidence_threshold <= 1.0:
+        raise ValueError("confidence_threshold must be in [0, 1]")
+    confidence_index = bundle.feature_names.index("clean_confidence")
+    pred_is_true_index = bundle.feature_names.index("clean_pred_is_true")
+    per_image_features = bundle.features.reshape(len(bundle.image_ids), len(bundle.aug_ids), -1)[
+        :, 0, :
+    ]
+    clean_confidence = per_image_features[:, confidence_index]
+    clean_pred_is_true = per_image_features[:, pred_is_true_index]
+    hard_images = (clean_pred_is_true < 0.5) | (clean_confidence < confidence_threshold)
+    weights = np.ones_like(bundle.target_matrix, dtype=np.float32)
+    weights[hard_images, :] += float(hard_example_weight)
+    return weights.reshape(-1).astype(np.float32)
+
+
+class _PairwiseImageBatchDataset(
+    torch.utils.data.Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
+):
+    def __init__(self, bundle: PairwiseFeatureBundle, row_weights: np.ndarray) -> None:
+        num_images = len(bundle.image_ids)
+        num_augs = len(bundle.aug_ids)
+        self.features = bundle.features.reshape(num_images, num_augs, -1)
+        self.targets = bundle.target_matrix
+        self.row_weights = row_weights.reshape(num_images, num_augs).astype(np.float32)
+
+    def __len__(self) -> int:
+        return int(self.features.shape[0])
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return (
+            torch.from_numpy(self.features[index].astype(np.float32)),
+            torch.from_numpy(self.targets[index].astype(np.float32)),
+            torch.from_numpy(self.row_weights[index].astype(np.float32)),
+        )
+
+
 def _train_one_epoch(
     model: PairwiseSelectorMLP,
-    dataloader: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    dataloader: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     usefulness_tau: float,
     usefulness_weight: float,
     positive_gain_weight: float,
+    listwise_weight: float,
+    listwise_top_k: int,
 ) -> float:
     model.train()
     losses = []
-    for features, targets in dataloader:
+    for features, targets, row_weights in dataloader:
         features = features.to(device)
         targets = targets.to(device)
+        row_weights = row_weights.to(device)
         optimizer.zero_grad(set_to_none=True)
-        scores = model(features)
+        batch_size, aug_count, feature_dim = features.shape
+        scores = model(features.reshape(batch_size * aug_count, feature_dim)).reshape(
+            batch_size,
+            aug_count,
+        )
         loss_terms = pairwise_policy_loss(
-            predicted_gain=scores,
-            target_gain=targets,
-            usefulness_logits=scores,
+            predicted_gain=scores.reshape(-1),
+            target_gain=targets.reshape(-1),
+            usefulness_logits=scores.reshape(-1),
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
             positive_gain_weight=positive_gain_weight,
+            row_weights=row_weights.reshape(-1),
         )
-        loss = loss_terms["loss"]
+        listwise_loss = pairwise_listwise_topk_loss(
+            scores,
+            targets,
+            top_k=listwise_top_k,
+        )
+        loss = loss_terms["loss"] + float(listwise_weight) * listwise_loss
         loss.backward()
         optimizer.step()
         losses.append(float(loss.detach().cpu().item()))
@@ -641,6 +811,30 @@ def _is_better_pairwise_metric(current: float, best: float, selection_metric: st
     if selection_metric == "val_tta_top1":
         return current > best
     return current < best
+
+
+def _prepare_optional_image_features(
+    features: np.ndarray,
+    feature_names: list[str],
+    projection_dim: int | None,
+    projection_seed: int,
+) -> tuple[np.ndarray, list[str]]:
+    features = np.asarray(features, dtype=np.float32)
+    if projection_dim is None:
+        return features, list(feature_names)
+    if projection_dim <= 0:
+        raise ValueError("feature_projection_dim must be positive")
+    if projection_dim >= features.shape[1]:
+        return features, list(feature_names)
+    rng = np.random.default_rng(projection_seed)
+    projection = rng.normal(
+        loc=0.0,
+        scale=1.0 / np.sqrt(float(projection_dim)),
+        size=(features.shape[1], projection_dim),
+    ).astype(np.float32)
+    projected = features @ projection
+    projected_names = [f"projected_feature_{index:04d}" for index in range(projection_dim)]
+    return projected.astype(np.float32), projected_names
 
 
 def _build_pairwise_bundle_from_image_features(
