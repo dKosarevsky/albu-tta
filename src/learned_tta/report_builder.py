@@ -1033,6 +1033,10 @@ def _results_markdown(
                 *_oracle_gap_capture_summary_lines(compute_policy_frontier),
                 _markdown_table(compute_policy_frontier),
                 "",
+                "## Selector KPI Summary",
+                "",
+                _markdown_table(_selector_kpi_summary_table(compute_policy_frontier)),
+                "",
             ]
         )
     lines.extend(
@@ -1234,6 +1238,34 @@ def _oracle_gap_capture_summary_lines(frontier: pd.DataFrame) -> list[str]:
         "The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image budget.",
         "",
     ]
+
+
+def _selector_kpi_summary_table(frontier: pd.DataFrame) -> pd.DataFrame:
+    learned = frontier.loc[frontier["strategy"].astype(str).str.startswith("learned")].copy()
+    if learned.empty:
+        return pd.DataFrame(
+            columns=[
+                "strategy",
+                "k",
+                "top1",
+                "top1_delta_pp_vs_clean",
+                "top1_oracle_delta_pp",
+                "top1_oracle_capture",
+                "forwards_per_image",
+            ]
+        )
+    return learned.loc[
+        :,
+        [
+            "strategy",
+            "k",
+            "top1",
+            "top1_delta_pp_vs_clean",
+            "top1_oracle_delta_pp",
+            "top1_oracle_capture",
+            "forwards_per_image",
+        ],
+    ].sort_values(["top1_oracle_capture", "top1_delta_pp_vs_clean"], ascending=[False, False])
 
 
 def _transform_class_summary_lines(

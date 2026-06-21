@@ -9,6 +9,7 @@ import torch
 from PIL import Image
 
 from learned_tta.cache import TeacherShard, write_teacher_shard
+from learned_tta.selector_features import save_selector_features
 from learned_tta.selector_training import (
     DEFAULT_SELECTOR_LOSS_ABLATIONS,
     SelectorTrainingSummary,
@@ -315,6 +316,50 @@ def test_train_selector_loss_ablation_from_artifacts_filters_variants(
     assert not (tmp_path / "selector_ablation" / "gain_only").exists()
 
 
+def test_train_selector_loss_ablation_from_artifacts_trains_pretrained_feature_variant(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    train_features = _write_selector_features(
+        tmp_path / "public_train_features.npz",
+        split="public_train",
+        rows=4,
+    )
+    val_features = _write_selector_features(
+        tmp_path / "public_val_features.npz",
+        split="public_val",
+        rows=2,
+    )
+
+    summary = train_selector_loss_ablation_from_artifacts(
+        train_manifest_path=selector_training_artifacts["train_manifest"],
+        val_manifest_path=selector_training_artifacts["val_manifest"],
+        train_targets_path=selector_training_artifacts["train_targets"],
+        val_targets_path=selector_training_artifacts["val_targets"],
+        output_dir=tmp_path / "selector_ablation",
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        epochs=1,
+        learning_rate=1e-3,
+        val_cache_dir=selector_training_artifacts["cache_dir"],
+        val_split="public_val",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[1],
+        identity_aug_id="aug_000",
+        device="cpu",
+        variant_names=("pretrained_mlp_gain_rank",),
+        train_features_path=train_features,
+        val_features_path=val_features,
+    )
+    table = pd.read_csv(summary.results_csv)
+
+    assert table["variant"].tolist() == ["pretrained_mlp_gain_rank"]
+    assert table["feature_mode"].tolist() == ["pretrained"]
+    assert table["model_family"].tolist() == ["mlp"]
+    assert (tmp_path / "selector_ablation" / "pretrained_mlp_gain_rank").exists()
+
+
 def test_train_selector_loss_ablation_from_artifacts_rejects_unknown_variant(
     tmp_path: Path,
     selector_training_artifacts: dict[str, Path],
@@ -456,6 +501,73 @@ def test_train_selector_loss_ablation_cli_writes_variant_table(
     assert table["variant"].tolist() == ["clean_logits_mlp_gain_rank"]
 
 
+def test_train_selector_loss_ablation_cli_accepts_pretrained_feature_paths(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from learned_tta.cli import main
+
+    output_dir = tmp_path / "selector_ablation"
+    train_features = _write_selector_features(
+        tmp_path / "public_train_features.npz",
+        split="public_train",
+        rows=4,
+    )
+    val_features = _write_selector_features(
+        tmp_path / "public_val_features.npz",
+        split="public_val",
+        rows=2,
+    )
+
+    main(
+        [
+            "train-selector-ablation",
+            "--config",
+            str(Path(__file__).resolve().parents[1] / "configs/experiment/resnet50_a1_in1k.yaml"),
+            "--train-manifest",
+            str(selector_training_artifacts["train_manifest"]),
+            "--val-manifest",
+            str(selector_training_artifacts["val_manifest"]),
+            "--train-targets",
+            str(selector_training_artifacts["train_targets"]),
+            "--val-targets",
+            str(selector_training_artifacts["val_targets"]),
+            "--cache-dir",
+            str(selector_training_artifacts["cache_dir"]),
+            "--output-dir",
+            str(output_dir),
+            "--candidate-id",
+            "aug_000",
+            "--candidate-id",
+            "aug_001",
+            "--top-k",
+            "1",
+            "--epochs",
+            "1",
+            "--batch-size",
+            "2",
+            "--num-workers",
+            "0",
+            "--image-size",
+            "16",
+            "--ablation-variant",
+            "pretrained_mlp_gain_rank",
+            "--train-features",
+            str(train_features),
+            "--val-features",
+            str(val_features),
+            "--force",
+        ]
+    )
+    captured = capsys.readouterr()
+    table = pd.read_csv(output_dir / "selector_loss_ablation.csv")
+
+    assert "selector ablation: wrote" in captured.out
+    assert table["variant"].tolist() == ["pretrained_mlp_gain_rank"]
+    assert table["feature_mode"].tolist() == ["pretrained"]
+
+
 def _write_manifest(root: Path, split: str, count: int) -> Path:
     rows = []
     for index in range(count):
@@ -498,6 +610,21 @@ def _write_targets(path: Path, rows: int, image_ids: list[str] | None = None) ->
         stats=stats,
     )
     return path
+
+
+def _write_selector_features(path: Path, split: str, rows: int) -> Path:
+    feature_count = 6
+    features = np.arange(rows * feature_count, dtype=np.float32).reshape(rows, feature_count)
+    features = features / max(float(features.max()), 1.0)
+    return save_selector_features(
+        path=path,
+        split=split,
+        model_name="fake_pretrained",
+        image_ids=[f"{split}-{index}" for index in range(rows)],
+        features=features,
+        feature_names=[f"feature_{index:04d}" for index in range(feature_count)],
+        metadata={"pretrained": True},
+    )
 
 
 def _write_cache(cache_dir: Path) -> Path:

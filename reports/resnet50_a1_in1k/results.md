@@ -76,6 +76,16 @@ The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image bud
 | learned_topk_uniform | 16 | 0.819 | 0.9576 | 0.745703 | 0.0405037 | 17 | 0.17 | 0.7 | 7.3 | 0.0958904 | -0.110295 | -0.419889 | 0.262676 |
 | oracle_topk_uniform | 16 | 0.885 | 0.9704 | 0.436109 | 0.0115457 | 17 | 0.17 | 7.3 | 7.3 | 1 | -0.419889 | -0.419889 | 1 |
 
+## Selector KPI Summary
+
+| strategy | k | top1 | top1_delta_pp_vs_clean | top1_oracle_delta_pp | top1_oracle_capture | forwards_per_image |
+| --- | --- | --- | --- | --- | --- | --- |
+| learned_topk_uniform | 16 | 0.819 | 0.7 | 7.3 | 0.0958904 | 17 |
+| learned_topk_uniform | 8 | 0.8154 | 0.34 | 8.62 | 0.0394432 | 9 |
+| learned_topk_uniform | 4 | 0.8132 | 0.12 | 9.58 | 0.0125261 | 5 |
+| learned_topk_uniform | 2 | 0.81 | -0.2 | 9.7 | -0.0206186 | 3 |
+| learned_topk_uniform | 1 | 0.8098 | -0.22 | 7.88 | -0.0279188 | 2 |
+
 ## Compute
 
 | split | strategy | forwards_per_image | relative_compute_vs_all |

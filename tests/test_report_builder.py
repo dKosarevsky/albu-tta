@@ -500,6 +500,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert selector_ablation["variant"].tolist() == ["gain_only", "gain_rank_bce"]
     assert adaptive_selection_counts["mean_forwards_per_image"].tolist() == pytest.approx([2.0])
     assert compute_policy_frontier["top1_oracle_capture"].tolist() == pytest.approx([0.0, 0.833333])
+    assert "## Selector KPI Summary" in markdown
+    assert "| learned_topk_uniform | 1 | 1 | 50 | 60 | 0.833333 | 2 |" in markdown
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
     assert "figures/aggregation_weights.svg" in markdown

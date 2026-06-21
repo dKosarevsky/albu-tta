@@ -10,10 +10,14 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import pytest
+import torch
+from PIL import Image
 
 from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.cli import main
+from learned_tta.selector_features import load_selector_features
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "configs" / "experiment" / "resnet50_a1_in1k.yaml"
@@ -253,6 +257,62 @@ def test_cli_summarize_clean_baseline_writes_full_val_summary(
     assert payload["overall"]["top1"] == pytest.approx(0.8)
 
 
+def test_cli_build_selector_features_writes_default_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_test_config(tmp_path, class_count=2, images_per_class=50)
+    manifest_path = tmp_path / "artifacts" / "manifests" / "public_train.csv"
+    _write_feature_manifest(manifest_path)
+
+    class FakeFeatureModel(torch.nn.Module):
+        def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+            means = inputs.mean(dim=(1, 2, 3))
+            return torch.stack([means, means + 1.0], dim=1)
+
+    fake_bundle = SimpleNamespace(
+        model=FakeFeatureModel(),
+        preprocess=lambda image: torch.full((3, 4, 4), float(image.getpixel((0, 0))[0])),
+        model_name="resnet50.a1_in1k",
+        pretrained=True,
+        data_config={"input_size": (3, 4, 4)},
+    )
+    monkeypatch.setattr(
+        "learned_tta.selector_feature_cache.build_timm_feature_extractor",
+        lambda model_name, pretrained=True: fake_bundle,
+    )
+
+    main(
+        [
+            "build-selector-features",
+            "--config",
+            str(config_path),
+            "--split",
+            "public_train",
+            "--batch-size",
+            "2",
+            "--num-workers",
+            "0",
+            "--device",
+            "cpu",
+        ]
+    )
+    captured = capsys.readouterr()
+    output_path = (
+        tmp_path
+        / "artifacts"
+        / "selector"
+        / "features"
+        / "public_train__resnet50.a1_in1k.features.npz"
+    )
+    loaded = load_selector_features(output_path)
+
+    assert f"selector features: wrote {output_path}" in captured.out
+    assert loaded.image_ids == ["public_train-0", "public_train-1"]
+    assert loaded.features.shape == (2, 2)
+
+
 def test_cli_full_run_status_reports_next_step(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -289,9 +349,7 @@ def test_cli_full_run_status_can_emit_json(
     assert payload["steps"][0]["missing_output_count"] == 1
     assert payload["steps"][0]["extra_output_count"] == 0
     assert payload["steps"][0]["outputs"][0].endswith("augmentation_registry_audit.json")
-    assert payload["steps"][0]["missing_outputs"][0].endswith(
-        "augmentation_registry_audit.json"
-    )
+    assert payload["steps"][0]["missing_outputs"][0].endswith("augmentation_registry_audit.json")
 
 
 def test_cli_teacher_cache_plan_can_emit_json(
@@ -735,6 +793,26 @@ def _make_fake_imagenet_val(root: Path, classes: int = 2, images_per_class: int 
     return val_root
 
 
+def _write_feature_manifest(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for index in range(2):
+        image_path = path.parent / f"feature_image_{index}.png"
+        image = np.full((8, 8, 3), fill_value=index + 1, dtype=np.uint8)
+        Image.fromarray(image, mode="RGB").save(image_path)
+        rows.append(
+            {
+                "split": "public_train",
+                "image_id": f"public_train-{index}",
+                "class_idx": index,
+                "class_name": f"class-{index}",
+                "path": str(image_path),
+            }
+        )
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return path
+
+
 def _write_test_val_tar(path: Path, names: list[str]) -> None:
     with tarfile.open(path, "w") as archive:
         for name in names:
@@ -746,9 +824,7 @@ def _write_test_val_tar(path: Path, names: list[str]) -> None:
 
 def _write_test_devkit_tar(path: Path, labels: list[int]) -> None:
     payload = ("\n".join(str(label) for label in labels) + "\n").encode()
-    info = tarfile.TarInfo(
-        name="ILSVRC2012_devkit_t12/data/ILSVRC2012_validation_ground_truth.txt"
-    )
+    info = tarfile.TarInfo(name="ILSVRC2012_devkit_t12/data/ILSVRC2012_validation_ground_truth.txt")
     info.size = len(payload)
     with tarfile.open(path, "w:gz") as archive:
         archive.addfile(info, BytesIO(payload))
@@ -815,8 +891,7 @@ artifacts:
 def _normalize_json_paths(value: Any, extra_root: Path | None = None) -> Any:
     if isinstance(value, dict):
         return {
-            key: _normalize_json_paths(item, extra_root=extra_root)
-            for key, item in value.items()
+            key: _normalize_json_paths(item, extra_root=extra_root) for key, item in value.items()
         }
     if isinstance(value, list):
         return [_normalize_json_paths(item, extra_root=extra_root) for item in value]

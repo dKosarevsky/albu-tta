@@ -154,6 +154,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             candidate_ids=args.candidate_id,
             target_kind=str(args.target_kind),
         )
+    elif command == "build-selector-features":
+        _cmd_build_selector_features(
+            config_path=Path(args.config),
+            split=str(args.split),
+            manifest_path=_optional_path(args.manifest),
+            output_path=_optional_path(args.output),
+            model_name=str(args.model_name) if args.model_name is not None else None,
+            pretrained=bool(args.pretrained),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            device=str(args.device),
+        )
     elif command == "train-selector":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_train_selector(
@@ -198,6 +210,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             learning_rate=float(args.learning_rate),
             device=str(args.device),
             variant_names=tuple(args.ablation_variant) if args.ablation_variant else None,
+            train_features_path=_optional_path(args.train_features),
+            val_features_path=_optional_path(args.val_features),
             force=bool(args.force),
         )
     elif command == "tune-tta":
@@ -611,6 +625,30 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Augmentation candidate id to include. May be passed more than once.",
     )
 
+    build_selector_features = subparsers.add_parser(
+        "build-selector-features",
+        help="Build cached pretrained image features for selector MLP training.",
+    )
+    build_selector_features.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    build_selector_features.add_argument("--split", default="public_train")
+    build_selector_features.add_argument("--manifest")
+    build_selector_features.add_argument("--output")
+    build_selector_features.add_argument("--model-name")
+    build_selector_features.add_argument(
+        "--no-pretrained",
+        dest="pretrained",
+        action="store_false",
+        help="Disable pretrained weights for smoke/debug feature extraction.",
+    )
+    build_selector_features.set_defaults(pretrained=True)
+    build_selector_features.add_argument("--batch-size", type=int, default=64)
+    build_selector_features.add_argument("--num-workers", type=int, default=4)
+    build_selector_features.add_argument("--device", default="cpu")
+
     train_selector = subparsers.add_parser(
         "train-selector",
         help="Train the small selector CNN from clean images and selector targets.",
@@ -656,6 +694,8 @@ def _build_parser() -> argparse.ArgumentParser:
     train_selector_ablation.add_argument("--val-manifest")
     train_selector_ablation.add_argument("--train-targets")
     train_selector_ablation.add_argument("--val-targets")
+    train_selector_ablation.add_argument("--train-features")
+    train_selector_ablation.add_argument("--val-features")
     train_selector_ablation.add_argument("--cache-dir")
     train_selector_ablation.add_argument("--output-dir")
     train_selector_ablation.add_argument("--val-split", default="public_val")
@@ -1222,6 +1262,46 @@ def _cmd_build_targets(
     )
 
 
+def _cmd_build_selector_features(
+    config_path: Path,
+    split: str,
+    manifest_path: Path | None,
+    output_path: Path | None,
+    model_name: str | None,
+    pretrained: bool,
+    batch_size: int,
+    num_workers: int,
+    device: str,
+) -> None:
+    from learned_tta.selector_feature_cache import (
+        build_timm_feature_extractor,
+        extract_selector_features_from_manifest,
+    )
+
+    config = load_experiment_config(config_path)
+    resolved_model_name = model_name or config.teacher.model_name
+    resolved_manifest_path = manifest_path or config.artifacts.manifests_dir / f"{split}.csv"
+    resolved_output_path = (
+        output_path
+        or config.artifacts.selector_dir
+        / "features"
+        / f"{split}__{resolved_model_name}.features.npz"
+    )
+    bundle = build_timm_feature_extractor(
+        model_name=resolved_model_name,
+        pretrained=pretrained,
+    )
+    written = extract_selector_features_from_manifest(
+        manifest_path=resolved_manifest_path,
+        output_path=resolved_output_path,
+        bundle=bundle,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        device=device,
+    )
+    print(f"selector features: wrote {written}")
+
+
 def _cmd_train_selector(
     config_path: Path,
     train_manifest_path: Path | None,
@@ -1293,6 +1373,8 @@ def _cmd_train_selector_ablation(
     learning_rate: float,
     device: str,
     variant_names: tuple[str, ...] | None,
+    train_features_path: Path | None,
+    val_features_path: Path | None,
     force: bool,
 ) -> None:
     from learned_tta.selector_training import train_selector_loss_ablation_from_config
@@ -1315,6 +1397,8 @@ def _cmd_train_selector_ablation(
         learning_rate=learning_rate,
         device=device,
         variant_names=variant_names,
+        train_features_path=train_features_path,
+        val_features_path=val_features_path,
         skip_completed=not force,
     )
     print(f"selector ablation: wrote {summary.results_csv}")

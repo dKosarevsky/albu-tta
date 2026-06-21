@@ -14,7 +14,7 @@ from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest
-from learned_tta.selector_features import clean_logit_features
+from learned_tta.selector_features import clean_logit_features, load_selector_features
 from learned_tta.selector_model import SelectorCNN, SelectorMLP
 from learned_tta.split_policy import validate_public_tuning_split
 from learned_tta.targets import SavedSelectorTargets, TargetStats, load_selector_targets
@@ -114,6 +114,29 @@ DEFAULT_SELECTOR_LOSS_ABLATIONS = (
 )
 
 
+PRETRAINED_SELECTOR_LOSS_ABLATIONS = (
+    SelectorLossAblationSpec(
+        variant="pretrained_mlp_gain_rank",
+        rank_weight=0.2,
+        usefulness_head=False,
+        feature_mode="pretrained",
+        model_family="mlp",
+    ),
+    SelectorLossAblationSpec(
+        variant="pretrained_mlp_gain_listwise",
+        rank_weight=0.2,
+        usefulness_head=False,
+        feature_mode="pretrained",
+        model_family="mlp",
+        listwise_weight=0.1,
+        listwise_top_k=16,
+    ),
+)
+
+
+ALL_SELECTOR_LOSS_ABLATIONS = DEFAULT_SELECTOR_LOSS_ABLATIONS + PRETRAINED_SELECTOR_LOSS_ABLATIONS
+
+
 def select_selector_loss_ablation_specs(
     variant_names: tuple[str, ...] | None,
     specs: tuple[SelectorLossAblationSpec, ...] = DEFAULT_SELECTOR_LOSS_ABLATIONS,
@@ -122,7 +145,7 @@ def select_selector_loss_ablation_specs(
 
     if not variant_names:
         return specs
-    specs_by_name = {spec.variant: spec for spec in specs}
+    specs_by_name = {spec.variant: spec for spec in (*specs, *PRETRAINED_SELECTOR_LOSS_ABLATIONS)}
     unknown = [name for name in variant_names if name not in specs_by_name]
     if unknown:
         available = ", ".join(sorted(specs_by_name))
@@ -281,6 +304,38 @@ def make_clean_logit_selector_dataloader(
     )
 
 
+def make_pretrained_feature_selector_dataloader(
+    manifest_path: Path,
+    targets_path: Path,
+    features_path: Path,
+    batch_size: int,
+    num_workers: int,
+    shuffle: bool,
+) -> tuple[torch.utils.data.DataLoader[SelectorBatch], int]:
+    """Build a selector DataLoader from cached pretrained image features."""
+
+    records = load_manifest(manifest_path)
+    targets = load_selector_targets(targets_path)
+    features = load_selector_features(features_path)
+    manifest_image_ids = [record.image_id for record in records]
+    if targets.image_ids != manifest_image_ids:
+        raise ValueError("selector target image_ids must match manifest image_ids")
+    if features.image_ids != manifest_image_ids:
+        raise ValueError("pretrained feature image_ids must match manifest image_ids")
+    if records and any(record.split != features.split for record in records):
+        raise ValueError("pretrained feature split must match manifest split")
+    dataset = SelectorFeatureTargetDataset(features=features.features, targets=targets)
+    return (
+        torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=shuffle,
+        ),
+        int(features.features.shape[1]),
+    )
+
+
 def train_selector_from_artifacts(
     train_manifest_path: Path,
     val_manifest_path: Path,
@@ -301,6 +356,8 @@ def train_selector_from_artifacts(
     feature_mode: str = "image",
     target_mode: str = "nll_gain",
     model_family: str = "image_cnn",
+    train_features_path: Path | None = None,
+    val_features_path: Path | None = None,
     val_cache_dir: Path | None = None,
     val_split: str = "public_val",
     aug_ids: list[str] | None = None,
@@ -375,8 +432,34 @@ def train_selector_from_artifacts(
             output_dim=output_dim,
             usefulness_head=usefulness_head,
         ).to(torch_device)
+    elif feature_mode == "pretrained":
+        if model_family != "mlp":
+            raise ValueError("pretrained feature_mode requires model_family='mlp'")
+        if train_features_path is None or val_features_path is None:
+            raise ValueError("train_features_path and val_features_path are required")
+        train_dataloader, input_dim = make_pretrained_feature_selector_dataloader(
+            manifest_path=train_manifest_path,
+            targets_path=train_targets_path,
+            features_path=train_features_path,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=True,
+        )
+        val_dataloader, _ = make_pretrained_feature_selector_dataloader(
+            manifest_path=val_manifest_path,
+            targets_path=val_targets_path,
+            features_path=val_features_path,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+        )
+        model = SelectorMLP(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            usefulness_head=usefulness_head,
+        ).to(torch_device)
     else:
-        raise ValueError("feature_mode must be 'image' or 'clean_logits'")
+        raise ValueError("feature_mode must be 'image', 'clean_logits', or 'pretrained'")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
@@ -500,6 +583,8 @@ def train_selector_loss_ablation_from_artifacts(
     device: str | torch.device = "cpu",
     specs: tuple[SelectorLossAblationSpec, ...] = DEFAULT_SELECTOR_LOSS_ABLATIONS,
     variant_names: tuple[str, ...] | None = None,
+    train_features_path: Path | None = None,
+    val_features_path: Path | None = None,
     skip_completed: bool = True,
 ) -> SelectorLossAblationSummary:
     """Train selector loss variants and write a compact comparison table."""
@@ -533,6 +618,8 @@ def train_selector_loss_ablation_from_artifacts(
                 feature_mode=spec.feature_mode,
                 target_mode=spec.target_mode,
                 model_family=spec.model_family,
+                train_features_path=train_features_path,
+                val_features_path=val_features_path,
                 val_cache_dir=val_cache_dir,
                 val_split=val_split,
                 aug_ids=aug_ids,
@@ -586,6 +673,8 @@ def train_selector_from_config(
     usefulness_tau: float | None = None,
     usefulness_weight: float | None = None,
     device: str | torch.device = "cpu",
+    train_features_path: Path | None = None,
+    val_features_path: Path | None = None,
 ) -> SelectorTrainingSummary:
     """Load experiment config and train selector from configured artifact locations."""
 
@@ -626,6 +715,8 @@ def train_selector_from_config(
         usefulness_head=resolved_usefulness_head,
         usefulness_tau=resolved_usefulness_tau,
         usefulness_weight=resolved_usefulness_weight,
+        train_features_path=train_features_path,
+        val_features_path=val_features_path,
         device=device,
     )
 
@@ -648,6 +739,8 @@ def train_selector_loss_ablation_from_config(
     learning_rate: float = 1e-3,
     device: str | torch.device = "cpu",
     variant_names: tuple[str, ...] | None = None,
+    train_features_path: Path | None = None,
+    val_features_path: Path | None = None,
     skip_completed: bool = True,
 ) -> SelectorLossAblationSummary:
     """Load experiment config and train the default selector loss ablation set."""
@@ -678,6 +771,8 @@ def train_selector_loss_ablation_from_config(
         learning_rate=learning_rate,
         device=device,
         variant_names=variant_names,
+        train_features_path=train_features_path,
+        val_features_path=val_features_path,
         skip_completed=skip_completed,
     )
 
