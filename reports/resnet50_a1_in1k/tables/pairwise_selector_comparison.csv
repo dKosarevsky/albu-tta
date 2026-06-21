@@ -1,0 +1,3 @@
+variant,target_mode,selection_metric,best_epoch,best_val_top1,best_val_nll,checkpoint_path,summary_csv
+pairwise_nll_gain,nll_gain,val_tta_nll,5,0.8354,0.6449826955795288,artifacts/selector/pairwise/pairwise_nll_gain/pairwise_selector_best.pt,artifacts/selector/pairwise/pairwise_nll_gain/pairwise_selector_summary.csv
+pairwise_top1_delta,top1_delta,val_tta_top1,4,0.8382,0.6611443161964417,artifacts/selector/pairwise/pairwise_top1_delta/pairwise_selector_best.pt,artifacts/selector/pairwise/pairwise_top1_delta/pairwise_selector_summary.csv

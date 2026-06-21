@@ -86,6 +86,21 @@ The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image bud
 | learned_topk_uniform | 2 | 0.81 | -0.2 | 9.7 | -0.0206186 | 3 |
 | learned_topk_uniform | 1 | 0.8098 | -0.22 | 7.88 | -0.0279188 | 2 |
 
+## Pairwise Selector Comparison
+
+- Table: `tables/pairwise_selector_comparison.csv`
+
+This is a public-val ablation, not a frozen private result. The top-1-delta
+pairwise ranker reaches 0.8382 top-1 at k=16, which is +2.62 pp vs public-val
+clean and +1.92 pp vs the current learned top-k selector. It captures 35.9% of
+the public-val same-k oracle top-1 gap and remains 4.68 pp below oracle@k16.
+The NLL-gain variant is weaker on top-1 but better on NLL.
+
+| variant | target_mode | selection_metric | best_epoch | best_val_top1 | best_val_nll |
+| --- | --- | --- | --- | --- | --- |
+| pairwise_nll_gain | nll_gain | val_tta_nll | 5 | 0.8354 | 0.644983 |
+| pairwise_top1_delta | top1_delta | val_tta_top1 | 4 | 0.8382 | 0.661144 |
+
 ## Compute
 
 | split | strategy | forwards_per_image | relative_compute_vs_all |
