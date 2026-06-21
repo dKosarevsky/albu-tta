@@ -69,10 +69,41 @@ def learned_topk_selection(
     selections = []
     for image_gain in predicted_gain:
         ranked_indices = [
+            index for index in np.argsort(image_gain)[::-1].tolist() if index != identity_index
+        ][:k]
+        selections.append([identity_aug_id, *[aug_ids[index] for index in ranked_indices]])
+    return selections
+
+
+def adaptive_topk_selection(
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    useful_prob: np.ndarray,
+    identity_aug_id: str,
+    threshold: float,
+    max_k: int,
+) -> list[list[str]]:
+    """Select identity plus useful non-identity augmentations capped by predicted gain."""
+
+    predicted_gain = np.asarray(predicted_gain, dtype=np.float32)
+    useful_prob = np.asarray(useful_prob, dtype=np.float32)
+    if predicted_gain.ndim != 2:
+        raise ValueError("predicted_gain must have shape [num_images, augmentations]")
+    if useful_prob.shape != predicted_gain.shape:
+        raise ValueError("useful_prob must match predicted_gain shape")
+    if predicted_gain.shape[1] != len(aug_ids):
+        raise ValueError("predicted_gain width must match aug_ids")
+    if max_k < 0:
+        raise ValueError("max_k must be non-negative")
+
+    identity_index = aug_ids.index(identity_aug_id)
+    selections = []
+    for image_gain, image_useful_prob in zip(predicted_gain, useful_prob, strict=True):
+        ranked_indices = [
             index
             for index in np.argsort(image_gain)[::-1].tolist()
-            if index != identity_index
-        ][:k]
+            if index != identity_index and image_useful_prob[index] > threshold
+        ][:max_k]
         selections.append([identity_aug_id, *[aug_ids[index] for index in ranked_indices]])
     return selections
 
@@ -312,6 +343,29 @@ def evaluate_learned_topk_uniform(
         predicted_gain=predicted_gain,
         identity_aug_id=identity_aug_id,
         k=k,
+    )
+    return evaluate_selected_tta(logits_by_aug, selected_aug_ids, class_idxs)
+
+
+def evaluate_learned_adaptive_uniform(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    useful_prob: np.ndarray,
+    identity_aug_id: str,
+    threshold: float,
+    max_k: int,
+) -> dict[str, float]:
+    """Evaluate learned adaptive usefulness-thresholded uniform TTA."""
+
+    selected_aug_ids = adaptive_topk_selection(
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        useful_prob=useful_prob,
+        identity_aug_id=identity_aug_id,
+        threshold=threshold,
+        max_k=max_k,
     )
     return evaluate_selected_tta(logits_by_aug, selected_aug_ids, class_idxs)
 

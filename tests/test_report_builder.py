@@ -24,9 +24,15 @@ from learned_tta.report_builder import (
     _complete_metrics,
     _existing_path,
     _json_int,
+    _oracle_gap_capture_summary_lines,
     _public_metrics_from_tuning,
+    _read_adaptive_selection_counts_csv,
+    _read_compute_policy_frontier_csv,
     _read_corrections_csv,
+    _read_selector_ablation_csv,
+    _read_selector_diagnostics_json,
     _read_selector_history_csv,
+    _selector_kpi_summary_table,
     _validate_aggregator_aug_ids,
     build_report_from_artifacts,
 )
@@ -117,6 +123,103 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         ]
     ).to_csv(selector_history_csv, index=False)
 
+    selector_ablation_csv = tmp_path / "selector_loss_ablation.csv"
+    pd.DataFrame(
+        [
+            {
+                "variant": "gain_only",
+                "rank_weight": 0.0,
+                "usefulness_head": False,
+                "usefulness_tau": 0.01,
+                "usefulness_weight": 0.0,
+                "feature_mode": "image",
+                "target_mode": "nll_gain",
+                "model_family": "image_cnn",
+                "listwise_weight": 0.0,
+                "listwise_top_k": 1,
+                "best_epoch": 1,
+                "best_val_loss": 0.8,
+                "best_val_nll": 0.9,
+            },
+            {
+                "variant": "gain_rank_bce",
+                "rank_weight": 0.2,
+                "usefulness_head": True,
+                "usefulness_tau": 0.01,
+                "usefulness_weight": 0.05,
+                "feature_mode": "image",
+                "target_mode": "nll_gain",
+                "model_family": "image_cnn",
+                "listwise_weight": 0.0,
+                "listwise_top_k": 1,
+                "best_epoch": 2,
+                "best_val_loss": 0.5,
+                "best_val_nll": 0.4,
+            },
+        ]
+    ).to_csv(selector_ablation_csv, index=False)
+
+    selector_diagnostics_json = tmp_path / "selector_diagnostics.json"
+    selector_diagnostics_json.write_text(
+        json.dumps(
+            {
+                "gain_pearson": 0.25,
+                "gain_spearman": 0.1,
+                "topk_hit_rate_by_k": {"1": 0.2},
+            }
+        ),
+        encoding="utf-8",
+    )
+    adaptive_selection_counts_csv = tmp_path / "adaptive_selection_counts.csv"
+    pd.DataFrame(
+        [
+            {
+                "threshold": 0.1,
+                "mean_forwards_per_image": 2.0,
+                "median_forwards_per_image": 2.0,
+                "p90_forwards_per_image": 3.0,
+                "max_forwards_per_image": 4.0,
+            }
+        ]
+    ).to_csv(adaptive_selection_counts_csv, index=False)
+    compute_policy_frontier_csv = tmp_path / "compute_policy_frontier.csv"
+    pd.DataFrame(
+        [
+            {
+                "strategy": "clean",
+                "k": 0,
+                "top1": 0.5,
+                "top5": 1.0,
+                "nll": 0.8,
+                "ece": 0.1,
+                "forwards_per_image": 1.0,
+                "relative_compute_vs_all": 0.5,
+                "top1_delta_pp_vs_clean": 0.0,
+                "top1_oracle_delta_pp": 0.0,
+                "top1_oracle_capture": 0.0,
+                "nll_delta_vs_clean": 0.0,
+                "nll_oracle_delta": 0.0,
+                "nll_oracle_capture": 0.0,
+            },
+            {
+                "strategy": "learned_topk_uniform",
+                "k": 1,
+                "top1": 1.0,
+                "top5": 1.0,
+                "nll": 0.4,
+                "ece": 0.05,
+                "forwards_per_image": 2.0,
+                "relative_compute_vs_all": 1.0,
+                "top1_delta_pp_vs_clean": 50.0,
+                "top1_oracle_delta_pp": 60.0,
+                "top1_oracle_capture": 0.833333,
+                "nll_delta_vs_clean": -0.4,
+                "nll_oracle_delta": -0.5,
+                "nll_oracle_capture": 0.8,
+            },
+        ]
+    ).to_csv(compute_policy_frontier_csv, index=False)
+
     tuning_json = tmp_path / "public_val_tta_tuning.json"
     tuning_json.write_text(
         json.dumps(
@@ -199,6 +302,10 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         "private_metrics": private_metrics_csv,
         "corrections": corrections_csv,
         "selector_history": selector_history_csv,
+        "selector_ablation": selector_ablation_csv,
+        "selector_diagnostics": selector_diagnostics_json,
+        "adaptive_selection_counts": adaptive_selection_counts_csv,
+        "compute_policy_frontier": compute_policy_frontier_csv,
         "tuning": tuning_json,
         "manifest": manifest_path,
         "targets": targets_path,
@@ -230,10 +337,17 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         xgboost_aggregator_path=report_artifacts["xgboost_aggregator"],
         corrections_path=report_artifacts["corrections"],
         selector_history_path=report_artifacts["selector_history"],
+        selector_ablation_path=report_artifacts["selector_ablation"],
+        selector_diagnostics_path=report_artifacts["selector_diagnostics"],
+        adaptive_selection_counts_path=report_artifacts["adaptive_selection_counts"],
+        compute_policy_frontier_path=report_artifacts["compute_policy_frontier"],
         device="cpu",
     )
 
     markdown = summary.results_md.read_text(encoding="utf-8")
+    assert "Next-step read: [next_steps.md](next_steps.md)." in markdown
+    assert "## Raw Per-Image Scores" in markdown
+    assert "tables/selector_public_gain_matrix.csv" in markdown
     impact = pd.read_csv(summary.augmentation_impact_csv)
     public_metrics = pd.read_csv(summary.public_metrics_csv)
     compute = pd.read_csv(summary.compute_csv)
@@ -245,6 +359,10 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.corrections_csv is not None
     assert summary.corrections_svg is not None
     assert summary.selector_history_csv is not None
+    assert summary.selector_ablation_csv is not None
+    assert summary.selector_diagnostics_json is not None
+    assert summary.adaptive_selection_counts_csv is not None
+    assert summary.compute_policy_frontier_csv is not None
     assert summary.selector_history_svg is not None
     assert summary.transform_class_impact_csv is not None
     assert summary.transform_class_impact_svg is not None
@@ -255,6 +373,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     xgboost_importance = pd.read_csv(summary.xgboost_feature_importance_csv)
     corrections = pd.read_csv(summary.corrections_csv)
     selector_history = pd.read_csv(summary.selector_history_csv)
+    selector_ablation = pd.read_csv(summary.selector_ablation_csv)
+    adaptive_selection_counts = pd.read_csv(summary.adaptive_selection_counts_csv)
+    compute_policy_frontier = pd.read_csv(summary.compute_policy_frontier_csv)
     transform_class_impact = pd.read_csv(summary.transform_class_impact_csv)
     transform_class_aggregation = pd.read_csv(summary.transform_class_aggregation_csv)
 
@@ -273,6 +394,10 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.corrections_csv.exists()
     assert summary.corrections_svg.exists()
     assert summary.selector_history_csv.exists()
+    assert summary.selector_ablation_csv.exists()
+    assert summary.selector_diagnostics_json.exists()
+    assert summary.adaptive_selection_counts_csv.exists()
+    assert summary.compute_policy_frontier_csv.exists()
     assert summary.selector_history_svg.exists()
     assert summary.transform_class_impact_csv.exists()
     assert summary.transform_class_impact_svg.exists()
@@ -374,12 +499,15 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         "SquareSymmetry",
         "identity",
     ]
-    assert transform_class_aggregation["mean_global_weight"].tolist() == pytest.approx(
-        [0.45, 0.1]
-    )
+    assert transform_class_aggregation["mean_global_weight"].tolist() == pytest.approx([0.45, 0.1])
     assert corrections["strategy"].tolist() == ["clean", "learned_topk_uniform"]
     assert corrections["clean_wrong_tta_right"].tolist() == [0, 1]
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
+    assert selector_ablation["variant"].tolist() == ["gain_only", "gain_rank_bce"]
+    assert adaptive_selection_counts["mean_forwards_per_image"].tolist() == pytest.approx([2.0])
+    assert compute_policy_frontier["top1_oracle_capture"].tolist() == pytest.approx([0.0, 0.833333])
+    assert "## Selector KPI Summary" in markdown
+    assert "| learned_topk_uniform | 1 | 1 | 50 | 60 | 0.833333 | 2 |" in markdown
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
     assert "figures/aggregation_weights.svg" in markdown
@@ -411,6 +539,15 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "xgboost_feature_importance.csv" in markdown
     assert "corrections.csv" in markdown
     assert "selector_history.csv" in markdown
+    assert "selector_loss_ablation.csv" in markdown
+    assert "selector_diagnostics.json" in markdown
+    assert "adaptive_selection_counts.csv" in markdown
+    assert "compute_policy_frontier.csv" in markdown
+    assert "Oracle Gap Capture" in markdown
+    assert "next target" in markdown.lower()
+    assert "Selector Prediction Diagnostics" in markdown
+    assert "Selector Baseline Decision" in markdown
+    assert "learned_topk_uniform" in markdown
     assert "augmentation_impact.csv" in markdown
     assert "transform_class_impact.csv" in markdown
     assert "transform_class_aggregation.csv" in markdown
@@ -438,6 +575,14 @@ def test_build_report_cli_writes_final_results(
             str(report_artifacts["corrections"]),
             "--selector-history",
             str(report_artifacts["selector_history"]),
+            "--selector-ablation",
+            str(report_artifacts["selector_ablation"]),
+            "--selector-diagnostics",
+            str(report_artifacts["selector_diagnostics"]),
+            "--adaptive-selection-counts",
+            str(report_artifacts["adaptive_selection_counts"]),
+            "--compute-policy-frontier",
+            str(report_artifacts["compute_policy_frontier"]),
             "--tuning",
             str(report_artifacts["tuning"]),
             "--impact-targets",
@@ -468,6 +613,10 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "tables" / "aggregation_weights.csv").exists()
     assert (report_dir / "tables" / "corrections.csv").exists()
     assert (report_dir / "tables" / "selector_history.csv").exists()
+    assert (report_dir / "tables" / "selector_loss_ablation.csv").exists()
+    assert (report_dir / "tables" / "selector_diagnostics.json").exists()
+    assert (report_dir / "tables" / "adaptive_selection_counts.csv").exists()
+    assert (report_dir / "tables" / "compute_policy_frontier.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
     assert (report_dir / "figures" / "aggregation_weights.svg").exists()
     assert (report_dir / "tables" / "xgboost_feature_importance.csv").exists()
@@ -481,19 +630,74 @@ def test_report_builder_rejects_malformed_optional_csv_inputs(tmp_path: Path) ->
     pd.DataFrame([{"strategy": "clean"}]).to_csv(bad_corrections, index=False)
     bad_history = tmp_path / "selector_history.csv"
     pd.DataFrame([{"epoch": 1}]).to_csv(bad_history, index=False)
+    bad_ablation = tmp_path / "selector_loss_ablation.csv"
+    pd.DataFrame([{"variant": "gain_only"}]).to_csv(bad_ablation, index=False)
+    bad_diagnostics = tmp_path / "selector_diagnostics.json"
+    bad_diagnostics.write_text(json.dumps({"gain_pearson": 0.0}), encoding="utf-8")
+    bad_counts = tmp_path / "adaptive_selection_counts.csv"
+    pd.DataFrame([{"threshold": 0.5}]).to_csv(bad_counts, index=False)
+    bad_frontier = tmp_path / "compute_policy_frontier.csv"
+    pd.DataFrame([{"strategy": "clean"}]).to_csv(bad_frontier, index=False)
 
     with pytest.raises(ValueError, match="corrections CSV is missing columns"):
         _read_corrections_csv(bad_corrections)
     with pytest.raises(ValueError, match="selector history CSV is missing columns"):
         _read_selector_history_csv(bad_history)
+    with pytest.raises(ValueError, match="selector ablation CSV is missing columns"):
+        _read_selector_ablation_csv(bad_ablation)
+    with pytest.raises(ValueError, match="selector diagnostics JSON is missing keys"):
+        _read_selector_diagnostics_json(bad_diagnostics)
+    with pytest.raises(ValueError, match="adaptive selection counts CSV is missing columns"):
+        _read_adaptive_selection_counts_csv(bad_counts)
+    with pytest.raises(ValueError, match="compute policy frontier CSV is missing columns"):
+        _read_compute_policy_frontier_csv(bad_frontier)
+
+
+def test_report_builder_defaults_legacy_ablation_columns_and_empty_kpi(tmp_path: Path) -> None:
+    legacy_ablation = tmp_path / "selector_loss_ablation.csv"
+    pd.DataFrame(
+        [
+            {
+                "variant": "gain_only",
+                "rank_weight": 0.0,
+                "usefulness_head": False,
+                "usefulness_tau": 0.01,
+                "usefulness_weight": 0.0,
+                "best_epoch": 1,
+                "best_val_loss": 0.2,
+                "best_val_nll": 0.3,
+            }
+        ]
+    ).to_csv(legacy_ablation, index=False)
+
+    table = _read_selector_ablation_csv(legacy_ablation)
+    frontier = pd.DataFrame(
+        [
+            {
+                "strategy": "clean",
+                "k": 0,
+                "top1_oracle_capture": 0.0,
+                "top1_delta_pp_vs_clean": 0.0,
+            }
+        ]
+    )
+
+    assert table["feature_mode"].tolist() == ["image"]
+    assert table["target_mode"].tolist() == ["nll_gain"]
+    assert table["model_family"].tolist() == ["image_cnn"]
+    assert _oracle_gap_capture_summary_lines(frontier)[0].startswith("No learned selector")
+    assert _selector_kpi_summary_table(frontier).empty
 
 
 def test_report_builder_handles_absent_optional_metadata_and_tables(tmp_path: Path) -> None:
-    assert _build_aggregation_tables(
-        aug_ids=["aug_000"],
-        global_aggregator_path=None,
-        class_aggregator_path=None,
-    ).weights is None
+    assert (
+        _build_aggregation_tables(
+            aug_ids=["aug_000"],
+            global_aggregator_path=None,
+            class_aggregator_path=None,
+        ).weights
+        is None
+    )
     assert _augmentation_metadata_table(["aug_000"], registry_path=None) is None
     table = pd.DataFrame({"aug_id": ["aug_000"], "mean_gain": [0.0]})
     assert _attach_augmentation_metadata(table, metadata=None).equals(table)
@@ -501,8 +705,7 @@ def test_report_builder_handles_absent_optional_metadata_and_tables(tmp_path: Pa
     assert _build_transform_class_aggregation_table(None) is None
     assert _build_transform_class_aggregation_table(pd.DataFrame({"aug_id": ["aug_000"]})) is None
     assert (
-        _build_xgboost_feature_importance_table(["aug_000"], xgboost_aggregator_path=None)
-        is None
+        _build_xgboost_feature_importance_table(["aug_000"], xgboost_aggregator_path=None) is None
     )
     assert _existing_path(tmp_path / "missing") is None
     existing = tmp_path / "present.txt"
@@ -570,17 +773,20 @@ def test_report_builder_rejects_bad_xgboost_importance_shape(tmp_path: Path) -> 
 
 
 def test_report_builder_summary_and_svg_edge_cases() -> None:
-    assert _augmentation_impact_summary_lines(
-        pd.DataFrame(
-            {
-                "aug_id": ["aug_000"],
-                "mean_gain": [0.0],
-                "selection_frequency": [1.0],
-                "oracle_frequency": [1.0],
-            }
-        ),
-        identity_aug_id="aug_000",
-    ) == []
+    assert (
+        _augmentation_impact_summary_lines(
+            pd.DataFrame(
+                {
+                    "aug_id": ["aug_000"],
+                    "mean_gain": [0.0],
+                    "selection_frequency": [1.0],
+                    "oracle_frequency": [1.0],
+                }
+            ),
+            identity_aug_id="aug_000",
+        )
+        == []
+    )
     assert _aggregation_weight_summary_lines(pd.DataFrame({"aug_id": ["aug_000"]})) == []
     assert "Mean Class Aggregation Weights" in _aggregation_weights_svg(
         pd.DataFrame({"aug_id": ["aug_000"], "class_mean_weight": [0.5]})

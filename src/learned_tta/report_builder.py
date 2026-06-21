@@ -47,6 +47,10 @@ class ReportBuildSummary:
     xgboost_feature_importance_csv: Path | None
     corrections_csv: Path | None
     selector_history_csv: Path | None
+    selector_ablation_csv: Path | None
+    selector_diagnostics_json: Path | None
+    adaptive_selection_counts_csv: Path | None
+    compute_policy_frontier_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
     aggregation_weights_svg: Path | None
@@ -80,6 +84,10 @@ def build_report_from_artifacts(
     xgboost_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
     selector_history_path: Path | None = None,
+    selector_ablation_path: Path | None = None,
+    selector_diagnostics_path: Path | None = None,
+    adaptive_selection_counts_path: Path | None = None,
+    compute_policy_frontier_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> ReportBuildSummary:
@@ -162,6 +170,24 @@ def build_report_from_artifacts(
     selector_history = (
         _read_selector_history_csv(selector_history_path) if selector_history_path else None
     )
+    selector_ablation = (
+        _read_selector_ablation_csv(selector_ablation_path) if selector_ablation_path else None
+    )
+    selector_diagnostics = (
+        _read_selector_diagnostics_json(selector_diagnostics_path)
+        if selector_diagnostics_path
+        else None
+    )
+    adaptive_selection_counts = (
+        _read_adaptive_selection_counts_csv(adaptive_selection_counts_path)
+        if adaptive_selection_counts_path
+        else None
+    )
+    compute_policy_frontier = (
+        _read_compute_policy_frontier_csv(compute_policy_frontier_path)
+        if compute_policy_frontier_path
+        else None
+    )
     private_metric_deltas = _build_private_metric_deltas_table(private_metrics)
 
     paths = ReportBuildSummary(
@@ -199,6 +225,22 @@ def build_report_from_artifacts(
         corrections_csv=tables_dir / "corrections.csv" if corrections_table is not None else None,
         selector_history_csv=(
             tables_dir / "selector_history.csv" if selector_history is not None else None
+        ),
+        selector_ablation_csv=(
+            tables_dir / "selector_loss_ablation.csv" if selector_ablation is not None else None
+        ),
+        selector_diagnostics_json=(
+            tables_dir / "selector_diagnostics.json" if selector_diagnostics is not None else None
+        ),
+        adaptive_selection_counts_csv=(
+            tables_dir / "adaptive_selection_counts.csv"
+            if adaptive_selection_counts is not None
+            else None
+        ),
+        compute_policy_frontier_csv=(
+            tables_dir / "compute_policy_frontier.csv"
+            if compute_policy_frontier is not None
+            else None
         ),
         gain_distribution_svg=figures_dir / "gain_distribution.svg",
         oracle_overlap_svg=figures_dir / "oracle_overlap.svg",
@@ -264,6 +306,17 @@ def build_report_from_artifacts(
         corrections_table.to_csv(paths.corrections_csv, index=False)
     if paths.selector_history_csv is not None and selector_history is not None:
         selector_history.to_csv(paths.selector_history_csv, index=False)
+    if paths.selector_ablation_csv is not None and selector_ablation is not None:
+        selector_ablation.to_csv(paths.selector_ablation_csv, index=False)
+    if paths.selector_diagnostics_json is not None and selector_diagnostics is not None:
+        paths.selector_diagnostics_json.write_text(
+            json.dumps(selector_diagnostics, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+    if paths.adaptive_selection_counts_csv is not None and adaptive_selection_counts is not None:
+        adaptive_selection_counts.to_csv(paths.adaptive_selection_counts_csv, index=False)
+    if paths.compute_policy_frontier_csv is not None and compute_policy_frontier is not None:
+        compute_policy_frontier.to_csv(paths.compute_policy_frontier_csv, index=False)
     paths.gain_distribution_svg.write_text(
         _gain_distribution_svg(targets.gain),
         encoding="utf-8",
@@ -277,10 +330,7 @@ def build_report_from_artifacts(
             _aggregation_weights_svg(aggregation_tables.weights),
             encoding="utf-8",
         )
-    if (
-        paths.xgboost_feature_importance_svg is not None
-        and xgboost_importance is not None
-    ):
+    if paths.xgboost_feature_importance_svg is not None and xgboost_importance is not None:
         paths.xgboost_feature_importance_svg.write_text(
             _xgboost_feature_importance_svg(xgboost_importance),
             encoding="utf-8",
@@ -321,6 +371,10 @@ def build_report_from_artifacts(
             transform_class_aggregation=transform_class_aggregation,
             aggregation_weights=aggregation_tables.weights,
             xgboost_importance=xgboost_importance,
+            selector_ablation=selector_ablation,
+            selector_diagnostics=selector_diagnostics,
+            adaptive_selection_counts=adaptive_selection_counts,
+            compute_policy_frontier=compute_policy_frontier,
             identity_aug_id=identity_aug_id,
             has_class_weights=aggregation_tables.class_weights is not None,
             has_corrections=corrections_table is not None,
@@ -344,6 +398,10 @@ def build_report_from_config(
     xgboost_aggregator_path: Path | None = None,
     corrections_path: Path | None = None,
     selector_history_path: Path | None = None,
+    selector_ablation_path: Path | None = None,
+    selector_diagnostics_path: Path | None = None,
+    adaptive_selection_counts_path: Path | None = None,
+    compute_policy_frontier_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -391,6 +449,18 @@ def build_report_from_config(
         or _existing_path(resolved_report_dir / "tables" / "corrections.csv"),
         selector_history_path=selector_history_path
         or _existing_path(config.artifacts.selector_dir / "selector_history.csv"),
+        selector_ablation_path=selector_ablation_path
+        or _existing_path(
+            config.artifacts.selector_dir / "loss_ablation" / "selector_loss_ablation.csv"
+        ),
+        selector_diagnostics_path=selector_diagnostics_path
+        or _existing_path(config.artifacts.selector_dir / "public_val_selector_diagnostics.json"),
+        adaptive_selection_counts_path=adaptive_selection_counts_path
+        or _existing_path(
+            config.artifacts.selector_dir / "public_val_adaptive_selection_counts.csv"
+        ),
+        compute_policy_frontier_path=compute_policy_frontier_path
+        or _existing_path(config.artifacts.selector_dir / "public_val_compute_policy_frontier.csv"),
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -482,6 +552,124 @@ def _read_selector_history_csv(path: Path) -> pd.DataFrame:
     ].copy()
 
 
+def _read_selector_ablation_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "variant",
+        "rank_weight",
+        "usefulness_head",
+        "usefulness_tau",
+        "usefulness_weight",
+        "best_epoch",
+        "best_val_loss",
+        "best_val_nll",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"selector ablation CSV is missing columns: {sorted(missing)}")
+    defaults: dict[str, object] = {
+        "feature_mode": "image",
+        "target_mode": "nll_gain",
+        "model_family": "image_cnn",
+        "listwise_weight": 0.0,
+        "listwise_top_k": 1,
+    }
+    for column, value in defaults.items():
+        if column not in table.columns:
+            table[column] = value
+    return table[
+        [
+            "variant",
+            "rank_weight",
+            "usefulness_head",
+            "usefulness_tau",
+            "usefulness_weight",
+            "feature_mode",
+            "target_mode",
+            "model_family",
+            "listwise_weight",
+            "listwise_top_k",
+            "best_epoch",
+            "best_val_loss",
+            "best_val_nll",
+        ]
+    ].copy()
+
+
+def _read_selector_diagnostics_json(path: Path) -> dict[str, Any]:
+    with Path(path).open(encoding="utf-8") as handle:
+        payload = dict(json.load(handle))
+    required_keys = {"gain_pearson", "gain_spearman", "topk_hit_rate_by_k"}
+    missing = required_keys - set(payload)
+    if missing:
+        raise ValueError(f"selector diagnostics JSON is missing keys: {sorted(missing)}")
+    return payload
+
+
+def _read_adaptive_selection_counts_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "threshold",
+        "mean_forwards_per_image",
+        "median_forwards_per_image",
+        "p90_forwards_per_image",
+        "max_forwards_per_image",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"adaptive selection counts CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "threshold",
+            "mean_forwards_per_image",
+            "median_forwards_per_image",
+            "p90_forwards_per_image",
+            "max_forwards_per_image",
+        ]
+    ].copy()
+
+
+def _read_compute_policy_frontier_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "strategy",
+        "k",
+        "top1",
+        "top5",
+        "nll",
+        "ece",
+        "forwards_per_image",
+        "relative_compute_vs_all",
+        "top1_delta_pp_vs_clean",
+        "top1_oracle_delta_pp",
+        "top1_oracle_capture",
+        "nll_delta_vs_clean",
+        "nll_oracle_delta",
+        "nll_oracle_capture",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"compute policy frontier CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "strategy",
+            "k",
+            "top1",
+            "top5",
+            "nll",
+            "ece",
+            "forwards_per_image",
+            "relative_compute_vs_all",
+            "top1_delta_pp_vs_clean",
+            "top1_oracle_delta_pp",
+            "top1_oracle_capture",
+            "nll_delta_vs_clean",
+            "nll_oracle_delta",
+            "nll_oracle_capture",
+        ]
+    ].copy()
+
+
 def _build_aggregation_tables(
     aug_ids: list[str],
     global_aggregator_path: Path | None,
@@ -516,9 +704,9 @@ def _build_aggregation_tables(
     if class_weights is not None and class_active_threshold is not None:
         weights_table["class_mean_weight"] = class_weights.mean(axis=0)
         weights_table["class_max_weight"] = class_weights.max(axis=0)
-        weights_table["class_active_frequency"] = (
-            class_weights > class_active_threshold
-        ).mean(axis=0)
+        weights_table["class_active_frequency"] = (class_weights > class_active_threshold).mean(
+            axis=0
+        )
 
     class_table = None
     if class_weights is not None:
@@ -682,9 +870,7 @@ def _public_metrics_from_tuning(
     if not isinstance(best_metrics, dict):
         raise ValueError("best_k metrics must be a JSON object")
     metrics = {
-        "learned_topk_uniform": {
-            str(key): float(value) for key, value in best_metrics.items()
-        }
+        "learned_topk_uniform": {str(key): float(value) for key, value in best_metrics.items()}
     }
     if global_aggregator_path is not None:
         artifact = load_aggregation_artifact(global_aggregator_path)
@@ -780,6 +966,10 @@ def _results_markdown(
     transform_class_aggregation: pd.DataFrame | None,
     aggregation_weights: pd.DataFrame | None,
     xgboost_importance: pd.DataFrame | None,
+    selector_ablation: pd.DataFrame | None,
+    selector_diagnostics: dict[str, Any] | None,
+    adaptive_selection_counts: pd.DataFrame | None,
+    compute_policy_frontier: pd.DataFrame | None,
     identity_aug_id: str,
     has_class_weights: bool,
     has_corrections: bool,
@@ -801,6 +991,23 @@ def _results_markdown(
         "This report is a single-architecture ImageNet validation case study. "
         "Run additional architectures before making broad leaderboard claims.",
         "",
+        "Next-step read: [next_steps.md](next_steps.md).",
+        "",
+        "## Raw Per-Image Scores",
+        "",
+        "Need to eyeball what each augmentation does per image? Start with "
+        "`tables/selector_public_gain_matrix.csv`: one row is one public image, "
+        "and `aug_000`...`aug_099` are `clean_nll - aug_nll`. Positive means the "
+        "augmentation helped that image, negative means it hurt; join `aug_*` "
+        "with `tables/augmentation_impact.csv` to see the augmentation names.",
+        "",
+        "## Selector Baseline Decision",
+        "",
+        "Current selector baseline: `learned_topk_uniform` with the tuned `k` above. "
+        "`learned_adaptive_uniform` is kept as an ablation because its low-compute "
+        "thresholds still lose too much quality; learned aggregation strategies are "
+        "stronger comparison baselines, not the selector baseline.",
+        "",
         "## Public Validation Metrics",
         "",
         _markdown_table(public_table),
@@ -815,20 +1022,40 @@ def _results_markdown(
         "",
         _markdown_table(private_metric_deltas),
         "",
-        "## Compute",
-        "",
-        _markdown_table(compute_table),
-        "",
-        "## Augmentation Impact",
-        "",
-        "- Table: `tables/augmentation_impact.csv`",
-        "",
-        *_augmentation_impact_summary_lines(impact_table, identity_aug_id=identity_aug_id),
-        "![Gain distribution](figures/gain_distribution.svg)",
-        "",
-        "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
-        "",
     ]
+    if compute_policy_frontier is not None:
+        lines.extend(
+            [
+                "## Oracle Gap Capture",
+                "",
+                "- Table: `tables/compute_policy_frontier.csv`",
+                "",
+                *_oracle_gap_capture_summary_lines(compute_policy_frontier),
+                _markdown_table(compute_policy_frontier),
+                "",
+                "## Selector KPI Summary",
+                "",
+                _markdown_table(_selector_kpi_summary_table(compute_policy_frontier)),
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## Compute",
+            "",
+            _markdown_table(compute_table),
+            "",
+            "## Augmentation Impact",
+            "",
+            "- Table: `tables/augmentation_impact.csv`",
+            "",
+            *_augmentation_impact_summary_lines(impact_table, identity_aug_id=identity_aug_id),
+            "![Gain distribution](figures/gain_distribution.svg)",
+            "",
+            "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
+            "",
+        ]
+    )
     if transform_class_impact is not None:
         lines.extend(
             [
@@ -854,8 +1081,7 @@ def _results_markdown(
         if transform_class_aggregation is not None:
             lines.extend(
                 [
-                    "- Transform-class aggregation table: "
-                    "`tables/transform_class_aggregation.csv`",
+                    "- Transform-class aggregation table: `tables/transform_class_aggregation.csv`",
                     "",
                     "![Transform-class aggregation](figures/transform_class_aggregation.svg)",
                     "",
@@ -880,6 +1106,41 @@ def _results_markdown(
                 "",
             ]
         )
+    if selector_ablation is not None:
+        lines.extend(
+            [
+                "## Selector Loss Ablation",
+                "",
+                "- Table: `tables/selector_loss_ablation.csv`",
+                "",
+                _markdown_table(selector_ablation),
+                "",
+            ]
+        )
+    if selector_diagnostics is not None or adaptive_selection_counts is not None:
+        lines.extend(
+            [
+                "## Selector Prediction Diagnostics",
+                "",
+            ]
+        )
+        if selector_diagnostics is not None:
+            lines.extend(
+                [
+                    "- JSON: `tables/selector_diagnostics.json`",
+                    "",
+                    *_selector_diagnostics_summary_lines(selector_diagnostics),
+                ]
+            )
+        if adaptive_selection_counts is not None:
+            lines.extend(
+                [
+                    "- Adaptive selection-count table: `tables/adaptive_selection_counts.csv`",
+                    "",
+                    _markdown_table(adaptive_selection_counts),
+                    "",
+                ]
+            )
     if has_corrections:
         lines.extend(
             [
@@ -930,6 +1191,81 @@ def _augmentation_impact_summary_lines(
             ]
         )
     return lines
+
+
+def _selector_diagnostics_summary_lines(diagnostics: dict[str, Any]) -> list[str]:
+    topk_hit_rate = diagnostics.get("topk_hit_rate_by_k", {})
+    if not isinstance(topk_hit_rate, Mapping):
+        topk_hit_rate = {}
+    rows = [
+        {
+            "metric": "gain_pearson",
+            "value": float(diagnostics["gain_pearson"]),
+        },
+        {
+            "metric": "gain_spearman",
+            "value": float(diagnostics["gain_spearman"]),
+        },
+    ]
+    rows.extend(
+        {
+            "metric": f"top{k}_hit_rate",
+            "value": float(value),
+        }
+        for k, value in sorted(topk_hit_rate.items(), key=lambda item: int(item[0]))
+    )
+    return [
+        _markdown_table(pd.DataFrame(rows)),
+        "",
+    ]
+
+
+def _oracle_gap_capture_summary_lines(frontier: pd.DataFrame) -> list[str]:
+    learned = frontier.loc[frontier["strategy"] == "learned_topk_uniform"].copy()
+    if learned.empty:
+        return [
+            "No learned selector row is present in the compute-policy frontier.",
+            "",
+        ]
+    best = learned.sort_values(
+        ["top1_oracle_capture", "top1_delta_pp_vs_clean"],
+        ascending=[False, False],
+    ).iloc[0]
+    return [
+        "Current public-val learned selector capture is "
+        f"{float(best['top1_oracle_capture']):.1%} of the same-k top-1 oracle gap "
+        f"at k={int(best['k'])} ({float(best['top1_delta_pp_vs_clean']):.3g} pp vs clean).",
+        "The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image budget.",
+        "",
+    ]
+
+
+def _selector_kpi_summary_table(frontier: pd.DataFrame) -> pd.DataFrame:
+    learned = frontier.loc[frontier["strategy"].astype(str).str.startswith("learned")].copy()
+    if learned.empty:
+        return pd.DataFrame(
+            columns=[
+                "strategy",
+                "k",
+                "top1",
+                "top1_delta_pp_vs_clean",
+                "top1_oracle_delta_pp",
+                "top1_oracle_capture",
+                "forwards_per_image",
+            ]
+        )
+    return learned.loc[
+        :,
+        [
+            "strategy",
+            "k",
+            "top1",
+            "top1_delta_pp_vs_clean",
+            "top1_oracle_delta_pp",
+            "top1_oracle_capture",
+            "forwards_per_image",
+        ],
+    ].sort_values(["top1_oracle_capture", "top1_delta_pp_vs_clean"], ascending=[False, False])
 
 
 def _transform_class_summary_lines(
@@ -1250,8 +1586,7 @@ def _grouped_bar_svg(
         f"{_escape_xml(y_label)}</text>",
         f'<line x1="{margin_left}" y1="{baseline_y}" '
         f'x2="{width - 28}" y2="{baseline_y}" stroke="#222"/>',
-        f'<line x1="{margin_left}" y1="70" '
-        f'x2="{margin_left}" y2="{baseline_y}" stroke="#222"/>',
+        f'<line x1="{margin_left}" y1="70" x2="{margin_left}" y2="{baseline_y}" stroke="#222"/>',
     ]
     legend_x = margin_left
     for legend_index, (name, _, color) in enumerate(series):
@@ -1310,10 +1645,7 @@ def _format_markdown_value(value: object) -> str:
 
 def _escape_xml(value: str) -> str:
     return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
+        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     )
 
 

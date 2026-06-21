@@ -154,6 +154,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             candidate_ids=args.candidate_id,
             target_kind=str(args.target_kind),
         )
+    elif command == "build-selector-features":
+        _cmd_build_selector_features(
+            config_path=Path(args.config),
+            split=str(args.split),
+            manifest_path=_optional_path(args.manifest),
+            output_path=_optional_path(args.output),
+            model_name=str(args.model_name) if args.model_name is not None else None,
+            pretrained=bool(args.pretrained),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            device=str(args.device),
+        )
     elif command == "train-selector":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_train_selector(
@@ -173,7 +185,34 @@ def main(argv: Sequence[str] | None = None) -> None:
             epochs=int(args.epochs),
             learning_rate=float(args.learning_rate),
             rank_weight=float(args.rank_weight),
+            usefulness_head=args.usefulness_head,
+            usefulness_tau=args.usefulness_tau,
+            usefulness_weight=args.usefulness_weight,
             device=str(args.device),
+        )
+    elif command == "train-selector-ablation":
+        output_dir = Path(args.output_dir) if args.output_dir is not None else None
+        _cmd_train_selector_ablation(
+            config_path=Path(args.config),
+            train_manifest_path=_optional_path(args.train_manifest),
+            val_manifest_path=_optional_path(args.val_manifest),
+            train_targets_path=_optional_path(args.train_targets),
+            val_targets_path=_optional_path(args.val_targets),
+            cache_dir=_optional_path(args.cache_dir),
+            output_dir=output_dir,
+            val_split=str(args.val_split),
+            candidate_ids=args.candidate_id,
+            top_k_grid=args.top_k,
+            image_size=int(args.image_size),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            epochs=int(args.epochs),
+            learning_rate=float(args.learning_rate),
+            device=str(args.device),
+            variant_names=tuple(args.ablation_variant) if args.ablation_variant else None,
+            train_features_path=_optional_path(args.train_features),
+            val_features_path=_optional_path(args.val_features),
+            force=bool(args.force),
         )
     elif command == "tune-tta":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
@@ -186,6 +225,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             output_dir=output_dir,
             candidate_ids=args.candidate_id,
             top_k_grid=args.top_k,
+            adaptive_threshold_grid=args.adaptive_threshold,
+            adaptive_max_k_grid=args.adaptive_max_k,
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
             num_workers=int(args.num_workers),
@@ -235,6 +276,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             private_metrics_path=_optional_path(args.private_metrics),
             corrections_path=_optional_path(args.corrections),
             selector_history_path=_optional_path(args.selector_history),
+            selector_ablation_path=_optional_path(args.selector_ablation),
+            selector_diagnostics_path=_optional_path(args.selector_diagnostics),
+            adaptive_selection_counts_path=_optional_path(args.adaptive_selection_counts),
+            compute_policy_frontier_path=_optional_path(args.compute_policy_frontier),
             tuning_path=_optional_path(args.tuning),
             impact_targets_path=_optional_path(args.impact_targets),
             impact_manifest_path=_optional_path(args.impact_manifest),
@@ -580,6 +625,30 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Augmentation candidate id to include. May be passed more than once.",
     )
 
+    build_selector_features = subparsers.add_parser(
+        "build-selector-features",
+        help="Build cached pretrained image features for selector MLP training.",
+    )
+    build_selector_features.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    build_selector_features.add_argument("--split", default="public_train")
+    build_selector_features.add_argument("--manifest")
+    build_selector_features.add_argument("--output")
+    build_selector_features.add_argument("--model-name")
+    build_selector_features.add_argument(
+        "--no-pretrained",
+        dest="pretrained",
+        action="store_false",
+        help="Disable pretrained weights for smoke/debug feature extraction.",
+    )
+    build_selector_features.set_defaults(pretrained=True)
+    build_selector_features.add_argument("--batch-size", type=int, default=64)
+    build_selector_features.add_argument("--num-workers", type=int, default=4)
+    build_selector_features.add_argument("--device", default="cpu")
+
     train_selector = subparsers.add_parser(
         "train-selector",
         help="Train the small selector CNN from clean images and selector targets.",
@@ -600,7 +669,54 @@ def _build_parser() -> argparse.ArgumentParser:
     train_selector.add_argument("--epochs", type=int, default=20)
     train_selector.add_argument("--learning-rate", type=float, default=1e-3)
     train_selector.add_argument("--rank-weight", type=float, default=0.2)
+    usefulness_group = train_selector.add_mutually_exclusive_group()
+    usefulness_group.add_argument("--usefulness-head", dest="usefulness_head", action="store_true")
+    usefulness_group.add_argument(
+        "--no-usefulness-head",
+        dest="usefulness_head",
+        action="store_false",
+    )
+    train_selector.set_defaults(usefulness_head=None)
+    train_selector.add_argument("--usefulness-tau", type=float)
+    train_selector.add_argument("--usefulness-weight", type=float)
     train_selector.add_argument("--device", default="cpu")
+
+    train_selector_ablation = subparsers.add_parser(
+        "train-selector-ablation",
+        help="Train selector loss ablation variants.",
+    )
+    train_selector_ablation.add_argument(
+        "--config",
+        required=True,
+        help="Path to experiment YAML config.",
+    )
+    train_selector_ablation.add_argument("--train-manifest")
+    train_selector_ablation.add_argument("--val-manifest")
+    train_selector_ablation.add_argument("--train-targets")
+    train_selector_ablation.add_argument("--val-targets")
+    train_selector_ablation.add_argument("--train-features")
+    train_selector_ablation.add_argument("--val-features")
+    train_selector_ablation.add_argument("--cache-dir")
+    train_selector_ablation.add_argument("--output-dir")
+    train_selector_ablation.add_argument("--val-split", default="public_val")
+    train_selector_ablation.add_argument("--candidate-id", action="append")
+    train_selector_ablation.add_argument("--top-k", type=int, action="append")
+    train_selector_ablation.add_argument("--image-size", type=int, default=224)
+    train_selector_ablation.add_argument("--batch-size", type=int, default=64)
+    train_selector_ablation.add_argument("--num-workers", type=int, default=4)
+    train_selector_ablation.add_argument("--epochs", type=int, default=5)
+    train_selector_ablation.add_argument("--learning-rate", type=float, default=1e-3)
+    train_selector_ablation.add_argument("--device", default="cpu")
+    train_selector_ablation.add_argument(
+        "--ablation-variant",
+        action="append",
+        help="Run only this selector ablation variant. May be repeated.",
+    )
+    train_selector_ablation.add_argument(
+        "--force",
+        action="store_true",
+        help="Retrain variants even when selector_best.pt and selector_history.csv already exist.",
+    )
 
     tune_tta = subparsers.add_parser(
         "tune-tta",
@@ -614,6 +730,8 @@ def _build_parser() -> argparse.ArgumentParser:
     tune_tta.add_argument("--output-dir")
     tune_tta.add_argument("--candidate-id", action="append")
     tune_tta.add_argument("--top-k", type=int, action="append")
+    tune_tta.add_argument("--adaptive-threshold", type=float, action="append")
+    tune_tta.add_argument("--adaptive-max-k", type=int, action="append")
     tune_tta.add_argument("--image-size", type=int, default=224)
     tune_tta.add_argument("--batch-size", type=int, default=64)
     tune_tta.add_argument("--num-workers", type=int, default=4)
@@ -683,6 +801,10 @@ def _build_parser() -> argparse.ArgumentParser:
     build_report.add_argument("--private-metrics")
     build_report.add_argument("--corrections")
     build_report.add_argument("--selector-history")
+    build_report.add_argument("--selector-ablation")
+    build_report.add_argument("--selector-diagnostics")
+    build_report.add_argument("--adaptive-selection-counts")
+    build_report.add_argument("--compute-policy-frontier")
     build_report.add_argument("--tuning")
     build_report.add_argument("--impact-targets")
     build_report.add_argument("--impact-manifest")
@@ -1140,6 +1262,46 @@ def _cmd_build_targets(
     )
 
 
+def _cmd_build_selector_features(
+    config_path: Path,
+    split: str,
+    manifest_path: Path | None,
+    output_path: Path | None,
+    model_name: str | None,
+    pretrained: bool,
+    batch_size: int,
+    num_workers: int,
+    device: str,
+) -> None:
+    from learned_tta.selector_feature_cache import (
+        build_timm_feature_extractor,
+        extract_selector_features_from_manifest,
+    )
+
+    config = load_experiment_config(config_path)
+    resolved_model_name = model_name or config.teacher.model_name
+    resolved_manifest_path = manifest_path or config.artifacts.manifests_dir / f"{split}.csv"
+    resolved_output_path = (
+        output_path
+        or config.artifacts.selector_dir
+        / "features"
+        / f"{split}__{resolved_model_name}.features.npz"
+    )
+    bundle = build_timm_feature_extractor(
+        model_name=resolved_model_name,
+        pretrained=pretrained,
+    )
+    written = extract_selector_features_from_manifest(
+        manifest_path=resolved_manifest_path,
+        output_path=resolved_output_path,
+        bundle=bundle,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        device=device,
+    )
+    print(f"selector features: wrote {written}")
+
+
 def _cmd_train_selector(
     config_path: Path,
     train_manifest_path: Path | None,
@@ -1157,6 +1319,9 @@ def _cmd_train_selector(
     epochs: int,
     learning_rate: float,
     rank_weight: float,
+    usefulness_head: bool | None,
+    usefulness_tau: float | None,
+    usefulness_weight: float | None,
     device: str,
 ) -> None:
     from learned_tta.selector_training import train_selector_from_config
@@ -1178,6 +1343,9 @@ def _cmd_train_selector(
         epochs=epochs,
         learning_rate=learning_rate,
         rank_weight=rank_weight,
+        usefulness_head=usefulness_head,
+        usefulness_tau=usefulness_tau,
+        usefulness_weight=usefulness_weight,
         device=device,
     )
     print(
@@ -1185,6 +1353,55 @@ def _cmd_train_selector(
         f"best val nll {summary.best_val_nll:.6g}, "
         f"best val loss {summary.best_val_loss:.6g}, checkpoint {summary.checkpoint_path}"
     )
+
+
+def _cmd_train_selector_ablation(
+    config_path: Path,
+    train_manifest_path: Path | None,
+    val_manifest_path: Path | None,
+    train_targets_path: Path | None,
+    val_targets_path: Path | None,
+    cache_dir: Path | None,
+    output_dir: Path | None,
+    val_split: str,
+    candidate_ids: list[str] | None,
+    top_k_grid: list[int] | None,
+    image_size: int,
+    batch_size: int,
+    num_workers: int,
+    epochs: int,
+    learning_rate: float,
+    device: str,
+    variant_names: tuple[str, ...] | None,
+    train_features_path: Path | None,
+    val_features_path: Path | None,
+    force: bool,
+) -> None:
+    from learned_tta.selector_training import train_selector_loss_ablation_from_config
+
+    summary = train_selector_loss_ablation_from_config(
+        config_path=config_path,
+        train_manifest_path=train_manifest_path,
+        val_manifest_path=val_manifest_path,
+        train_targets_path=train_targets_path,
+        val_targets_path=val_targets_path,
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        val_split=val_split,
+        candidate_ids=candidate_ids,
+        top_k_grid=top_k_grid,
+        image_size=image_size,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        device=device,
+        variant_names=variant_names,
+        train_features_path=train_features_path,
+        val_features_path=val_features_path,
+        skip_completed=not force,
+    )
+    print(f"selector ablation: wrote {summary.results_csv}")
 
 
 def _optional_path(value: str | None) -> Path | None:
@@ -1202,6 +1419,8 @@ def _cmd_tune_tta(
     output_dir: Path | None,
     candidate_ids: list[str] | None,
     top_k_grid: list[int] | None,
+    adaptive_threshold_grid: list[float] | None,
+    adaptive_max_k_grid: list[int] | None,
     image_size: int,
     batch_size: int,
     num_workers: int,
@@ -1218,15 +1437,14 @@ def _cmd_tune_tta(
         output_dir=output_dir,
         candidate_ids=candidate_ids,
         top_k_grid=top_k_grid,
+        adaptive_threshold_grid=adaptive_threshold_grid,
+        adaptive_max_k_grid=adaptive_max_k_grid,
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
         device=device,
     )
-    print(
-        f"tta tuning {summary.split}: best k {summary.best_k}, "
-        f"wrote {summary.result_path}"
-    )
+    print(f"tta tuning {summary.split}: best k {summary.best_k}, wrote {summary.result_path}")
 
 
 def _cmd_train_aggregator(
@@ -1300,10 +1518,7 @@ def _cmd_evaluate_private(
         num_workers=num_workers,
         device=device,
     )
-    print(
-        f"private evaluation: best k {summary.best_k}, "
-        f"wrote {summary.private_metrics_csv}"
-    )
+    print(f"private evaluation: best k {summary.best_k}, wrote {summary.private_metrics_csv}")
 
 
 def _cmd_build_report(
@@ -1312,6 +1527,10 @@ def _cmd_build_report(
     private_metrics_path: Path | None,
     corrections_path: Path | None,
     selector_history_path: Path | None,
+    selector_ablation_path: Path | None,
+    selector_diagnostics_path: Path | None,
+    adaptive_selection_counts_path: Path | None,
+    compute_policy_frontier_path: Path | None,
     tuning_path: Path | None,
     impact_targets_path: Path | None,
     impact_manifest_path: Path | None,
@@ -1332,6 +1551,10 @@ def _cmd_build_report(
         private_metrics_path=private_metrics_path,
         corrections_path=corrections_path,
         selector_history_path=selector_history_path,
+        selector_ablation_path=selector_ablation_path,
+        selector_diagnostics_path=selector_diagnostics_path,
+        adaptive_selection_counts_path=adaptive_selection_counts_path,
+        compute_policy_frontier_path=compute_policy_frontier_path,
         tuning_path=tuning_path,
         impact_targets_path=impact_targets_path,
         impact_manifest_path=impact_manifest_path,

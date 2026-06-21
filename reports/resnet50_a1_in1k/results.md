@@ -1,21 +1,25 @@
 # albu-tta ResNet50 Case Study
 
 Tuned k: 16
-Public-val oracle top-k recall: 0.1828
+Public-val oracle top-k recall: 0.188475
 
 This report is a single-architecture ImageNet validation case study. Run additional architectures before making broad leaderboard claims.
 
 Next-step read: [next_steps.md](next_steps.md).
 
-## Raw per-image scores
+## Raw Per-Image Scores
 
 Need to eyeball what each augmentation does per image? Start with `tables/selector_public_gain_matrix.csv`: one row is one public image, and `aug_000`...`aug_099` are `clean_nll - aug_nll`. Positive means the augmentation helped that image, negative means it hurt; join `aug_*` with `tables/augmentation_impact.csv` to see the augmentation names.
+
+## Selector Baseline Decision
+
+Current selector baseline: `learned_topk_uniform` with the tuned `k` above. `learned_adaptive_uniform` is kept as an ablation because its low-compute thresholds still lose too much quality; learned aggregation strategies are stronger comparison baselines, not the selector baseline.
 
 ## Public Validation Metrics
 
 | strategy | top1 | top5 | nll | ece | forwards_per_image | relative_compute_vs_all |
 | --- | --- | --- | --- | --- | --- | --- |
-| learned_topk_uniform | 0.8174 | 0.9566 | 0.749915 | 0.0389969 | 17 | 0.17 |
+| learned_topk_uniform | 0.819 | 0.9576 | 0.745703 | 0.0405037 | 17 | 0.17 |
 | global_weighted_tta | 0.824 | 0.9596 | 0.703692 | 0.0270465 | 100 | 1 |
 | class_weighted_tta | 0.894 | 0.9804 | 0.425668 | 0.0527389 | 100 | 1 |
 
@@ -27,9 +31,10 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | fixed_light_tta | 0.80848 | 0.94052 | 0.857318 | 0.0460779 | 17 | 0.17 |
 | random_topk | 0.80888 | 0.945448 | 0.821023 | 0.0307059 | 17 | 0.17 |
 | all_100_uniform | 0.8102 | 0.94696 | 0.791093 | 0.0265595 | 100 | 1 |
-| learned_topk_uniform | 0.80956 | 0.94904 | 0.82498 | 0.0449992 | 17 | 0.17 |
-| learned_topk_softmax_weighted | 0.8096 | 0.94912 | 0.824894 | 0.0445476 | 17 | 0.17 |
+| learned_topk_uniform | 0.81008 | 0.94856 | 0.819431 | 0.0431775 | 17 | 0.17 |
+| learned_topk_softmax_weighted | 0.81032 | 0.9484 | 0.81952 | 0.042699 | 17 | 0.17 |
 | oracle_topk_uniform | 0.87492 | 0.96312 | 0.489845 | 0.0135182 | 17 | 0.17 |
+| learned_adaptive_uniform | 0.81004 | 0.9486 | 0.819412 | 0.0431932 | 17 | 0.17 |
 | global_weighted_tta | 0.81488 | 0.94984 | 0.771035 | 0.0289746 | 100 | 1 |
 | class_weighted_tta | 0.80536 | 0.94128 | 0.839763 | 0.030029 | 100 | 1 |
 
@@ -43,11 +48,43 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | fixed_light_tta | 0.0038 | -0.0054 | -0.0821228 | -0.0406743 | 17 | 0.17 |
 | random_topk | 0.0042 | -0.000472 | -0.118418 | -0.0560463 | 17 | 0.17 |
 | all_100_uniform | 0.00552 | 0.00104 | -0.148347 | -0.0601927 | 100 | 1 |
-| learned_topk_uniform | 0.00488 | 0.00312 | -0.114461 | -0.041753 | 17 | 0.17 |
-| learned_topk_softmax_weighted | 0.00492 | 0.0032 | -0.114547 | -0.0422045 | 17 | 0.17 |
+| learned_topk_uniform | 0.0054 | 0.00264 | -0.12001 | -0.0435747 | 17 | 0.17 |
+| learned_topk_softmax_weighted | 0.00564 | 0.00248 | -0.119921 | -0.0440532 | 17 | 0.17 |
 | oracle_topk_uniform | 0.07024 | 0.0172 | -0.449596 | -0.073234 | 17 | 0.17 |
+| learned_adaptive_uniform | 0.00536 | 0.00268 | -0.120029 | -0.0435589 | 17 | 0.17 |
 | global_weighted_tta | 0.0102 | 0.00392 | -0.168406 | -0.0577776 | 100 | 1 |
 | class_weighted_tta | 0.00068 | -0.00464 | -0.0996776 | -0.0567231 | 100 | 1 |
+
+## Oracle Gap Capture
+
+- Table: `tables/compute_policy_frontier.csv`
+
+Current public-val learned selector capture is 9.6% of the same-k top-1 oracle gap at k=16 (0.7 pp vs clean).
+The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image budget.
+
+| strategy | k | top1 | top5 | nll | ece | forwards_per_image | relative_compute_vs_all | top1_delta_pp_vs_clean | top1_oracle_delta_pp | top1_oracle_capture | nll_delta_vs_clean | nll_oracle_delta | nll_oracle_capture |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clean | 0 | 0.812 | 0.9494 | 0.855997 | 0.0766943 | 1 | 0.01 | 0 | 0 | 0 | 0 | 0 | 0 |
+| learned_topk_uniform | 1 | 0.8098 | 0.9512 | 0.815317 | 0.0561848 | 2 | 0.02 | -0.22 | 7.88 | -0.0279188 | -0.0406809 | -0.472997 | 0.0860066 |
+| oracle_topk_uniform | 1 | 0.8908 | 0.9782 | 0.383 | 0.0140173 | 2 | 0.02 | 7.88 | 7.88 | 1 | -0.472997 | -0.472997 | 1 |
+| learned_topk_uniform | 2 | 0.81 | 0.9528 | 0.80689 | 0.0479025 | 3 | 0.03 | -0.2 | 9.7 | -0.0206186 | -0.0491077 | -0.501373 | 0.0979465 |
+| oracle_topk_uniform | 2 | 0.909 | 0.9774 | 0.354625 | 0.022276 | 3 | 0.03 | 9.7 | 9.7 | 1 | -0.501373 | -0.501373 | 1 |
+| learned_topk_uniform | 4 | 0.8132 | 0.9528 | 0.789278 | 0.0483654 | 5 | 0.05 | 0.12 | 9.58 | 0.0125261 | -0.066719 | -0.500196 | 0.133386 |
+| oracle_topk_uniform | 4 | 0.9078 | 0.976 | 0.355801 | 0.0160431 | 5 | 0.05 | 9.58 | 9.58 | 1 | -0.500196 | -0.500196 | 1 |
+| learned_topk_uniform | 8 | 0.8154 | 0.9564 | 0.760713 | 0.0433552 | 9 | 0.09 | 0.34 | 8.62 | 0.0394432 | -0.0952849 | -0.471652 | 0.202024 |
+| oracle_topk_uniform | 8 | 0.8982 | 0.9736 | 0.384345 | 0.0122182 | 9 | 0.09 | 8.62 | 8.62 | 1 | -0.471652 | -0.471652 | 1 |
+| learned_topk_uniform | 16 | 0.819 | 0.9576 | 0.745703 | 0.0405037 | 17 | 0.17 | 0.7 | 7.3 | 0.0958904 | -0.110295 | -0.419889 | 0.262676 |
+| oracle_topk_uniform | 16 | 0.885 | 0.9704 | 0.436109 | 0.0115457 | 17 | 0.17 | 7.3 | 7.3 | 1 | -0.419889 | -0.419889 | 1 |
+
+## Selector KPI Summary
+
+| strategy | k | top1 | top1_delta_pp_vs_clean | top1_oracle_delta_pp | top1_oracle_capture | forwards_per_image |
+| --- | --- | --- | --- | --- | --- | --- |
+| learned_topk_uniform | 16 | 0.819 | 0.7 | 7.3 | 0.0958904 | 17 |
+| learned_topk_uniform | 8 | 0.8154 | 0.34 | 8.62 | 0.0394432 | 9 |
+| learned_topk_uniform | 4 | 0.8132 | 0.12 | 9.58 | 0.0125261 | 5 |
+| learned_topk_uniform | 2 | 0.81 | -0.2 | 9.7 | -0.0206186 | 3 |
+| learned_topk_uniform | 1 | 0.8098 | -0.22 | 7.88 | -0.0279188 | 2 |
 
 ## Compute
 
@@ -63,6 +100,7 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | private | learned_topk_uniform | 17 | 0.17 |
 | private | learned_topk_softmax_weighted | 17 | 0.17 |
 | private | oracle_topk_uniform | 17 | 0.17 |
+| private | learned_adaptive_uniform | 17 | 0.17 |
 | private | global_weighted_tta | 100 | 1 |
 | private | class_weighted_tta | 100 | 1 |
 
@@ -84,11 +122,11 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 
 | aug_id | augmentation_name | transform_class | selection_frequency |
 | --- | --- | --- | --- |
-| aug_010 | rotate_minus_20 | Rotate | 0.9214 |
-| aug_078 | median_blur_3 | MedianBlur | 0.8774 |
-| aug_009 | rotate_plus_10 | Rotate | 0.7952 |
-| aug_066 | planckian_warm_blackbody | PlanckianJitter | 0.7768 |
-| aug_069 | planckian_warm_cied | PlanckianJitter | 0.7644 |
+| aug_020 | scale_080 | Affine | 0.9502 |
+| aug_086 | sharpen_medium | Sharpen | 0.8978 |
+| aug_085 | sharpen_light | Sharpen | 0.7734 |
+| aug_010 | rotate_minus_20 | Rotate | 0.7314 |
+| aug_032 | brightness_minus_20 | RandomBrightnessContrast | 0.7286 |
 
 ### Top oracle-selection augmentations
 
@@ -111,10 +149,10 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 | transform_class | candidate_count | mean_gain | selection_frequency | oracle_frequency |
 | --- | --- | --- | --- | --- |
 | identity | 1 | 0 | 1 | 1 |
-| RandomGamma | 4 | -0.00208149 | 0.00045 | 0.1325 |
-| UnsharpMask | 1 | -0.00408824 | 0 | 0.073 |
-| RGBShift | 6 | -0.00673984 | 0.00126667 | 0.148267 |
-| Enhance | 1 | -0.00780114 | 0.0048 | 0.1342 |
+| RandomGamma | 4 | -0.00208149 | 0.0067 | 0.1325 |
+| UnsharpMask | 1 | -0.00408824 | 0.0014 | 0.073 |
+| RGBShift | 6 | -0.00673984 | 0.0416 | 0.148267 |
+| Enhance | 1 | -0.00780114 | 0.2758 | 0.1342 |
 
 ![Transform-class impact](figures/transform_class_impact.svg)
 
@@ -159,6 +197,49 @@ Need to eyeball what each augmentation does per image? Start with `tables/select
 ![Transform-class aggregation](figures/transform_class_aggregation.svg)
 
 - Class-specific table: `tables/class_augmentation_weights.csv`
+
+## Selector Loss Ablation
+
+- Table: `tables/selector_loss_ablation.csv`
+
+| variant | rank_weight | usefulness_head | usefulness_tau | usefulness_weight | feature_mode | target_mode | model_family | listwise_weight | listwise_top_k | best_epoch | best_val_loss | best_val_nll |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| gain_only | 0 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 1 | 0.150008 | 0.783793 |
+| gain_rank | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.285051 | 0.748678 |
+| gain_rank_bce | 0.2 | True | 0.01 | 0.05 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.308087 | 0.751128 |
+| gain_listwise_topk | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0.1 | 16 | 3 | 0.728801 | 0.792789 |
+| clean_logits_mlp_gain_rank | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0 | 1 | 1 | 2.25635 | 0.747847 |
+| clean_logits_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0.1 | 16 | 1 | 2.35949 | 0.751865 |
+| pretrained_mlp_gain_rank | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0 | 1 | 1 | 0.289176 | 0.763589 |
+| pretrained_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0.1 | 16 | 5 | 0.724327 | 0.749623 |
+
+## Selector Prediction Diagnostics
+
+- JSON: `tables/selector_diagnostics.json`
+
+| metric | value |
+| --- | --- |
+| gain_pearson | 0.24527 |
+| gain_spearman | 0.0770577 |
+| top1_hit_rate | 0.017 |
+| top2_hit_rate | 0.0333 |
+| top4_hit_rate | 0.0616 |
+| top8_hit_rate | 0.1084 |
+| top16_hit_rate | 0.186475 |
+
+- Adaptive selection-count table: `tables/adaptive_selection_counts.csv`
+
+| threshold | mean_forwards_per_image | median_forwards_per_image | p90_forwards_per_image | max_forwards_per_image |
+| --- | --- | --- | --- | --- |
+| 0.01 | 100 | 100 | 100 | 100 |
+| 0.03 | 100 | 100 | 100 | 100 |
+| 0.05 | 99.9994 | 100 | 100 | 100 |
+| 0.1 | 99.2686 | 100 | 100 | 100 |
+| 0.15 | 76.8132 | 87 | 98 | 100 |
+| 0.2 | 15.3864 | 4 | 56 | 100 |
+| 0.25 | 1.7828 | 1 | 1 | 86 |
+| 0.5 | 1 | 1 | 1 | 1 |
+| 0.75 | 1 | 1 | 1 | 1 |
 
 ## Corrections and Corruptions
 

@@ -8,128 +8,128 @@
 <text x="82" y="56" font-family="Arial" font-size="11">learned selection</text>
 <rect x="254" y="46" width="12" height="12" fill="#8a5a9f"/>
 <text x="272" y="56" font-family="Arial" font-size="11">oracle selection</text>
-<rect x="64.00" y="301.73" width="5.58" height="14.27" fill="#2f6f9f"/>
-<text x="66.79" y="297.73" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="64.00" y="279.76" width="5.58" height="36.24" fill="#2f6f9f"/>
+<text x="66.79" y="275.76" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="72.58" y="270.61" width="5.58" height="45.39" fill="#8a5a9f"/>
 <text x="75.37" y="266.61" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="71.08" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 71.08 332)">Affine</text>
-<rect x="90.15" y="239.00" width="5.58" height="77.00" fill="#2f6f9f"/>
-<text x="92.94" y="235.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="90.15" y="265.42" width="5.58" height="50.58" fill="#2f6f9f"/>
+<text x="92.94" y="261.42" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="98.73" y="273.99" width="5.58" height="42.01" fill="#8a5a9f"/>
 <text x="101.52" y="269.99" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="97.23" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 97.23 332)">AutoContrast</text>
-<rect x="116.31" y="276.43" width="5.58" height="39.57" fill="#2f6f9f"/>
-<text x="119.10" y="272.43" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="116.31" y="313.21" width="5.58" height="2.79" fill="#2f6f9f"/>
+<text x="119.10" y="309.21" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="124.88" y="292.67" width="5.58" height="23.33" fill="#8a5a9f"/>
 <text x="127.67" y="288.67" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="123.38" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 123.38 332)">Blur</text>
-<rect x="142.46" y="256.46" width="5.58" height="59.54" fill="#2f6f9f"/>
-<text x="145.25" y="252.46" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="142.46" y="284.74" width="5.58" height="31.26" fill="#2f6f9f"/>
+<text x="145.25" y="280.74" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="151.04" y="270.77" width="5.58" height="45.23" fill="#8a5a9f"/>
 <text x="153.83" y="266.77" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="149.54" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 149.54 332)">CLAHE</text>
-<rect x="168.62" y="312.34" width="5.58" height="3.66" fill="#2f6f9f"/>
-<text x="171.40" y="308.34" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="168.62" y="312.16" width="5.58" height="3.84" fill="#2f6f9f"/>
+<text x="171.40" y="308.16" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="177.19" y="291.13" width="5.58" height="24.87" fill="#8a5a9f"/>
 <text x="179.98" y="287.13" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="175.69" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 175.69 332)">Defocus</text>
-<rect x="194.77" y="263.15" width="5.58" height="52.85" fill="#2f6f9f"/>
-<text x="197.56" y="259.15" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="194.77" y="301.58" width="5.58" height="14.42" fill="#2f6f9f"/>
+<text x="197.56" y="297.58" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="203.35" y="289.28" width="5.58" height="26.72" fill="#8a5a9f"/>
 <text x="206.13" y="285.28" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="201.85" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 201.85 332)">Downscale</text>
-<rect x="220.92" y="314.95" width="5.58" height="1.05" fill="#2f6f9f"/>
-<text x="223.71" y="310.95" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="220.92" y="255.88" width="5.58" height="60.12" fill="#2f6f9f"/>
+<text x="223.71" y="251.88" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="229.50" y="286.74" width="5.58" height="29.26" fill="#8a5a9f"/>
 <text x="232.29" y="282.74" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="228.00" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 228.00 332)">Enhance</text>
-<rect x="247.08" y="206.39" width="5.58" height="109.61" fill="#2f6f9f"/>
-<text x="249.87" y="202.39" text-anchor="middle" font-family="Arial" font-size="9">1</text>
+<rect x="247.08" y="252.30" width="5.58" height="63.70" fill="#2f6f9f"/>
+<text x="249.87" y="248.30" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="255.65" y="270.70" width="5.58" height="45.30" fill="#8a5a9f"/>
 <text x="258.44" y="266.70" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="254.15" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 254.15 332)">Equalize</text>
-<rect x="273.23" y="290.62" width="5.58" height="25.38" fill="#2f6f9f"/>
-<text x="276.02" y="286.62" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="273.23" y="311.65" width="5.58" height="4.35" fill="#2f6f9f"/>
+<text x="276.02" y="307.65" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="281.81" y="294.30" width="5.58" height="21.70" fill="#8a5a9f"/>
 <text x="284.60" y="290.30" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="280.31" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 280.31 332)">GaussianBlur</text>
-<rect x="299.38" y="295.08" width="5.58" height="20.92" fill="#2f6f9f"/>
-<text x="302.17" y="291.08" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="299.38" y="274.69" width="5.58" height="41.31" fill="#2f6f9f"/>
+<text x="302.17" y="270.69" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="307.96" y="282.34" width="5.58" height="33.66" fill="#8a5a9f"/>
 <text x="310.75" y="278.34" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="306.46" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 306.46 332)">HueSaturationValue</text>
-<rect x="325.54" y="305.59" width="5.58" height="10.41" fill="#2f6f9f"/>
-<text x="328.33" y="301.59" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="325.54" y="253.46" width="5.58" height="62.54" fill="#2f6f9f"/>
+<text x="328.33" y="249.46" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="334.12" y="281.59" width="5.58" height="34.41" fill="#8a5a9f"/>
 <text x="336.90" y="277.59" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="332.62" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 332.62 332)">ImageCompression</text>
-<rect x="351.69" y="193.66" width="5.58" height="122.34" fill="#2f6f9f"/>
-<text x="354.48" y="189.66" text-anchor="middle" font-family="Arial" font-size="9">1</text>
+<rect x="351.69" y="315.65" width="5.58" height="0.35" fill="#2f6f9f"/>
+<text x="354.48" y="311.65" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="360.27" y="285.76" width="5.58" height="30.24" fill="#8a5a9f"/>
 <text x="363.06" y="281.76" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="358.77" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 358.77 332)">MedianBlur</text>
-<rect x="377.85" y="273.49" width="5.58" height="42.51" fill="#2f6f9f"/>
-<text x="380.63" y="269.49" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="377.85" y="241.69" width="5.58" height="74.31" fill="#2f6f9f"/>
+<text x="380.63" y="237.69" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="386.42" y="285.35" width="5.58" height="30.65" fill="#8a5a9f"/>
 <text x="389.21" y="281.35" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="384.92" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 384.92 332)">MotionBlur</text>
-<rect x="404.00" y="236.03" width="5.58" height="79.97" fill="#2f6f9f"/>
-<text x="406.79" y="232.03" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="404.00" y="282.97" width="5.58" height="33.03" fill="#2f6f9f"/>
+<text x="406.79" y="278.97" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="412.58" y="284.84" width="5.58" height="31.16" fill="#8a5a9f"/>
 <text x="415.37" y="280.84" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="411.08" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 411.08 332)">PlanckianJitter</text>
-<rect x="430.15" y="315.72" width="5.58" height="0.28" fill="#2f6f9f"/>
-<text x="432.94" y="311.72" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="430.15" y="306.93" width="5.58" height="9.07" fill="#2f6f9f"/>
+<text x="432.94" y="302.93" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="438.73" y="283.68" width="5.58" height="32.32" fill="#8a5a9f"/>
 <text x="441.52" y="279.68" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="437.23" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 437.23 332)">RGBShift</text>
-<rect x="456.31" y="285.66" width="5.58" height="30.34" fill="#2f6f9f"/>
-<text x="459.10" y="281.66" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="456.31" y="293.42" width="5.58" height="22.58" fill="#2f6f9f"/>
+<text x="459.10" y="289.42" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="464.88" y="281.54" width="5.58" height="34.46" fill="#8a5a9f"/>
 <text x="467.67" y="277.54" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="463.38" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 463.38 332)">RandomBrightnessContrast</text>
-<rect x="482.46" y="315.90" width="5.58" height="0.10" fill="#2f6f9f"/>
-<text x="485.25" y="311.90" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="482.46" y="314.54" width="5.58" height="1.46" fill="#2f6f9f"/>
+<text x="485.25" y="310.54" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="491.04" y="287.12" width="5.58" height="28.88" fill="#8a5a9f"/>
 <text x="493.83" y="283.12" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="489.54" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 489.54 332)">RandomGamma</text>
-<rect x="508.62" y="316.00" width="5.58" height="0.00" fill="#2f6f9f"/>
-<text x="511.40" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="508.62" y="305.38" width="5.58" height="10.62" fill="#2f6f9f"/>
+<text x="511.40" y="301.38" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="517.19" y="290.16" width="5.58" height="25.84" fill="#8a5a9f"/>
 <text x="519.98" y="286.16" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="515.69" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 515.69 332)">RandomToneCurve</text>
-<rect x="534.77" y="314.08" width="5.58" height="1.92" fill="#2f6f9f"/>
-<text x="537.56" y="310.08" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="534.77" y="306.02" width="5.58" height="9.98" fill="#2f6f9f"/>
+<text x="537.56" y="302.02" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="543.35" y="283.61" width="5.58" height="32.39" fill="#8a5a9f"/>
 <text x="546.13" y="279.61" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="541.85" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 541.85 332)">RingingOvershoot</text>
-<rect x="560.92" y="231.48" width="5.58" height="84.52" fill="#2f6f9f"/>
-<text x="563.71" y="227.48" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="560.92" y="252.75" width="5.58" height="63.25" fill="#2f6f9f"/>
+<text x="563.71" y="248.75" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="569.50" y="270.28" width="5.58" height="45.72" fill="#8a5a9f"/>
 <text x="572.29" y="266.28" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="568.00" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 568.00 332)">Rotate</text>
-<rect x="587.08" y="271.48" width="5.58" height="44.52" fill="#2f6f9f"/>
-<text x="589.87" y="267.48" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="587.08" y="246.72" width="5.58" height="69.28" fill="#2f6f9f"/>
+<text x="589.87" y="242.72" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="595.65" y="276.81" width="5.58" height="39.19" fill="#8a5a9f"/>
 <text x="598.44" y="272.81" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="594.15" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 594.15 332)">SafeRotate</text>
-<rect x="613.23" y="233.75" width="5.58" height="82.25" fill="#2f6f9f"/>
-<text x="616.02" y="229.75" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="613.23" y="133.84" width="5.58" height="182.16" fill="#2f6f9f"/>
+<text x="616.02" y="129.84" text-anchor="middle" font-family="Arial" font-size="9">1</text>
 <rect x="621.81" y="270.96" width="5.58" height="45.04" fill="#8a5a9f"/>
 <text x="624.60" y="266.96" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="620.31" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 620.31 332)">Sharpen</text>
-<rect x="639.38" y="314.24" width="5.58" height="1.76" fill="#2f6f9f"/>
-<text x="642.17" y="310.24" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="639.38" y="311.75" width="5.58" height="4.25" fill="#2f6f9f"/>
+<text x="642.17" y="307.75" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="647.96" y="281.92" width="5.58" height="34.08" fill="#8a5a9f"/>
 <text x="650.75" y="277.92" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="646.46" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 646.46 332)">SquareSymmetry</text>
-<rect x="665.54" y="314.30" width="5.58" height="1.70" fill="#2f6f9f"/>
-<text x="668.33" y="310.30" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="665.54" y="312.82" width="5.58" height="3.18" fill="#2f6f9f"/>
+<text x="668.33" y="308.82" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="674.12" y="268.65" width="5.58" height="47.35" fill="#8a5a9f"/>
 <text x="676.90" y="264.65" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="672.62" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 672.62 332)">ToGray</text>
-<rect x="691.69" y="316.00" width="5.58" height="0.00" fill="#2f6f9f"/>
-<text x="694.48" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="691.69" y="315.69" width="5.58" height="0.31" fill="#2f6f9f"/>
+<text x="694.48" y="311.69" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <rect x="700.27" y="300.09" width="5.58" height="15.91" fill="#8a5a9f"/>
 <text x="703.06" y="296.09" text-anchor="middle" font-family="Arial" font-size="9">0</text>
 <text x="698.77" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 698.77 332)">UnsharpMask</text>
