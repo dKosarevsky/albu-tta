@@ -214,6 +214,50 @@ def main(argv: Sequence[str] | None = None) -> None:
             val_features_path=_optional_path(args.val_features),
             force=bool(args.force),
         )
+    elif command == "train-pairwise-selector":
+        _cmd_train_pairwise_selector(
+            train_manifest_path=Path(args.train_manifest),
+            val_manifest_path=Path(args.val_manifest),
+            train_targets_path=Path(args.train_targets),
+            val_targets_path=Path(args.val_targets),
+            cache_dir=Path(args.cache_dir),
+            output_dir=Path(args.output_dir),
+            identity_aug_id=str(args.identity_aug_id),
+            train_features_path=_optional_path(args.train_features),
+            val_features_path=_optional_path(args.val_features),
+            top_k_grid=args.top_k,
+            batch_size=int(args.batch_size),
+            epochs=int(args.epochs),
+            learning_rate=float(args.learning_rate),
+            hidden_dim=int(args.hidden_dim),
+            usefulness_tau=float(args.usefulness_tau),
+            usefulness_weight=float(args.usefulness_weight),
+            positive_gain_weight=float(args.positive_gain_weight),
+            target_mode=str(args.target_mode),
+            selection_metric=str(args.selection_metric),
+            device=str(args.device),
+        )
+    elif command == "train-pairwise-selector-comparison":
+        _cmd_train_pairwise_selector_comparison(
+            train_manifest_path=Path(args.train_manifest),
+            val_manifest_path=Path(args.val_manifest),
+            train_targets_path=Path(args.train_targets),
+            val_targets_path=Path(args.val_targets),
+            cache_dir=Path(args.cache_dir),
+            output_dir=Path(args.output_dir),
+            identity_aug_id=str(args.identity_aug_id),
+            train_features_path=_optional_path(args.train_features),
+            val_features_path=_optional_path(args.val_features),
+            top_k_grid=args.top_k,
+            batch_size=int(args.batch_size),
+            epochs=int(args.epochs),
+            learning_rate=float(args.learning_rate),
+            hidden_dim=int(args.hidden_dim),
+            usefulness_tau=float(args.usefulness_tau),
+            usefulness_weight=float(args.usefulness_weight),
+            positive_gain_weight=float(args.positive_gain_weight),
+            device=str(args.device),
+        )
     elif command == "tune-tta":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_tune_tta(
@@ -280,6 +324,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             selector_diagnostics_path=_optional_path(args.selector_diagnostics),
             adaptive_selection_counts_path=_optional_path(args.adaptive_selection_counts),
             compute_policy_frontier_path=_optional_path(args.compute_policy_frontier),
+            pairwise_selector_comparison_path=_optional_path(args.pairwise_selector_comparison),
+            selector_error_analysis_path=_optional_path(args.selector_error_analysis),
             tuning_path=_optional_path(args.tuning),
             impact_targets_path=_optional_path(args.impact_targets),
             impact_manifest_path=_optional_path(args.impact_manifest),
@@ -718,6 +764,64 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Retrain variants even when selector_best.pt and selector_history.csv already exist.",
     )
 
+    train_pairwise_selector = subparsers.add_parser(
+        "train-pairwise-selector",
+        help="Train a pairwise image/augmentation selector MLP.",
+    )
+    train_pairwise_selector.add_argument("--train-manifest", required=True)
+    train_pairwise_selector.add_argument("--val-manifest", required=True)
+    train_pairwise_selector.add_argument("--train-targets", required=True)
+    train_pairwise_selector.add_argument("--val-targets", required=True)
+    train_pairwise_selector.add_argument("--train-features")
+    train_pairwise_selector.add_argument("--val-features")
+    train_pairwise_selector.add_argument("--cache-dir", required=True)
+    train_pairwise_selector.add_argument("--output-dir", required=True)
+    train_pairwise_selector.add_argument("--identity-aug-id", default="aug_000")
+    train_pairwise_selector.add_argument("--candidate-id", action="append")
+    train_pairwise_selector.add_argument("--top-k", type=int, action="append")
+    train_pairwise_selector.add_argument("--batch-size", type=int, default=1024)
+    train_pairwise_selector.add_argument("--epochs", type=int, default=5)
+    train_pairwise_selector.add_argument("--learning-rate", type=float, default=1e-3)
+    train_pairwise_selector.add_argument("--hidden-dim", type=int, default=128)
+    train_pairwise_selector.add_argument("--usefulness-tau", type=float, default=0.01)
+    train_pairwise_selector.add_argument("--usefulness-weight", type=float, default=0.0)
+    train_pairwise_selector.add_argument("--positive-gain-weight", type=float, default=0.0)
+    train_pairwise_selector.add_argument(
+        "--target-mode",
+        choices=["nll_gain", "top1_delta"],
+        default="nll_gain",
+    )
+    train_pairwise_selector.add_argument(
+        "--selection-metric",
+        choices=["val_tta_nll", "val_tta_top1"],
+        default="val_tta_nll",
+    )
+    train_pairwise_selector.add_argument("--device", default="cpu")
+
+    train_pairwise_comparison = subparsers.add_parser(
+        "train-pairwise-selector-comparison",
+        help="Train NLL-gain and top-1-delta pairwise selector variants.",
+    )
+    train_pairwise_comparison.add_argument("--train-manifest", required=True)
+    train_pairwise_comparison.add_argument("--val-manifest", required=True)
+    train_pairwise_comparison.add_argument("--train-targets", required=True)
+    train_pairwise_comparison.add_argument("--val-targets", required=True)
+    train_pairwise_comparison.add_argument("--train-features")
+    train_pairwise_comparison.add_argument("--val-features")
+    train_pairwise_comparison.add_argument("--cache-dir", required=True)
+    train_pairwise_comparison.add_argument("--output-dir", required=True)
+    train_pairwise_comparison.add_argument("--identity-aug-id", default="aug_000")
+    train_pairwise_comparison.add_argument("--candidate-id", action="append")
+    train_pairwise_comparison.add_argument("--top-k", type=int, action="append")
+    train_pairwise_comparison.add_argument("--batch-size", type=int, default=1024)
+    train_pairwise_comparison.add_argument("--epochs", type=int, default=5)
+    train_pairwise_comparison.add_argument("--learning-rate", type=float, default=1e-3)
+    train_pairwise_comparison.add_argument("--hidden-dim", type=int, default=128)
+    train_pairwise_comparison.add_argument("--usefulness-tau", type=float, default=0.01)
+    train_pairwise_comparison.add_argument("--usefulness-weight", type=float, default=0.0)
+    train_pairwise_comparison.add_argument("--positive-gain-weight", type=float, default=0.0)
+    train_pairwise_comparison.add_argument("--device", default="cpu")
+
     tune_tta = subparsers.add_parser(
         "tune-tta",
         help="Tune learned TTA top-k on a validation split.",
@@ -805,6 +909,8 @@ def _build_parser() -> argparse.ArgumentParser:
     build_report.add_argument("--selector-diagnostics")
     build_report.add_argument("--adaptive-selection-counts")
     build_report.add_argument("--compute-policy-frontier")
+    build_report.add_argument("--pairwise-selector-comparison")
+    build_report.add_argument("--selector-error-analysis")
     build_report.add_argument("--tuning")
     build_report.add_argument("--impact-targets")
     build_report.add_argument("--impact-manifest")
@@ -1404,6 +1510,100 @@ def _cmd_train_selector_ablation(
     print(f"selector ablation: wrote {summary.results_csv}")
 
 
+def _cmd_train_pairwise_selector(
+    train_manifest_path: Path,
+    val_manifest_path: Path,
+    train_targets_path: Path,
+    val_targets_path: Path,
+    cache_dir: Path,
+    output_dir: Path,
+    identity_aug_id: str,
+    train_features_path: Path | None,
+    val_features_path: Path | None,
+    top_k_grid: list[int] | None,
+    batch_size: int,
+    epochs: int,
+    learning_rate: float,
+    hidden_dim: int,
+    usefulness_tau: float,
+    usefulness_weight: float,
+    positive_gain_weight: float,
+    target_mode: str,
+    selection_metric: str,
+    device: str,
+) -> None:
+    from learned_tta.pairwise_selector import train_pairwise_selector_from_artifacts
+
+    summary = train_pairwise_selector_from_artifacts(
+        train_manifest_path=train_manifest_path,
+        val_manifest_path=val_manifest_path,
+        train_targets_path=train_targets_path,
+        val_targets_path=val_targets_path,
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        identity_aug_id=identity_aug_id,
+        train_features_path=train_features_path,
+        val_features_path=val_features_path,
+        top_k_grid=top_k_grid,
+        batch_size=batch_size,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        hidden_dim=hidden_dim,
+        usefulness_tau=usefulness_tau,
+        usefulness_weight=usefulness_weight,
+        positive_gain_weight=positive_gain_weight,
+        target_mode=target_mode,
+        selection_metric=selection_metric,
+        device=device,
+    )
+    print(f"pairwise selector: wrote {summary.summary_csv}")
+
+
+def _cmd_train_pairwise_selector_comparison(
+    train_manifest_path: Path,
+    val_manifest_path: Path,
+    train_targets_path: Path,
+    val_targets_path: Path,
+    cache_dir: Path,
+    output_dir: Path,
+    identity_aug_id: str,
+    train_features_path: Path | None,
+    val_features_path: Path | None,
+    top_k_grid: list[int] | None,
+    batch_size: int,
+    epochs: int,
+    learning_rate: float,
+    hidden_dim: int,
+    usefulness_tau: float,
+    usefulness_weight: float,
+    positive_gain_weight: float,
+    device: str,
+) -> None:
+    from learned_tta.pairwise_selector import train_pairwise_selector_comparison_from_artifacts
+
+    summary = train_pairwise_selector_comparison_from_artifacts(
+        train_manifest_path=train_manifest_path,
+        val_manifest_path=val_manifest_path,
+        train_targets_path=train_targets_path,
+        val_targets_path=val_targets_path,
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        identity_aug_id=identity_aug_id,
+        train_features_path=train_features_path,
+        val_features_path=val_features_path,
+        top_k_grid=top_k_grid,
+        batch_size=batch_size,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        hidden_dim=hidden_dim,
+        usefulness_tau=usefulness_tau,
+        usefulness_weight=usefulness_weight,
+        positive_gain_weight=positive_gain_weight,
+        device=device,
+    )
+    print(f"pairwise selector comparison: wrote {summary.results_csv}")
+
+
 def _optional_path(value: str | None) -> Path | None:
     if value is None:
         return None
@@ -1531,6 +1731,8 @@ def _cmd_build_report(
     selector_diagnostics_path: Path | None,
     adaptive_selection_counts_path: Path | None,
     compute_policy_frontier_path: Path | None,
+    pairwise_selector_comparison_path: Path | None,
+    selector_error_analysis_path: Path | None,
     tuning_path: Path | None,
     impact_targets_path: Path | None,
     impact_manifest_path: Path | None,
@@ -1555,6 +1757,8 @@ def _cmd_build_report(
         selector_diagnostics_path=selector_diagnostics_path,
         adaptive_selection_counts_path=adaptive_selection_counts_path,
         compute_policy_frontier_path=compute_policy_frontier_path,
+        pairwise_selector_comparison_path=pairwise_selector_comparison_path,
+        selector_error_analysis_path=selector_error_analysis_path,
         tuning_path=tuning_path,
         impact_targets_path=impact_targets_path,
         impact_manifest_path=impact_manifest_path,

@@ -37,6 +37,48 @@ def test_clean_logit_features_reject_bad_inputs() -> None:
         clean_logit_features(np.zeros((2, 0), dtype=np.float32))
 
 
+def test_clean_logit_uncertainty_features_include_true_class_and_top_logits() -> None:
+    from learned_tta.selector_features import clean_logit_uncertainty_features
+
+    logits = np.array([[4.0, 2.0, 1.0], [0.0, 2.0, 1.0]], dtype=np.float32)
+    class_idxs = np.array([0, 2], dtype=np.int64)
+    features, names = clean_logit_uncertainty_features(logits, class_idxs, top_k=2)
+
+    assert names[:8] == [
+        "clean_confidence",
+        "clean_true_prob",
+        "clean_prob_margin",
+        "clean_logit_margin",
+        "clean_entropy",
+        "clean_true_logit",
+        "clean_pred_class",
+        "clean_pred_is_true",
+    ]
+    assert "clean_top1_prob" in names
+    assert "clean_top2_prob" in names
+    assert "clean_top1_logit" in names
+    assert "clean_top2_logit" in names
+    assert features.shape == (2, len(names))
+    assert features[0, names.index("clean_pred_is_true")] == pytest.approx(1.0)
+    assert features[1, names.index("clean_pred_is_true")] == pytest.approx(0.0)
+    assert features[0, names.index("clean_true_prob")] > features[1, names.index("clean_true_prob")]
+
+
+def test_clean_logit_uncertainty_features_reject_bad_class_indices() -> None:
+    from learned_tta.selector_features import clean_logit_uncertainty_features
+
+    with pytest.raises(ValueError, match="class_idxs"):
+        clean_logit_uncertainty_features(
+            np.zeros((2, 3), dtype=np.float32),
+            np.array([0], dtype=np.int64),
+        )
+    with pytest.raises(ValueError, match="class_idxs"):
+        clean_logit_uncertainty_features(
+            np.zeros((2, 3), dtype=np.float32),
+            np.array([0, 3], dtype=np.int64),
+        )
+
+
 def test_selector_feature_cache_roundtrip(tmp_path) -> None:
     from learned_tta.selector_features import load_selector_features, save_selector_features
 

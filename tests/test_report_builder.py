@@ -29,8 +29,10 @@ from learned_tta.report_builder import (
     _read_adaptive_selection_counts_csv,
     _read_compute_policy_frontier_csv,
     _read_corrections_csv,
+    _read_pairwise_selector_comparison_csv,
     _read_selector_ablation_csv,
     _read_selector_diagnostics_json,
+    _read_selector_error_analysis_csv,
     _read_selector_history_csv,
     _selector_kpi_summary_table,
     _validate_aggregator_aug_ids,
@@ -219,6 +221,43 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
             },
         ]
     ).to_csv(compute_policy_frontier_csv, index=False)
+    pairwise_comparison_csv = tmp_path / "pairwise_selector_comparison.csv"
+    pd.DataFrame(
+        [
+            {
+                "variant": "pairwise_nll_gain",
+                "target_mode": "nll_gain",
+                "selection_metric": "val_tta_nll",
+                "best_epoch": 1,
+                "best_val_top1": 0.82,
+                "best_val_nll": 0.74,
+            },
+            {
+                "variant": "pairwise_top1_delta",
+                "target_mode": "top1_delta",
+                "selection_metric": "val_tta_top1",
+                "best_epoch": 1,
+                "best_val_top1": 0.83,
+                "best_val_nll": 0.76,
+            },
+        ]
+    ).to_csv(pairwise_comparison_csv, index=False)
+    selector_error_analysis_csv = tmp_path / "selector_error_analysis.csv"
+    pd.DataFrame(
+        [
+            {
+                "confidence_bucket": "[0.75, 1.01)",
+                "images": 2,
+                "mean_clean_confidence": 0.9,
+                "clean_top1": 0.5,
+                "tta_top1": 1.0,
+                "clean_wrong_tta_right": 1,
+                "clean_right_tta_wrong": 0,
+                "mean_oracle_recall": 0.75,
+                "mean_selected_count": 2.0,
+            }
+        ]
+    ).to_csv(selector_error_analysis_csv, index=False)
 
     tuning_json = tmp_path / "public_val_tta_tuning.json"
     tuning_json.write_text(
@@ -306,6 +345,8 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         "selector_diagnostics": selector_diagnostics_json,
         "adaptive_selection_counts": adaptive_selection_counts_csv,
         "compute_policy_frontier": compute_policy_frontier_csv,
+        "pairwise_comparison": pairwise_comparison_csv,
+        "selector_error_analysis": selector_error_analysis_csv,
         "tuning": tuning_json,
         "manifest": manifest_path,
         "targets": targets_path,
@@ -341,6 +382,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         selector_diagnostics_path=report_artifacts["selector_diagnostics"],
         adaptive_selection_counts_path=report_artifacts["adaptive_selection_counts"],
         compute_policy_frontier_path=report_artifacts["compute_policy_frontier"],
+        pairwise_selector_comparison_path=report_artifacts["pairwise_comparison"],
+        selector_error_analysis_path=report_artifacts["selector_error_analysis"],
         device="cpu",
     )
 
@@ -363,6 +406,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_diagnostics_json is not None
     assert summary.adaptive_selection_counts_csv is not None
     assert summary.compute_policy_frontier_csv is not None
+    assert summary.pairwise_selector_comparison_csv is not None
+    assert summary.selector_error_analysis_csv is not None
     assert summary.selector_history_svg is not None
     assert summary.transform_class_impact_csv is not None
     assert summary.transform_class_impact_svg is not None
@@ -398,6 +443,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_diagnostics_json.exists()
     assert summary.adaptive_selection_counts_csv.exists()
     assert summary.compute_policy_frontier_csv.exists()
+    assert summary.pairwise_selector_comparison_csv.exists()
+    assert summary.selector_error_analysis_csv.exists()
     assert summary.selector_history_svg.exists()
     assert summary.transform_class_impact_csv.exists()
     assert summary.transform_class_impact_svg.exists()
@@ -506,6 +553,8 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert selector_ablation["variant"].tolist() == ["gain_only", "gain_rank_bce"]
     assert adaptive_selection_counts["mean_forwards_per_image"].tolist() == pytest.approx([2.0])
     assert compute_policy_frontier["top1_oracle_capture"].tolist() == pytest.approx([0.0, 0.833333])
+    assert "## Pairwise Selector Comparison" in markdown
+    assert "## Selector Error Analysis" in markdown
     assert "## Selector KPI Summary" in markdown
     assert "| learned_topk_uniform | 1 | 1 | 50 | 60 | 0.833333 | 2 |" in markdown
     assert "state-of-the-art" not in markdown.lower()
@@ -583,6 +632,10 @@ def test_build_report_cli_writes_final_results(
             str(report_artifacts["adaptive_selection_counts"]),
             "--compute-policy-frontier",
             str(report_artifacts["compute_policy_frontier"]),
+            "--pairwise-selector-comparison",
+            str(report_artifacts["pairwise_comparison"]),
+            "--selector-error-analysis",
+            str(report_artifacts["selector_error_analysis"]),
             "--tuning",
             str(report_artifacts["tuning"]),
             "--impact-targets",
@@ -617,6 +670,8 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "tables" / "selector_diagnostics.json").exists()
     assert (report_dir / "tables" / "adaptive_selection_counts.csv").exists()
     assert (report_dir / "tables" / "compute_policy_frontier.csv").exists()
+    assert (report_dir / "tables" / "pairwise_selector_comparison.csv").exists()
+    assert (report_dir / "tables" / "selector_error_analysis.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
     assert (report_dir / "figures" / "aggregation_weights.svg").exists()
     assert (report_dir / "tables" / "xgboost_feature_importance.csv").exists()
@@ -638,6 +693,13 @@ def test_report_builder_rejects_malformed_optional_csv_inputs(tmp_path: Path) ->
     pd.DataFrame([{"threshold": 0.5}]).to_csv(bad_counts, index=False)
     bad_frontier = tmp_path / "compute_policy_frontier.csv"
     pd.DataFrame([{"strategy": "clean"}]).to_csv(bad_frontier, index=False)
+    bad_pairwise = tmp_path / "pairwise_selector_comparison.csv"
+    pd.DataFrame([{"variant": "pairwise_nll_gain"}]).to_csv(bad_pairwise, index=False)
+    bad_error_analysis = tmp_path / "selector_error_analysis.csv"
+    pd.DataFrame([{"confidence_bucket": "[0.00, 0.50)"}]).to_csv(
+        bad_error_analysis,
+        index=False,
+    )
 
     with pytest.raises(ValueError, match="corrections CSV is missing columns"):
         _read_corrections_csv(bad_corrections)
@@ -651,6 +713,10 @@ def test_report_builder_rejects_malformed_optional_csv_inputs(tmp_path: Path) ->
         _read_adaptive_selection_counts_csv(bad_counts)
     with pytest.raises(ValueError, match="compute policy frontier CSV is missing columns"):
         _read_compute_policy_frontier_csv(bad_frontier)
+    with pytest.raises(ValueError, match="pairwise selector comparison CSV is missing columns"):
+        _read_pairwise_selector_comparison_csv(bad_pairwise)
+    with pytest.raises(ValueError, match="selector error analysis CSV is missing columns"):
+        _read_selector_error_analysis_csv(bad_error_analysis)
 
 
 def test_report_builder_defaults_legacy_ablation_columns_and_empty_kpi(tmp_path: Path) -> None:

@@ -65,6 +65,14 @@ be negative because they can represent predicted gain or negative NLL, but
 deployed probability TTA weights should remain non-negative, for example
 uniform top-k or softmax over selected utilities.
 
+The pairwise selector ablation is a separate lightweight path for testing the
+same signal with a different inductive bias. `train-pairwise-selector` scores
+one `(image, augmentation)` row at a time from clean-pass uncertainty features,
+optional cached image features, and augmentation identity. `train-pairwise-selector-comparison`
+trains the two current objective variants, NLL gain and top-1 delta, and writes
+`pairwise_selector_comparison.csv`; `build-report` can render that table plus a
+selector error-analysis table when those CSVs are supplied.
+
 Selector target artifacts also persist `image_id` order. Training refuses to
 pair a manifest with targets whose rows were generated from a different image
 order, which prevents silent label/target drift after interrupted or moved

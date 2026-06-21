@@ -51,6 +51,8 @@ class ReportBuildSummary:
     selector_diagnostics_json: Path | None
     adaptive_selection_counts_csv: Path | None
     compute_policy_frontier_csv: Path | None
+    pairwise_selector_comparison_csv: Path | None
+    selector_error_analysis_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
     aggregation_weights_svg: Path | None
@@ -88,6 +90,8 @@ def build_report_from_artifacts(
     selector_diagnostics_path: Path | None = None,
     adaptive_selection_counts_path: Path | None = None,
     compute_policy_frontier_path: Path | None = None,
+    pairwise_selector_comparison_path: Path | None = None,
+    selector_error_analysis_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> ReportBuildSummary:
@@ -188,6 +192,16 @@ def build_report_from_artifacts(
         if compute_policy_frontier_path
         else None
     )
+    pairwise_selector_comparison = (
+        _read_pairwise_selector_comparison_csv(pairwise_selector_comparison_path)
+        if pairwise_selector_comparison_path
+        else None
+    )
+    selector_error_analysis = (
+        _read_selector_error_analysis_csv(selector_error_analysis_path)
+        if selector_error_analysis_path
+        else None
+    )
     private_metric_deltas = _build_private_metric_deltas_table(private_metrics)
 
     paths = ReportBuildSummary(
@@ -240,6 +254,16 @@ def build_report_from_artifacts(
         compute_policy_frontier_csv=(
             tables_dir / "compute_policy_frontier.csv"
             if compute_policy_frontier is not None
+            else None
+        ),
+        pairwise_selector_comparison_csv=(
+            tables_dir / "pairwise_selector_comparison.csv"
+            if pairwise_selector_comparison is not None
+            else None
+        ),
+        selector_error_analysis_csv=(
+            tables_dir / "selector_error_analysis.csv"
+            if selector_error_analysis is not None
             else None
         ),
         gain_distribution_svg=figures_dir / "gain_distribution.svg",
@@ -317,6 +341,16 @@ def build_report_from_artifacts(
         adaptive_selection_counts.to_csv(paths.adaptive_selection_counts_csv, index=False)
     if paths.compute_policy_frontier_csv is not None and compute_policy_frontier is not None:
         compute_policy_frontier.to_csv(paths.compute_policy_frontier_csv, index=False)
+    if (
+        paths.pairwise_selector_comparison_csv is not None
+        and pairwise_selector_comparison is not None
+    ):
+        pairwise_selector_comparison.to_csv(
+            paths.pairwise_selector_comparison_csv,
+            index=False,
+        )
+    if paths.selector_error_analysis_csv is not None and selector_error_analysis is not None:
+        selector_error_analysis.to_csv(paths.selector_error_analysis_csv, index=False)
     paths.gain_distribution_svg.write_text(
         _gain_distribution_svg(targets.gain),
         encoding="utf-8",
@@ -375,6 +409,8 @@ def build_report_from_artifacts(
             selector_diagnostics=selector_diagnostics,
             adaptive_selection_counts=adaptive_selection_counts,
             compute_policy_frontier=compute_policy_frontier,
+            pairwise_selector_comparison=pairwise_selector_comparison,
+            selector_error_analysis=selector_error_analysis,
             identity_aug_id=identity_aug_id,
             has_class_weights=aggregation_tables.class_weights is not None,
             has_corrections=corrections_table is not None,
@@ -402,6 +438,8 @@ def build_report_from_config(
     selector_diagnostics_path: Path | None = None,
     adaptive_selection_counts_path: Path | None = None,
     compute_policy_frontier_path: Path | None = None,
+    pairwise_selector_comparison_path: Path | None = None,
+    selector_error_analysis_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -461,6 +499,13 @@ def build_report_from_config(
         ),
         compute_policy_frontier_path=compute_policy_frontier_path
         or _existing_path(config.artifacts.selector_dir / "public_val_compute_policy_frontier.csv"),
+        pairwise_selector_comparison_path=pairwise_selector_comparison_path
+        or _existing_path(config.artifacts.selector_dir / "pairwise_selector_comparison.csv")
+        or _existing_path(
+            config.artifacts.selector_dir / "pairwise" / "pairwise_selector_comparison.csv"
+        ),
+        selector_error_analysis_path=selector_error_analysis_path
+        or _existing_path(config.artifacts.selector_dir / "public_val_selector_error_analysis.csv"),
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -678,6 +723,68 @@ def _read_compute_policy_frontier_csv(path: Path) -> pd.DataFrame:
             "nll_delta_vs_clean",
             "nll_oracle_delta",
             "nll_oracle_capture",
+        ]
+    ].copy()
+
+
+def _read_pairwise_selector_comparison_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "variant",
+        "target_mode",
+        "selection_metric",
+        "best_epoch",
+        "best_val_top1",
+        "best_val_nll",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"pairwise selector comparison CSV is missing columns: {sorted(missing)}")
+    optional_columns = [
+        column
+        for column in ["best_val_top5", "best_val_ece", "best_val_oracle_recall"]
+        if column in table.columns
+    ]
+    return table[
+        [
+            "variant",
+            "target_mode",
+            "selection_metric",
+            "best_epoch",
+            "best_val_top1",
+            "best_val_nll",
+            *optional_columns,
+        ]
+    ].copy()
+
+
+def _read_selector_error_analysis_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "confidence_bucket",
+        "images",
+        "mean_clean_confidence",
+        "clean_top1",
+        "tta_top1",
+        "clean_wrong_tta_right",
+        "clean_right_tta_wrong",
+        "mean_oracle_recall",
+        "mean_selected_count",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"selector error analysis CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "confidence_bucket",
+            "images",
+            "mean_clean_confidence",
+            "clean_top1",
+            "tta_top1",
+            "clean_wrong_tta_right",
+            "clean_right_tta_wrong",
+            "mean_oracle_recall",
+            "mean_selected_count",
         ]
     ].copy()
 
@@ -982,6 +1089,8 @@ def _results_markdown(
     selector_diagnostics: dict[str, Any] | None,
     adaptive_selection_counts: pd.DataFrame | None,
     compute_policy_frontier: pd.DataFrame | None,
+    pairwise_selector_comparison: pd.DataFrame | None,
+    selector_error_analysis: pd.DataFrame | None,
     identity_aug_id: str,
     has_class_weights: bool,
     has_corrections: bool,
@@ -1129,6 +1238,17 @@ def _results_markdown(
                 "",
             ]
         )
+    if pairwise_selector_comparison is not None:
+        lines.extend(
+            [
+                "## Pairwise Selector Comparison",
+                "",
+                "- Table: `tables/pairwise_selector_comparison.csv`",
+                "",
+                _markdown_table(pairwise_selector_comparison),
+                "",
+            ]
+        )
     if selector_diagnostics is not None or adaptive_selection_counts is not None:
         lines.extend(
             [
@@ -1153,6 +1273,17 @@ def _results_markdown(
                     "",
                 ]
             )
+    if selector_error_analysis is not None:
+        lines.extend(
+            [
+                "## Selector Error Analysis",
+                "",
+                "- Table: `tables/selector_error_analysis.csv`",
+                "",
+                _markdown_table(selector_error_analysis),
+                "",
+            ]
+        )
     if has_corrections:
         lines.extend(
             [

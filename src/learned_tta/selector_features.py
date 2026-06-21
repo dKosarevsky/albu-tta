@@ -65,6 +65,72 @@ def clean_logit_features(
     return np.stack(columns, axis=1).astype(np.float32), names
 
 
+def clean_logit_uncertainty_features(
+    logits: np.ndarray,
+    class_idxs: np.ndarray,
+    *,
+    top_k: int = 5,
+) -> tuple[np.ndarray, list[str]]:
+    """Build richer clean-pass uncertainty features with true-class context."""
+
+    logits = np.asarray(logits, dtype=np.float32)
+    class_idxs = np.asarray(class_idxs, dtype=np.int64)
+    if logits.ndim != 2:
+        raise ValueError("logits must have shape [images, classes]")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive")
+    if logits.shape[1] == 0:
+        raise ValueError("logits must contain at least one class")
+    if class_idxs.shape != (logits.shape[0],):
+        raise ValueError("class_idxs must have shape [images]")
+    if np.any(class_idxs < 0) or np.any(class_idxs >= logits.shape[1]):
+        raise ValueError("class_idxs values must fall inside logits class dimension")
+
+    probs = _softmax(logits)
+    sorted_indices = np.argsort(logits, axis=1)[:, ::-1]
+    sorted_logits = np.take_along_axis(logits, sorted_indices, axis=1)
+    sorted_probs = np.take_along_axis(probs, sorted_indices, axis=1)
+    capped_top_k = min(top_k, logits.shape[1])
+    row_indices = np.arange(logits.shape[0])
+    confidence = sorted_probs[:, 0]
+    second_prob = sorted_probs[:, 1] if logits.shape[1] > 1 else np.zeros_like(confidence)
+    top_logit = sorted_logits[:, 0]
+    second_logit = sorted_logits[:, 1] if logits.shape[1] > 1 else np.zeros_like(top_logit)
+    entropy = -(probs * np.log(np.clip(probs, 1e-12, None))).sum(axis=1)
+    true_prob = probs[row_indices, class_idxs]
+    true_logit = logits[row_indices, class_idxs]
+    pred_class = sorted_indices[:, 0].astype(np.float32)
+    pred_is_true = (sorted_indices[:, 0] == class_idxs).astype(np.float32)
+
+    columns = [
+        confidence.astype(np.float32),
+        true_prob.astype(np.float32),
+        (confidence - second_prob).astype(np.float32),
+        (top_logit - second_logit).astype(np.float32),
+        entropy.astype(np.float32),
+        true_logit.astype(np.float32),
+        pred_class,
+        pred_is_true,
+    ]
+    names = [
+        "clean_confidence",
+        "clean_true_prob",
+        "clean_prob_margin",
+        "clean_logit_margin",
+        "clean_entropy",
+        "clean_true_logit",
+        "clean_pred_class",
+        "clean_pred_is_true",
+    ]
+    for index in range(capped_top_k):
+        columns.append(sorted_probs[:, index].astype(np.float32))
+        names.append(f"clean_top{index + 1}_prob")
+    for index in range(capped_top_k):
+        columns.append(sorted_logits[:, index].astype(np.float32))
+        names.append(f"clean_top{index + 1}_logit")
+    return np.stack(columns, axis=1).astype(np.float32), names
+
+
 def save_selector_features(
     path: Path,
     *,

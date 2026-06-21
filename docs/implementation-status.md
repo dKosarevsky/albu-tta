@@ -36,9 +36,16 @@ Implemented:
 - Selector target formulation documented as a 100-score augmentation utility predictor for ranking/top-k TTA selection, not 50-bin loss classification.
 - Public/private split-role guards for target building, selector checkpoint selection, TTA tuning, learned aggregation training, and final private evaluation.
 - Small selector CNN training with standardized targets, SmoothL1, pairwise rank loss, optional usefulness BCE head, public-val diagnostics, and checkpoint selection by public-val learned TTA NLL.
+- Pairwise `(image, augmentation)` selector ablation with clean-logit
+  uncertainty features, augmentation identity features, optional cached image
+  features, NLL-gain and top-1-delta objective comparison, and policy-aware
+  SmoothL1/usefulness weighting.
 - TTA evaluation for clean, fixed, random, all-candidate, learned uniform, learned softmax-weighted, learned adaptive uniform, oracle, global non-negative aggregation, class-specific aggregation, and optional XGBoost stacker.
 - Private evaluation artifacts with metrics, compute, clean-vs-TTA corrections, and metric deltas against clean.
-- Final report builder with tables, SVG plots, top-N markdown summaries, transform-class impact, transform-class aggregation, selector history, XGBoost importance, and result text that avoids SOTA claims.
+- Final report builder with tables, SVG plots, top-N markdown summaries,
+  transform-class impact, transform-class aggregation, selector history,
+  selector pairwise comparison/error analysis, XGBoost importance, and result
+  text that avoids SOTA claims.
 - Synthetic smoke run covering manifests, teacher cache, target build, selector training, tuning, aggregation training, private evaluation, and final report generation.
 - Full-run artifact status with strict teacher-cache completeness checks across all configured augmentation candidates, `.run.json` metadata validation, row/class-shape validation, and missing/extra artifact diagnostics.
 - CI coverage gate fixed at 98.5% minimum for the `learned_tta` package.
