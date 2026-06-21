@@ -33,7 +33,7 @@
 - Modify: `src/learned_tta/cli.py`
 - Test: `tests/test_selector_analysis.py`
 
-- [ ] **Step 1: Write failing test for oracle-gap summary**
+- [x] **Step 1: Write failing test for oracle-gap summary**
 
 ```python
 def test_oracle_gap_summary_quantifies_clean_oracle_and_learned_capture(tmp_path):
@@ -57,17 +57,17 @@ def test_oracle_gap_summary_quantifies_clean_oracle_and_learned_capture(tmp_path
     assert summary["forwards_per_image"] == 17.0
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/test_selector_analysis.py::test_oracle_gap_summary_quantifies_clean_oracle_and_learned_capture -q`
 
 Expected: fails because `learned_tta.selector_analysis` does not exist.
 
-- [ ] **Step 3: Implement minimal oracle-gap summary**
+- [x] **Step 3: Implement minimal oracle-gap summary**
 
 Implement `summarize_oracle_gap(...) -> dict[str, float]` with percentage-point deltas and capture ratios.
 
-- [ ] **Step 4: Run targeted test and verify GREEN**
+- [x] **Step 4: Run targeted test and verify GREEN**
 
 Run: `uv run pytest tests/test_selector_analysis.py -q`
 
@@ -80,7 +80,7 @@ Expected: pass.
 - Modify: `src/learned_tta/selector_training.py`
 - Test: `tests/test_selector_features.py`
 
-- [ ] **Step 1: Write failing tests for clean-logit feature extraction**
+- [x] **Step 1: Write failing tests for clean-logit feature extraction**
 
 ```python
 def test_clean_logit_features_include_margin_entropy_and_topk():
@@ -96,21 +96,21 @@ def test_clean_logit_features_include_margin_entropy_and_topk():
     assert features[0, names.index("clean_margin")] > features[1, names.index("clean_margin")]
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/test_selector_features.py::test_clean_logit_features_include_margin_entropy_and_topk -q`
 
 Expected: fails because `selector_features` does not exist.
 
-- [ ] **Step 3: Implement clean-logit features**
+- [x] **Step 3: Implement clean-logit features**
 
 Implement NumPy softmax, confidence, margin, entropy, predicted class index, and top-k probabilities in `selector_features.py`.
 
-- [ ] **Step 4: Wire feature mode into selector training spec**
+- [x] **Step 4: Wire feature mode into selector training spec**
 
 Add `feature_mode: Literal["image", "clean_logits"] = "image"` to selector ablation specs, without changing the existing default behavior.
 
-- [ ] **Step 5: Run targeted tests**
+- [x] **Step 5: Run targeted tests**
 
 Run: `uv run pytest tests/test_selector_features.py tests/test_selector_training.py -q`
 
@@ -123,7 +123,7 @@ Expected: pass.
 - Modify: `src/learned_tta/selector_training.py`
 - Test: `tests/test_selector_targets.py`
 
-- [ ] **Step 1: Write failing tests for target modes**
+- [x] **Step 1: Write failing tests for target modes**
 
 ```python
 def test_selector_targets_build_gain_logit_margin_and_top1_fix():
@@ -141,21 +141,21 @@ def test_selector_targets_build_gain_logit_margin_and_top1_fix():
     assert targets["top1_fix"][0, 1] == 0.0
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/test_selector_targets.py::test_selector_targets_build_gain_logit_margin_and_top1_fix -q`
 
 Expected: fails because `selector_targets` does not exist.
 
-- [ ] **Step 3: Implement target construction**
+- [x] **Step 3: Implement target construction**
 
 Implement `build_selector_targets(clean_logits, aug_logits, labels)` returning NLL gain, true-class logit gain, true-class margin gain, and top-1 fix targets.
 
-- [ ] **Step 4: Add target mode to selector ablation spec**
+- [x] **Step 4: Add target mode to selector ablation spec**
 
 Add `target_mode: Literal["nll_gain", "true_logit_gain", "margin_gain", "top1_fix"] = "nll_gain"` and keep old behavior as default.
 
-- [ ] **Step 5: Run targeted tests**
+- [x] **Step 5: Run targeted tests**
 
 Run: `uv run pytest tests/test_selector_targets.py tests/test_selector_training.py -q`
 
@@ -167,7 +167,7 @@ Expected: pass.
 - Modify: `src/learned_tta/selector_training.py`
 - Test: `tests/test_selector_training.py`
 
-- [ ] **Step 1: Write failing test for listwise top-k loss**
+- [x] **Step 1: Write failing test for listwise top-k loss**
 
 ```python
 def test_selector_loss_ablation_includes_listwise_variant():
@@ -177,17 +177,17 @@ def test_selector_loss_ablation_includes_listwise_variant():
     assert "gain_listwise_topk" in names
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/test_selector_training.py::test_selector_loss_ablation_includes_listwise_variant -q`
 
 Expected: fails because the listwise variant is not present.
 
-- [ ] **Step 3: Implement listwise loss option**
+- [x] **Step 3: Implement listwise loss option**
 
 Add `listwise_weight` and `listwise_top_k` to `SelectorLossAblationSpec`, and implement a differentiable loss that compares predicted top-k mass with target top-k membership.
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run: `uv run pytest tests/test_selector_training.py -q`
 
@@ -200,7 +200,7 @@ Expected: pass.
 - Modify: `src/learned_tta/cli.py`
 - Test: `tests/test_selector_training.py`
 
-- [ ] **Step 1: Write failing test for feature/model ablation table columns**
+- [x] **Step 1: Write failing test for feature/model ablation table columns**
 
 ```python
 def test_selector_ablation_table_records_feature_and_target_modes(tmp_path):
@@ -212,17 +212,17 @@ def test_selector_ablation_table_records_feature_and_target_modes(tmp_path):
     assert "model_family" in text
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/test_selector_training.py::test_selector_ablation_table_records_feature_and_target_modes -q`
 
 Expected: fails because columns are missing.
 
-- [ ] **Step 3: Extend ablation variants**
+- [x] **Step 3: Extend ablation variants**
 
 Add variants for image CNN, clean-logit MLP, and gain-listwise clean-logit MLP while keeping the original variants for comparison.
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run: `uv run pytest tests/test_selector_training.py -q`
 
@@ -235,7 +235,7 @@ Expected: pass.
 - Modify: `src/learned_tta/report_builder.py`
 - Test: `tests/test_tta_tuning.py`
 
-- [ ] **Step 1: Write failing test for compute-policy frontier output**
+- [x] **Step 1: Write failing test for compute-policy frontier output**
 
 ```python
 def test_tune_tta_writes_compute_policy_frontier(tmp_path):
@@ -245,17 +245,17 @@ def test_tune_tta_writes_compute_policy_frontier(tmp_path):
     assert "top1_oracle_capture" in summary.compute_policy_frontier_path.read_text()
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/test_tta_tuning.py::test_tune_tta_writes_compute_policy_frontier -q`
 
 Expected: fails because the summary field and file do not exist.
 
-- [ ] **Step 3: Implement compute frontier CSV**
+- [x] **Step 3: Implement compute frontier CSV**
 
 Write `public_val_compute_policy_frontier.csv` with strategy, forwards/image, top-1, NLL, top-1 delta, and oracle-capture fields for tuned strategies.
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run: `uv run pytest tests/test_tta_tuning.py -q`
 
@@ -267,7 +267,7 @@ Expected: pass.
 - Modify: `src/learned_tta/report_builder.py`
 - Test: `tests/test_report_builder.py`
 
-- [ ] **Step 1: Write failing report test**
+- [x] **Step 1: Write failing report test**
 
 ```python
 def test_report_includes_oracle_capture_and_next_goal(tmp_path):
@@ -277,17 +277,17 @@ def test_report_includes_oracle_capture_and_next_goal(tmp_path):
     assert "next target" in text.lower()
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `uv run pytest tests/test_report_builder.py::test_report_includes_oracle_capture_and_next_goal -q`
 
 Expected: fails because the section is absent.
 
-- [ ] **Step 3: Render report section**
+- [x] **Step 3: Render report section**
 
 Add an `Oracle Gap Capture` section that states current learned capture, oracle ceiling, and the next target of `+1.5...2.0 pp` at `17 forwards/image`.
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run: `uv run pytest tests/test_report_builder.py -q`
 
@@ -300,7 +300,7 @@ Expected: pass.
 - Modify: `reports/resnet50_a1_in1k/tables/*.csv`
 - Test: full suite
 
-- [ ] **Step 1: Run refreshed analysis and report build**
+- [x] **Step 1: Run refreshed analysis and report build**
 
 Run:
 
@@ -310,7 +310,7 @@ uv run python -m learned_tta.cli train-selector-ablation --config configs/experi
 uv run python -m learned_tta.cli build-report --config configs/experiment/resnet50_a1_in1k.yaml --device mps --batch-size 64 --num-workers 4
 ```
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 Run:
 
@@ -320,7 +320,7 @@ uv run ruff check .
 uv run ruff format --check src/learned_tta/selector_analysis.py src/learned_tta/selector_features.py src/learned_tta/selector_targets.py src/learned_tta/selector_training.py src/learned_tta/tta_tuning.py src/learned_tta/report_builder.py src/learned_tta/cli.py tests/test_selector_analysis.py tests/test_selector_features.py tests/test_selector_targets.py tests/test_selector_training.py tests/test_tta_tuning.py tests/test_report_builder.py
 ```
 
-- [ ] **Step 3: Commit and push**
+- [x] **Step 3: Commit and push**
 
 Run:
 
