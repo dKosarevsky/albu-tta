@@ -197,6 +197,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             epochs=int(args.epochs),
             learning_rate=float(args.learning_rate),
             device=str(args.device),
+            variant_names=tuple(args.ablation_variant) if args.ablation_variant else None,
+            force=bool(args.force),
         )
     elif command == "tune-tta":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
@@ -643,7 +645,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     train_selector_ablation = subparsers.add_parser(
         "train-selector-ablation",
-        help="Train gain-only, gain+rank, and gain+rank+BCE selector loss ablations.",
+        help="Train selector loss ablation variants.",
     )
     train_selector_ablation.add_argument(
         "--config",
@@ -665,6 +667,16 @@ def _build_parser() -> argparse.ArgumentParser:
     train_selector_ablation.add_argument("--epochs", type=int, default=5)
     train_selector_ablation.add_argument("--learning-rate", type=float, default=1e-3)
     train_selector_ablation.add_argument("--device", default="cpu")
+    train_selector_ablation.add_argument(
+        "--ablation-variant",
+        action="append",
+        help="Run only this selector ablation variant. May be repeated.",
+    )
+    train_selector_ablation.add_argument(
+        "--force",
+        action="store_true",
+        help="Retrain variants even when selector_best.pt and selector_history.csv already exist.",
+    )
 
     tune_tta = subparsers.add_parser(
         "tune-tta",
@@ -1280,6 +1292,8 @@ def _cmd_train_selector_ablation(
     epochs: int,
     learning_rate: float,
     device: str,
+    variant_names: tuple[str, ...] | None,
+    force: bool,
 ) -> None:
     from learned_tta.selector_training import train_selector_loss_ablation_from_config
 
@@ -1300,6 +1314,8 @@ def _cmd_train_selector_ablation(
         epochs=epochs,
         learning_rate=learning_rate,
         device=device,
+        variant_names=variant_names,
+        skip_completed=not force,
     )
     print(f"selector ablation: wrote {summary.results_csv}")
 

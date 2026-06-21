@@ -114,6 +114,51 @@ DEFAULT_SELECTOR_LOSS_ABLATIONS = (
 )
 
 
+def select_selector_loss_ablation_specs(
+    variant_names: tuple[str, ...] | None,
+    specs: tuple[SelectorLossAblationSpec, ...] = DEFAULT_SELECTOR_LOSS_ABLATIONS,
+) -> tuple[SelectorLossAblationSpec, ...]:
+    """Return requested selector ablation specs, preserving request order."""
+
+    if not variant_names:
+        return specs
+    specs_by_name = {spec.variant: spec for spec in specs}
+    unknown = [name for name in variant_names if name not in specs_by_name]
+    if unknown:
+        available = ", ".join(sorted(specs_by_name))
+        requested = ", ".join(unknown)
+        raise ValueError(
+            f"unknown selector ablation variant(s): {requested}; available: {available}"
+        )
+    return tuple(specs_by_name[name] for name in variant_names)
+
+
+def _read_completed_selector_training_summary(output_dir: Path) -> SelectorTrainingSummary | None:
+    checkpoint_path = output_dir / "selector_best.pt"
+    history_csv = output_dir / "selector_history.csv"
+    if not checkpoint_path.exists() or not history_csv.exists():
+        return None
+    history_df = pd.read_csv(history_csv)
+    if history_df.empty:
+        return None
+    metric_column = "val_tta_nll" if "val_tta_nll" in history_df.columns else "val_loss"
+    best_index = history_df[metric_column].astype(float).idxmin()
+    best_row = history_df.loc[best_index]
+    best_val_loss = (
+        float(best_row["val_loss"])
+        if "val_loss" in history_df.columns
+        else float(best_row[metric_column])
+    )
+    return SelectorTrainingSummary(
+        checkpoint_path=checkpoint_path,
+        history_csv=history_csv,
+        best_epoch=int(best_row["epoch"]) if "epoch" in history_df.columns else 0,
+        best_val_loss=best_val_loss,
+        best_val_nll=float(best_row[metric_column]),
+        history=history_df.to_dict("records"),
+    )
+
+
 SelectorBatch = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
@@ -454,44 +499,51 @@ def train_selector_loss_ablation_from_artifacts(
     identity_aug_id: str = "aug_000",
     device: str | torch.device = "cpu",
     specs: tuple[SelectorLossAblationSpec, ...] = DEFAULT_SELECTOR_LOSS_ABLATIONS,
+    variant_names: tuple[str, ...] | None = None,
+    skip_completed: bool = True,
 ) -> SelectorLossAblationSummary:
     """Train selector loss variants and write a compact comparison table."""
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, object]] = []
-    for spec in specs:
+    selected_specs = select_selector_loss_ablation_specs(variant_names, specs=specs)
+    for spec in selected_specs:
         variant_dir = output_dir / spec.variant
-        summary = train_selector_from_artifacts(
-            train_manifest_path=train_manifest_path,
-            val_manifest_path=val_manifest_path,
-            train_targets_path=train_targets_path,
-            val_targets_path=val_targets_path,
-            output_dir=variant_dir,
-            image_size=image_size,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            epochs=epochs,
-            learning_rate=learning_rate,
-            rank_weight=spec.rank_weight,
-            usefulness_head=spec.usefulness_head,
-            usefulness_tau=spec.usefulness_tau,
-            usefulness_weight=spec.usefulness_weight,
-            listwise_weight=spec.listwise_weight,
-            listwise_top_k=spec.listwise_top_k,
-            feature_mode=spec.feature_mode,
-            target_mode=spec.target_mode,
-            model_family=spec.model_family,
-            val_cache_dir=val_cache_dir,
-            val_split=val_split,
-            aug_ids=aug_ids,
-            top_k_grid=top_k_grid,
-            identity_aug_id=identity_aug_id,
-            device=device,
-        )
+        summary = _read_completed_selector_training_summary(variant_dir) if skip_completed else None
+        status = "skipped" if summary is not None else "trained"
+        if summary is None:
+            summary = train_selector_from_artifacts(
+                train_manifest_path=train_manifest_path,
+                val_manifest_path=val_manifest_path,
+                train_targets_path=train_targets_path,
+                val_targets_path=val_targets_path,
+                output_dir=variant_dir,
+                image_size=image_size,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                epochs=epochs,
+                learning_rate=learning_rate,
+                rank_weight=spec.rank_weight,
+                usefulness_head=spec.usefulness_head,
+                usefulness_tau=spec.usefulness_tau,
+                usefulness_weight=spec.usefulness_weight,
+                listwise_weight=spec.listwise_weight,
+                listwise_top_k=spec.listwise_top_k,
+                feature_mode=spec.feature_mode,
+                target_mode=spec.target_mode,
+                model_family=spec.model_family,
+                val_cache_dir=val_cache_dir,
+                val_split=val_split,
+                aug_ids=aug_ids,
+                top_k_grid=top_k_grid,
+                identity_aug_id=identity_aug_id,
+                device=device,
+            )
         rows.append(
             {
                 "variant": spec.variant,
+                "status": status,
                 "rank_weight": spec.rank_weight,
                 "usefulness_head": spec.usefulness_head,
                 "usefulness_tau": spec.usefulness_tau,
@@ -595,6 +647,8 @@ def train_selector_loss_ablation_from_config(
     epochs: int = 5,
     learning_rate: float = 1e-3,
     device: str | torch.device = "cpu",
+    variant_names: tuple[str, ...] | None = None,
+    skip_completed: bool = True,
 ) -> SelectorLossAblationSummary:
     """Load experiment config and train the default selector loss ablation set."""
 
@@ -623,6 +677,8 @@ def train_selector_loss_ablation_from_config(
         epochs=epochs,
         learning_rate=learning_rate,
         device=device,
+        variant_names=variant_names,
+        skip_completed=skip_completed,
     )
 
 

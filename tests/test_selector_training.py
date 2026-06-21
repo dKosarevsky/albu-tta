@@ -283,6 +283,109 @@ def test_train_selector_loss_ablation_from_artifacts_writes_variant_table(
         assert Path(checkpoint_path).exists()
 
 
+def test_train_selector_loss_ablation_from_artifacts_filters_variants(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    summary = train_selector_loss_ablation_from_artifacts(
+        train_manifest_path=selector_training_artifacts["train_manifest"],
+        val_manifest_path=selector_training_artifacts["val_manifest"],
+        train_targets_path=selector_training_artifacts["train_targets"],
+        val_targets_path=selector_training_artifacts["val_targets"],
+        output_dir=tmp_path / "selector_ablation",
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        epochs=1,
+        learning_rate=1e-3,
+        val_cache_dir=selector_training_artifacts["cache_dir"],
+        val_split="public_val",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[1],
+        identity_aug_id="aug_000",
+        device="cpu",
+        variant_names=("clean_logits_mlp_gain_rank",),
+    )
+    table = pd.read_csv(summary.results_csv)
+
+    assert table["variant"].tolist() == ["clean_logits_mlp_gain_rank"]
+    assert table["feature_mode"].tolist() == ["clean_logits"]
+    assert table["model_family"].tolist() == ["mlp"]
+    assert (tmp_path / "selector_ablation" / "clean_logits_mlp_gain_rank").exists()
+    assert not (tmp_path / "selector_ablation" / "gain_only").exists()
+
+
+def test_train_selector_loss_ablation_from_artifacts_rejects_unknown_variant(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    with pytest.raises(ValueError, match="unknown selector ablation variant"):
+        train_selector_loss_ablation_from_artifacts(
+            train_manifest_path=selector_training_artifacts["train_manifest"],
+            val_manifest_path=selector_training_artifacts["val_manifest"],
+            train_targets_path=selector_training_artifacts["train_targets"],
+            val_targets_path=selector_training_artifacts["val_targets"],
+            output_dir=tmp_path / "selector_ablation",
+            image_size=16,
+            batch_size=2,
+            num_workers=0,
+            epochs=1,
+            learning_rate=1e-3,
+            val_cache_dir=selector_training_artifacts["cache_dir"],
+            val_split="public_val",
+            aug_ids=["aug_000", "aug_001"],
+            top_k_grid=[1],
+            identity_aug_id="aug_000",
+            device="cpu",
+            variant_names=("does_not_exist",),
+        )
+
+
+def test_train_selector_loss_ablation_from_artifacts_skips_completed_variant(
+    tmp_path: Path,
+    selector_training_artifacts: dict[str, Path],
+) -> None:
+    output_dir = tmp_path / "selector_ablation"
+    variant_dir = output_dir / "gain_only"
+    variant_dir.mkdir(parents=True)
+    checkpoint_path = variant_dir / "selector_best.pt"
+    checkpoint_path.write_bytes(b"already-trained")
+    pd.DataFrame(
+        [
+            {"epoch": 1, "val_loss": 0.9, "val_tta_nll": 0.7},
+            {"epoch": 2, "val_loss": 0.8, "val_tta_nll": 0.6},
+        ]
+    ).to_csv(variant_dir / "selector_history.csv", index=False)
+
+    summary = train_selector_loss_ablation_from_artifacts(
+        train_manifest_path=selector_training_artifacts["train_manifest"],
+        val_manifest_path=selector_training_artifacts["val_manifest"],
+        train_targets_path=selector_training_artifacts["train_targets"],
+        val_targets_path=selector_training_artifacts["val_targets"],
+        output_dir=output_dir,
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        epochs=1,
+        learning_rate=1e-3,
+        val_cache_dir=selector_training_artifacts["cache_dir"],
+        val_split="public_val",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[1],
+        identity_aug_id="aug_000",
+        device="cpu",
+        variant_names=("gain_only",),
+    )
+    table = pd.read_csv(summary.results_csv)
+
+    assert table["variant"].tolist() == ["gain_only"]
+    assert table["status"].tolist() == ["skipped"]
+    assert table["best_epoch"].tolist() == [2]
+    assert table["best_val_loss"].tolist() == pytest.approx([0.8])
+    assert table["best_val_nll"].tolist() == pytest.approx([0.6])
+    assert checkpoint_path.read_bytes() == b"already-trained"
+
+
 def test_default_selector_loss_ablation_specs_keep_image_feature_mode() -> None:
     assert {spec.feature_mode for spec in DEFAULT_SELECTOR_LOSS_ABLATIONS} == {
         "image",
@@ -340,12 +443,17 @@ def test_train_selector_loss_ablation_cli_writes_variant_table(
             "0",
             "--image-size",
             "16",
+            "--ablation-variant",
+            "clean_logits_mlp_gain_rank",
+            "--force",
         ]
     )
     captured = capsys.readouterr()
+    table = pd.read_csv(output_dir / "selector_loss_ablation.csv")
 
     assert "selector ablation: wrote" in captured.out
     assert (output_dir / "selector_loss_ablation.csv").exists()
+    assert table["variant"].tolist() == ["clean_logits_mlp_gain_rank"]
 
 
 def _write_manifest(root: Path, split: str, count: int) -> Path:

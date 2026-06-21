@@ -194,9 +194,12 @@ The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image bud
 
 | variant | rank_weight | usefulness_head | usefulness_tau | usefulness_weight | feature_mode | target_mode | model_family | listwise_weight | listwise_top_k | best_epoch | best_val_loss | best_val_nll |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gain_only | 0 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 4 | 0.14985 | 0.785162 |
+| gain_only | 0 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 1 | 0.150008 | 0.783793 |
 | gain_rank | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.285051 | 0.748678 |
 | gain_rank_bce | 0.2 | True | 0.01 | 0.05 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.308087 | 0.751128 |
+| gain_listwise_topk | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0.1 | 16 | 3 | 0.728801 | 0.792789 |
+| clean_logits_mlp_gain_rank | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0 | 1 | 1 | 2.25635 | 0.747847 |
+| clean_logits_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0.1 | 16 | 1 | 2.35949 | 0.751865 |
 
 ## Selector Prediction Diagnostics
 
