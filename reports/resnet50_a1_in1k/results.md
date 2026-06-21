@@ -101,6 +101,25 @@ The NLL-gain variant is weaker on top-1 but better on NLL.
 | pairwise_nll_gain | nll_gain | val_tta_nll | 5 | 0.8354 | 0.644983 |
 | pairwise_top1_delta | top1_delta | val_tta_top1 | 4 | 0.8382 | 0.661144 |
 
+## Pairwise Private Evaluation
+
+- Table: `tables/pairwise_private_metrics.csv`
+- Error analysis: `tables/pairwise_private_top1_delta_error_analysis.csv`
+
+This is the frozen private check for the public-val-trained pairwise rankers at
+k=16. The public-val-selected top-1-delta ranker reaches 0.82728 private top-1,
+which is +2.26 pp vs clean and +1.72 pp vs the old private learned top-k
+selector. It captures 32.2% of the private same-k oracle top-1 gap and remains
+4.764 pp below oracle@k16. The NLL-gain ranker is slightly weaker on top-1
+(0.82456) but stronger on NLL (0.69459 vs 0.72518).
+
+| strategy | top1 | top5 | nll | ece | forwards_per_image | top1_delta_pp_vs_clean | top1_gap_pp_to_oracle | top1_oracle_capture |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clean | 0.80468 | 0.94592 | 0.939441 | 0.0867522 | 1 | 0 | 7.024 | 0 |
+| pairwise_nll_gain | 0.82456 | 0.94404 | 0.69459 | 0.0283946 | 17 | 1.988 | 5.036 | 0.28303 |
+| pairwise_top1_delta | 0.82728 | 0.947 | 0.725177 | 0.033261 | 17 | 2.26 | 4.764 | 0.321754 |
+| oracle_topk_uniform | 0.87492 | 0.96312 | 0.489845 | 0.0135182 | 17 | 7.024 | 0 | 1 |
+
 ## Compute
 
 | split | strategy | forwards_per_image | relative_compute_vs_all |

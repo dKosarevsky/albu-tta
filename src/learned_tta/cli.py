@@ -258,6 +258,19 @@ def main(argv: Sequence[str] | None = None) -> None:
             positive_gain_weight=float(args.positive_gain_weight),
             device=str(args.device),
         )
+    elif command == "evaluate-pairwise-selector":
+        _cmd_evaluate_pairwise_selector(
+            manifest_path=Path(args.manifest),
+            cache_dir=Path(args.cache_dir),
+            checkpoint_path=Path(args.checkpoint),
+            output_dir=Path(args.output_dir),
+            identity_aug_id=str(args.identity_aug_id),
+            features_path=_optional_path(args.features),
+            top_k=int(args.top_k),
+            batch_size=int(args.batch_size),
+            strategy_name=str(args.strategy_name),
+            device=str(args.device),
+        )
     elif command == "tune-tta":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_tune_tta(
@@ -821,6 +834,21 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_comparison.add_argument("--usefulness-weight", type=float, default=0.0)
     train_pairwise_comparison.add_argument("--positive-gain-weight", type=float, default=0.0)
     train_pairwise_comparison.add_argument("--device", default="cpu")
+
+    evaluate_pairwise = subparsers.add_parser(
+        "evaluate-pairwise-selector",
+        help="Evaluate a pairwise selector checkpoint on a cached split.",
+    )
+    evaluate_pairwise.add_argument("--manifest", required=True)
+    evaluate_pairwise.add_argument("--cache-dir", required=True)
+    evaluate_pairwise.add_argument("--checkpoint", required=True)
+    evaluate_pairwise.add_argument("--output-dir", required=True)
+    evaluate_pairwise.add_argument("--identity-aug-id", default="aug_000")
+    evaluate_pairwise.add_argument("--features")
+    evaluate_pairwise.add_argument("--top-k", type=int, default=16)
+    evaluate_pairwise.add_argument("--batch-size", type=int, default=8192)
+    evaluate_pairwise.add_argument("--strategy-name", default="pairwise_topk_uniform")
+    evaluate_pairwise.add_argument("--device", default="cpu")
 
     tune_tta = subparsers.add_parser(
         "tune-tta",
@@ -1602,6 +1630,35 @@ def _cmd_train_pairwise_selector_comparison(
         device=device,
     )
     print(f"pairwise selector comparison: wrote {summary.results_csv}")
+
+
+def _cmd_evaluate_pairwise_selector(
+    manifest_path: Path,
+    cache_dir: Path,
+    checkpoint_path: Path,
+    output_dir: Path,
+    identity_aug_id: str,
+    features_path: Path | None,
+    top_k: int,
+    batch_size: int,
+    strategy_name: str,
+    device: str,
+) -> None:
+    from learned_tta.pairwise_selector import evaluate_pairwise_selector_from_artifacts
+
+    summary = evaluate_pairwise_selector_from_artifacts(
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        checkpoint_path=checkpoint_path,
+        output_dir=output_dir,
+        identity_aug_id=identity_aug_id,
+        features_path=features_path,
+        top_k=top_k,
+        batch_size=batch_size,
+        strategy_name=strategy_name,
+        device=device,
+    )
+    print(f"pairwise selector evaluation: wrote {summary.metrics_csv}")
 
 
 def _optional_path(value: str | None) -> Path | None:

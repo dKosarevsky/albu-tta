@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -12,9 +13,15 @@ import torch
 
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.data import load_manifest
+from learned_tta.reporting import build_metrics_table
+from learned_tta.selector_error_analysis import build_selector_error_analysis_table
 from learned_tta.selector_features import clean_logit_uncertainty_features, load_selector_features
 from learned_tta.targets import load_selector_targets
-from learned_tta.tta_eval import evaluate_learned_topk_uniform
+from learned_tta.tta_eval import (
+    evaluate_clean,
+    evaluate_learned_topk_uniform,
+    evaluate_oracle_topk_uniform,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +65,25 @@ class PairwiseComparisonSummary:
 
     results_csv: Path
     rows: list[dict[str, object]]
+
+
+@dataclass(frozen=True, slots=True)
+class PairwiseEvaluationSummary:
+    """Summary of a pairwise selector inference/evaluation run."""
+
+    metrics_csv: Path
+    scores_npz: Path
+    error_analysis_csv: Path
+    metrics: dict[str, float]
+
+
+@dataclass(frozen=True, slots=True)
+class _PairwiseCheckpoint:
+    model_state_dict: Mapping[str, Any]
+    input_dim: int
+    hidden_dim: int
+    aug_ids: list[str]
+    feature_names: list[str]
 
 
 class PairwiseSelectorMLP(torch.nn.Module):
@@ -125,14 +151,6 @@ def build_pairwise_feature_bundle(
         image_features.append(pretrained.features)
         image_feature_names.extend(pretrained.feature_names)
 
-    per_image_features = np.concatenate(image_features, axis=1).astype(np.float32)
-    aug_onehot = np.eye(len(targets.aug_ids), dtype=np.float32)
-    repeated_image_features = np.repeat(per_image_features, repeats=len(targets.aug_ids), axis=0)
-    tiled_aug_features = np.tile(aug_onehot, (len(image_ids), 1))
-    pairwise_features = np.concatenate([repeated_image_features, tiled_aug_features], axis=1)
-    row_image_indices = np.repeat(np.arange(len(image_ids), dtype=np.int64), len(targets.aug_ids))
-    row_aug_indices = np.tile(np.arange(len(targets.aug_ids), dtype=np.int64), len(image_ids))
-
     if target_mode == "nll_gain":
         target_matrix = targets.gain.astype(np.float32)
     elif target_mode == "top1_delta":
@@ -146,19 +164,165 @@ def build_pairwise_feature_bundle(
     else:
         raise ValueError("target_mode must be 'nll_gain' or 'top1_delta'")
 
-    return PairwiseFeatureBundle(
+    per_image_features = np.concatenate(image_features, axis=1).astype(np.float32)
+    return _build_pairwise_bundle_from_image_features(
         image_ids=image_ids,
         aug_ids=targets.aug_ids,
-        features=pairwise_features.astype(np.float32),
-        feature_names=[
-            *image_feature_names,
-            *[f"aug_onehot:{aug_id}" for aug_id in targets.aug_ids],
-        ],
-        targets=target_matrix.reshape(-1).astype(np.float32),
+        per_image_features=per_image_features,
+        image_feature_names=image_feature_names,
         target_matrix=target_matrix,
-        row_image_indices=row_image_indices,
-        row_aug_indices=row_aug_indices,
         class_idxs=class_idxs,
+    )
+
+
+def build_pairwise_inference_bundle(
+    manifest_path: Path,
+    cache_dir: Path,
+    aug_ids: list[str],
+    identity_aug_id: str,
+    features_path: Path | None = None,
+) -> PairwiseFeatureBundle:
+    """Build flattened pairwise features for inference without selector targets."""
+
+    records = load_manifest(manifest_path)
+    if not records:
+        raise ValueError("manifest must contain at least one row")
+    image_ids = [record.image_id for record in records]
+    split = records[0].split
+    if any(record.split != split for record in records):
+        raise ValueError("manifest must contain a single split")
+    if identity_aug_id not in aug_ids:
+        raise ValueError("identity augmentation must be present in aug_ids")
+
+    identity_shard = _read_validated_shard(
+        cache_dir=cache_dir,
+        split=split,
+        aug_id=identity_aug_id,
+        image_ids=image_ids,
+    )
+    class_idxs = np.asarray(identity_shard.metadata["class_idx"].tolist(), dtype=np.int64)
+    clean_features, clean_names = clean_logit_uncertainty_features(
+        identity_shard.logits,
+        class_idxs,
+    )
+    image_features = [clean_features]
+    image_feature_names = list(clean_names)
+
+    if features_path is not None:
+        pretrained = load_selector_features(features_path)
+        if pretrained.split != split:
+            raise ValueError("pretrained feature split must match manifest split")
+        if pretrained.image_ids != image_ids:
+            raise ValueError("pretrained feature image_ids must match manifest image_ids")
+        image_features.append(pretrained.features)
+        image_feature_names.extend(pretrained.feature_names)
+
+    per_image_features = np.concatenate(image_features, axis=1).astype(np.float32)
+    target_matrix = np.zeros((len(image_ids), len(aug_ids)), dtype=np.float32)
+    return _build_pairwise_bundle_from_image_features(
+        image_ids=image_ids,
+        aug_ids=aug_ids,
+        per_image_features=per_image_features,
+        image_feature_names=image_feature_names,
+        target_matrix=target_matrix,
+        class_idxs=class_idxs,
+    )
+
+
+def evaluate_pairwise_selector_from_artifacts(
+    manifest_path: Path,
+    cache_dir: Path,
+    checkpoint_path: Path,
+    output_dir: Path,
+    identity_aug_id: str = "aug_000",
+    features_path: Path | None = None,
+    top_k: int = 16,
+    batch_size: int = 8192,
+    strategy_name: str = "pairwise_topk_uniform",
+    device: str | torch.device = "cpu",
+) -> PairwiseEvaluationSummary:
+    """Evaluate a pairwise selector checkpoint on a target-free cached split."""
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    torch_device = torch.device(device)
+    checkpoint = _load_pairwise_checkpoint(checkpoint_path, device=torch_device)
+    model = PairwiseSelectorMLP(
+        input_dim=checkpoint.input_dim,
+        hidden_dim=checkpoint.hidden_dim,
+    )
+    model.load_state_dict(checkpoint.model_state_dict)
+    model.to(torch_device)
+
+    bundle = build_pairwise_inference_bundle(
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        aug_ids=checkpoint.aug_ids,
+        identity_aug_id=identity_aug_id,
+        features_path=features_path,
+    )
+    if bundle.feature_names != checkpoint.feature_names:
+        raise ValueError("checkpoint feature_names must match inference feature_names")
+
+    row_scores = predict_pairwise_scores(
+        model=model,
+        bundle=bundle,
+        batch_size=batch_size,
+        device=torch_device,
+    )
+    predicted_gain = bundle.score_matrix(row_scores)
+    split = load_manifest(manifest_path)[0].split
+    logits_by_aug = _read_logits_by_aug(
+        cache_dir=cache_dir,
+        split=split,
+        aug_ids=bundle.aug_ids,
+        image_ids=bundle.image_ids,
+    )
+    metrics_by_strategy = {
+        "clean": evaluate_clean(
+            logits_by_aug=logits_by_aug,
+            class_idxs=bundle.class_idxs,
+            identity_aug_id=identity_aug_id,
+        ),
+        strategy_name: evaluate_learned_topk_uniform(
+            logits_by_aug=logits_by_aug,
+            class_idxs=bundle.class_idxs,
+            aug_ids=bundle.aug_ids,
+            predicted_gain=predicted_gain,
+            identity_aug_id=identity_aug_id,
+            k=top_k,
+        ),
+        "oracle_topk_uniform": evaluate_oracle_topk_uniform(
+            logits_by_aug=logits_by_aug,
+            class_idxs=bundle.class_idxs,
+            identity_aug_id=identity_aug_id,
+            k=top_k,
+        ),
+    }
+    metrics_csv = output_dir / "pairwise_selector_metrics.csv"
+    build_metrics_table(metrics_by_strategy).to_csv(metrics_csv, index=False)
+    scores_npz = output_dir / "pairwise_selector_scores.npz"
+    np.savez_compressed(
+        scores_npz,
+        image_ids=np.asarray(bundle.image_ids, dtype=object),
+        aug_ids=np.asarray(bundle.aug_ids, dtype=object),
+        predicted_gain=predicted_gain.astype(np.float32),
+    )
+    error_analysis_csv = output_dir / "pairwise_selector_error_analysis.csv"
+    build_selector_error_analysis_table(
+        logits_by_aug=logits_by_aug,
+        class_idxs=bundle.class_idxs,
+        aug_ids=bundle.aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id=identity_aug_id,
+        k=top_k,
+        output_path=error_analysis_csv,
+    )
+    return PairwiseEvaluationSummary(
+        metrics_csv=metrics_csv,
+        scores_npz=scores_npz,
+        error_analysis_csv=error_analysis_csv,
+        metrics=dict(metrics_by_strategy[strategy_name]),
     )
 
 
@@ -479,6 +643,36 @@ def _is_better_pairwise_metric(current: float, best: float, selection_metric: st
     return current < best
 
 
+def _build_pairwise_bundle_from_image_features(
+    image_ids: list[str],
+    aug_ids: list[str],
+    per_image_features: np.ndarray,
+    image_feature_names: list[str],
+    target_matrix: np.ndarray,
+    class_idxs: np.ndarray,
+) -> PairwiseFeatureBundle:
+    aug_onehot = np.eye(len(aug_ids), dtype=np.float32)
+    repeated_image_features = np.repeat(per_image_features, repeats=len(aug_ids), axis=0)
+    tiled_aug_features = np.tile(aug_onehot, (len(image_ids), 1))
+    pairwise_features = np.concatenate([repeated_image_features, tiled_aug_features], axis=1)
+    row_image_indices = np.repeat(np.arange(len(image_ids), dtype=np.int64), len(aug_ids))
+    row_aug_indices = np.tile(np.arange(len(aug_ids), dtype=np.int64), len(image_ids))
+    return PairwiseFeatureBundle(
+        image_ids=image_ids,
+        aug_ids=aug_ids,
+        features=pairwise_features.astype(np.float32),
+        feature_names=[
+            *image_feature_names,
+            *[f"aug_onehot:{aug_id}" for aug_id in aug_ids],
+        ],
+        targets=target_matrix.reshape(-1).astype(np.float32),
+        target_matrix=target_matrix.astype(np.float32),
+        row_image_indices=row_image_indices,
+        row_aug_indices=row_aug_indices,
+        class_idxs=class_idxs,
+    )
+
+
 def _best_topk_metrics(
     logits_by_aug: dict[str, np.ndarray],
     class_idxs: np.ndarray,
@@ -513,6 +707,22 @@ def _read_validated_shard(
     if shard_image_ids != image_ids:
         raise ValueError("teacher shard image_ids must match manifest image_ids")
     return shard
+
+
+def _load_pairwise_checkpoint(checkpoint_path: Path, device: torch.device) -> _PairwiseCheckpoint:
+    raw_checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    checkpoint = cast("dict[str, Any]", raw_checkpoint)
+    required = {"model_state_dict", "input_dim", "hidden_dim", "aug_ids", "feature_names"}
+    missing = sorted(required - set(checkpoint))
+    if missing:
+        raise ValueError(f"pairwise checkpoint is missing required keys: {missing}")
+    return _PairwiseCheckpoint(
+        model_state_dict=cast("Mapping[str, Any]", checkpoint["model_state_dict"]),
+        input_dim=int(checkpoint["input_dim"]),
+        hidden_dim=int(checkpoint["hidden_dim"]),
+        aug_ids=[str(aug_id) for aug_id in checkpoint["aug_ids"]],
+        feature_names=[str(name) for name in checkpoint["feature_names"]],
+    )
 
 
 def _top1_delta_targets(
