@@ -210,6 +210,8 @@ The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image bud
 | gain_listwise_topk | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0.1 | 16 | 3 | 0.728801 | 0.792789 |
 | clean_logits_mlp_gain_rank | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0 | 1 | 1 | 2.25635 | 0.747847 |
 | clean_logits_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | clean_logits | nll_gain | mlp | 0.1 | 16 | 1 | 2.35949 | 0.751865 |
+| pretrained_mlp_gain_rank | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0 | 1 | 1 | 0.289176 | 0.763589 |
+| pretrained_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0.1 | 16 | 5 | 0.724327 | 0.749623 |
 
 ## Selector Prediction Diagnostics
 

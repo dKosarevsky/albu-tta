@@ -5,3 +5,5 @@ gain_rank_bce,0.2,True,0.01,0.05,image,nll_gain,image_cnn,0.0,1,2,0.308086598221
 gain_listwise_topk,0.2,False,0.01,0.0,image,nll_gain,image_cnn,0.1,16,3,0.7288011425658117,0.792788565158844
 clean_logits_mlp_gain_rank,0.2,False,0.01,0.0,clean_logits,nll_gain,mlp,0.0,1,1,2.2563456694285073,0.7478473782539368
 clean_logits_mlp_gain_listwise,0.2,False,0.01,0.0,clean_logits,nll_gain,mlp,0.1,16,1,2.3594855070114136,0.7518652677536011
+pretrained_mlp_gain_rank,0.2,False,0.01,0.0,pretrained,nll_gain,mlp,0.0,1,1,0.2891757388909657,0.7635892033576965
+pretrained_mlp_gain_listwise,0.2,False,0.01,0.0,pretrained,nll_gain,mlp,0.1,16,5,0.7243274450302124,0.7496232390403748
