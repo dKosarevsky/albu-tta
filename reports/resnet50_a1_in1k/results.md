@@ -55,6 +55,27 @@ Current selector baseline: `learned_topk_uniform` with the tuned `k` above. `lea
 | global_weighted_tta | 0.0102 | 0.00392 | -0.168406 | -0.0577776 | 100 | 1 |
 | class_weighted_tta | 0.00068 | -0.00464 | -0.0996776 | -0.0567231 | 100 | 1 |
 
+## Oracle Gap Capture
+
+- Table: `tables/compute_policy_frontier.csv`
+
+Current public-val learned selector capture is 9.6% of the same-k top-1 oracle gap at k=16 (0.7 pp vs clean).
+The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image budget.
+
+| strategy | k | top1 | top5 | nll | ece | forwards_per_image | relative_compute_vs_all | top1_delta_pp_vs_clean | top1_oracle_delta_pp | top1_oracle_capture | nll_delta_vs_clean | nll_oracle_delta | nll_oracle_capture |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clean | 0 | 0.812 | 0.9494 | 0.855997 | 0.0766943 | 1 | 0.01 | 0 | 0 | 0 | 0 | 0 | 0 |
+| learned_topk_uniform | 1 | 0.8098 | 0.9512 | 0.815317 | 0.0561848 | 2 | 0.02 | -0.22 | 7.88 | -0.0279188 | -0.0406809 | -0.472997 | 0.0860066 |
+| oracle_topk_uniform | 1 | 0.8908 | 0.9782 | 0.383 | 0.0140173 | 2 | 0.02 | 7.88 | 7.88 | 1 | -0.472997 | -0.472997 | 1 |
+| learned_topk_uniform | 2 | 0.81 | 0.9528 | 0.80689 | 0.0479025 | 3 | 0.03 | -0.2 | 9.7 | -0.0206186 | -0.0491077 | -0.501373 | 0.0979465 |
+| oracle_topk_uniform | 2 | 0.909 | 0.9774 | 0.354625 | 0.022276 | 3 | 0.03 | 9.7 | 9.7 | 1 | -0.501373 | -0.501373 | 1 |
+| learned_topk_uniform | 4 | 0.8132 | 0.9528 | 0.789278 | 0.0483654 | 5 | 0.05 | 0.12 | 9.58 | 0.0125261 | -0.066719 | -0.500196 | 0.133386 |
+| oracle_topk_uniform | 4 | 0.9078 | 0.976 | 0.355801 | 0.0160431 | 5 | 0.05 | 9.58 | 9.58 | 1 | -0.500196 | -0.500196 | 1 |
+| learned_topk_uniform | 8 | 0.8154 | 0.9564 | 0.760713 | 0.0433552 | 9 | 0.09 | 0.34 | 8.62 | 0.0394432 | -0.0952849 | -0.471652 | 0.202024 |
+| oracle_topk_uniform | 8 | 0.8982 | 0.9736 | 0.384345 | 0.0122182 | 9 | 0.09 | 8.62 | 8.62 | 1 | -0.471652 | -0.471652 | 1 |
+| learned_topk_uniform | 16 | 0.819 | 0.9576 | 0.745703 | 0.0405037 | 17 | 0.17 | 0.7 | 7.3 | 0.0958904 | -0.110295 | -0.419889 | 0.262676 |
+| oracle_topk_uniform | 16 | 0.885 | 0.9704 | 0.436109 | 0.0115457 | 17 | 0.17 | 7.3 | 7.3 | 1 | -0.419889 | -0.419889 | 1 |
+
 ## Compute
 
 | split | strategy | forwards_per_image | relative_compute_vs_all |
@@ -171,11 +192,11 @@ Current selector baseline: `learned_topk_uniform` with the tuned `k` above. `lea
 
 - Table: `tables/selector_loss_ablation.csv`
 
-| variant | rank_weight | usefulness_head | usefulness_tau | usefulness_weight | best_epoch | best_val_loss | best_val_nll |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| gain_only | 0 | False | 0.01 | 0 | 4 | 0.14985 | 0.785162 |
-| gain_rank | 0.2 | False | 0.01 | 0 | 2 | 0.285051 | 0.748678 |
-| gain_rank_bce | 0.2 | True | 0.01 | 0.05 | 2 | 0.308087 | 0.751128 |
+| variant | rank_weight | usefulness_head | usefulness_tau | usefulness_weight | feature_mode | target_mode | model_family | listwise_weight | listwise_top_k | best_epoch | best_val_loss | best_val_nll |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| gain_only | 0 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 4 | 0.14985 | 0.785162 |
+| gain_rank | 0.2 | False | 0.01 | 0 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.285051 | 0.748678 |
+| gain_rank_bce | 0.2 | True | 0.01 | 0.05 | image | nll_gain | image_cnn | 0 | 1 | 2 | 0.308087 | 0.751128 |
 
 ## Selector Prediction Diagnostics
 

@@ -14,7 +14,8 @@ from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest
-from learned_tta.selector_model import SelectorCNN
+from learned_tta.selector_features import clean_logit_features
+from learned_tta.selector_model import SelectorCNN, SelectorMLP
 from learned_tta.split_policy import validate_public_tuning_split
 from learned_tta.targets import SavedSelectorTargets, TargetStats, load_selector_targets
 from learned_tta.train_selector import (
@@ -53,6 +54,11 @@ class SelectorLossAblationSpec:
     usefulness_head: bool
     usefulness_tau: float = 0.01
     usefulness_weight: float = 0.0
+    feature_mode: str = "image"
+    target_mode: str = "nll_gain"
+    model_family: str = "image_cnn"
+    listwise_weight: float = 0.0
+    listwise_top_k: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +87,29 @@ DEFAULT_SELECTOR_LOSS_ABLATIONS = (
         rank_weight=0.2,
         usefulness_head=True,
         usefulness_weight=0.05,
+    ),
+    SelectorLossAblationSpec(
+        variant="gain_listwise_topk",
+        rank_weight=0.2,
+        usefulness_head=False,
+        listwise_weight=0.1,
+        listwise_top_k=16,
+    ),
+    SelectorLossAblationSpec(
+        variant="clean_logits_mlp_gain_rank",
+        rank_weight=0.2,
+        usefulness_head=False,
+        feature_mode="clean_logits",
+        model_family="mlp",
+    ),
+    SelectorLossAblationSpec(
+        variant="clean_logits_mlp_gain_listwise",
+        rank_weight=0.2,
+        usefulness_head=False,
+        feature_mode="clean_logits",
+        model_family="mlp",
+        listwise_weight=0.1,
+        listwise_top_k=16,
     ),
 )
 
@@ -122,6 +151,29 @@ class SelectorImageTargetDataset(torch.utils.data.Dataset[SelectorBatch]):
         return image_tensor, target_tensor, gain_tensor
 
 
+class SelectorFeatureTargetDataset(torch.utils.data.Dataset[SelectorBatch]):
+    """Vector-feature selector dataset paired with precomputed target rows."""
+
+    def __init__(
+        self,
+        features: np.ndarray,
+        targets: SavedSelectorTargets,
+    ) -> None:
+        if features.shape[0] != targets.target_z.shape[0]:
+            raise ValueError("feature row count must match selector target rows")
+        self.features = features.astype(np.float32)
+        self.targets = targets
+
+    def __len__(self) -> int:
+        return int(self.features.shape[0])
+
+    def __getitem__(self, index: int) -> SelectorBatch:
+        feature_tensor = torch.from_numpy(self.features[index].astype(np.float32))
+        target_tensor = torch.from_numpy(self.targets.target_z[index].astype(np.float32))
+        gain_tensor = torch.from_numpy(self.targets.gain[index].astype(np.float32))
+        return feature_tensor, target_tensor, gain_tensor
+
+
 def make_selector_dataloader(
     manifest_path: Path,
     targets_path: Path,
@@ -145,6 +197,45 @@ def make_selector_dataloader(
     )
 
 
+def make_clean_logit_selector_dataloader(
+    manifest_path: Path,
+    targets_path: Path,
+    cache_dir: Path,
+    identity_aug_id: str,
+    batch_size: int,
+    num_workers: int,
+    shuffle: bool,
+) -> tuple[torch.utils.data.DataLoader[SelectorBatch], int]:
+    """Build a selector DataLoader using clean-logit summary features."""
+
+    records = load_manifest(manifest_path)
+    targets = load_selector_targets(targets_path)
+    if not records:
+        raise ValueError("manifest must contain at least one row")
+    manifest_image_ids = [record.image_id for record in records]
+    if targets.image_ids != manifest_image_ids:
+        raise ValueError("selector target image_ids must match manifest image_ids")
+    split = records[0].split
+    if any(record.split != split for record in records):
+        raise ValueError("manifest must contain a single split")
+    paths = teacher_shard_paths(cache_dir, split=split, aug_id=identity_aug_id)
+    shard = read_teacher_shard(paths.metadata_path, paths.logits_path)
+    shard_image_ids = [str(image_id) for image_id in shard.metadata["image_id"].tolist()]
+    if shard_image_ids != manifest_image_ids:
+        raise ValueError("clean-logit shard image_ids must match manifest image_ids")
+    features, _ = clean_logit_features(shard.logits)
+    dataset = SelectorFeatureTargetDataset(features=features, targets=targets)
+    return (
+        torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=shuffle,
+        ),
+        int(features.shape[1]),
+    )
+
+
 def train_selector_from_artifacts(
     train_manifest_path: Path,
     val_manifest_path: Path,
@@ -160,6 +251,11 @@ def train_selector_from_artifacts(
     usefulness_head: bool = False,
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 1,
+    feature_mode: str = "image",
+    target_mode: str = "nll_gain",
+    model_family: str = "image_cnn",
     val_cache_dir: Path | None = None,
     val_split: str = "public_val",
     aug_ids: list[str] | None = None,
@@ -181,24 +277,63 @@ def train_selector_from_artifacts(
     torch_device = torch.device(device)
 
     identity_index = aug_ids.index(identity_aug_id)
-    model = SelectorCNN(output_dim=output_dim, usefulness_head=usefulness_head).to(torch_device)
+    train_dataloader: torch.utils.data.DataLoader[SelectorBatch]
+    val_dataloader: torch.utils.data.DataLoader[SelectorBatch]
+    if feature_mode == "image":
+        if model_family != "image_cnn":
+            raise ValueError("image feature_mode requires model_family='image_cnn'")
+        model: torch.nn.Module = SelectorCNN(
+            output_dim=output_dim,
+            usefulness_head=usefulness_head,
+        ).to(torch_device)
+        train_dataloader = make_selector_dataloader(
+            manifest_path=train_manifest_path,
+            targets_path=train_targets_path,
+            image_size=image_size,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=True,
+        )
+        val_dataloader = make_selector_dataloader(
+            manifest_path=val_manifest_path,
+            targets_path=val_targets_path,
+            image_size=image_size,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+        )
+    elif feature_mode == "clean_logits":
+        if model_family != "mlp":
+            raise ValueError("clean_logits feature_mode requires model_family='mlp'")
+        if val_cache_dir is None:
+            raise ValueError("cache_dir is required for clean_logits feature_mode")
+        train_dataloader, input_dim = make_clean_logit_selector_dataloader(
+            manifest_path=train_manifest_path,
+            targets_path=train_targets_path,
+            cache_dir=val_cache_dir,
+            identity_aug_id=identity_aug_id,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=True,
+        )
+        val_dataloader, _ = make_clean_logit_selector_dataloader(
+            manifest_path=val_manifest_path,
+            targets_path=val_targets_path,
+            cache_dir=val_cache_dir,
+            identity_aug_id=identity_aug_id,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+        )
+        model = SelectorMLP(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            usefulness_head=usefulness_head,
+        ).to(torch_device)
+    else:
+        raise ValueError("feature_mode must be 'image' or 'clean_logits'")
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    train_dataloader = make_selector_dataloader(
-        manifest_path=train_manifest_path,
-        targets_path=train_targets_path,
-        image_size=image_size,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-    val_dataloader = make_selector_dataloader(
-        manifest_path=val_manifest_path,
-        targets_path=val_targets_path,
-        image_size=image_size,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        shuffle=False,
-    )
 
     checkpoint_path = output_dir / "selector_best.pt"
     history_csv = output_dir / "selector_history.csv"
@@ -224,6 +359,8 @@ def train_selector_from_artifacts(
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
             identity_index=identity_index,
+            listwise_weight=listwise_weight,
+            listwise_top_k=listwise_top_k,
         )
         val_metrics = evaluate_regression(
             model=model,
@@ -233,6 +370,8 @@ def train_selector_from_artifacts(
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
             identity_index=identity_index,
+            listwise_weight=listwise_weight,
+            listwise_top_k=listwise_top_k,
         )
         history_row = {
             "epoch": float(epoch),
@@ -240,10 +379,15 @@ def train_selector_from_artifacts(
             "train_regression_loss": train_metrics["regression_loss"],
             "train_rank_loss": train_metrics["rank_loss"],
             "train_usefulness_bce": train_metrics["usefulness_bce"],
+            "train_listwise_topk_loss": train_metrics["listwise_topk_loss"],
+            "feature_mode": feature_mode,
+            "target_mode": target_mode,
+            "model_family": model_family,
             "val_loss": val_metrics["loss"],
             "val_regression_loss": val_metrics["regression_loss"],
             "val_rank_loss": val_metrics["rank_loss"],
             "val_usefulness_bce": val_metrics["usefulness_bce"],
+            "val_listwise_topk_loss": val_metrics["listwise_topk_loss"],
             "val_spearman": val_metrics["spearman"],
         }
         checkpoint_metric = val_metrics["loss"]
@@ -274,6 +418,8 @@ def train_selector_from_artifacts(
             usefulness_head=usefulness_head,
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
+            listwise_weight=listwise_weight,
+            listwise_top_k=listwise_top_k,
         )
         history.append(history_row)
 
@@ -331,6 +477,11 @@ def train_selector_loss_ablation_from_artifacts(
             usefulness_head=spec.usefulness_head,
             usefulness_tau=spec.usefulness_tau,
             usefulness_weight=spec.usefulness_weight,
+            listwise_weight=spec.listwise_weight,
+            listwise_top_k=spec.listwise_top_k,
+            feature_mode=spec.feature_mode,
+            target_mode=spec.target_mode,
+            model_family=spec.model_family,
             val_cache_dir=val_cache_dir,
             val_split=val_split,
             aug_ids=aug_ids,
@@ -345,6 +496,11 @@ def train_selector_loss_ablation_from_artifacts(
                 "usefulness_head": spec.usefulness_head,
                 "usefulness_tau": spec.usefulness_tau,
                 "usefulness_weight": spec.usefulness_weight,
+                "feature_mode": spec.feature_mode,
+                "target_mode": spec.target_mode,
+                "model_family": spec.model_family,
+                "listwise_weight": spec.listwise_weight,
+                "listwise_top_k": spec.listwise_top_k,
                 "best_epoch": summary.best_epoch,
                 "best_val_loss": summary.best_val_loss,
                 "best_val_nll": summary.best_val_nll,

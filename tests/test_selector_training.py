@@ -10,6 +10,7 @@ from PIL import Image
 
 from learned_tta.cache import TeacherShard, write_teacher_shard
 from learned_tta.selector_training import (
+    DEFAULT_SELECTOR_LOSS_ABLATIONS,
     SelectorTrainingSummary,
     make_selector_dataloader,
     train_selector_from_artifacts,
@@ -238,11 +239,40 @@ def test_train_selector_loss_ablation_from_artifacts_writes_variant_table(
     table = pd.read_csv(summary.results_csv)
 
     assert summary.results_csv.exists()
-    assert table["variant"].tolist() == ["gain_only", "gain_rank", "gain_rank_bce"]
-    assert table["usefulness_head"].tolist() == [False, False, True]
-    assert table["rank_weight"].tolist() == pytest.approx([0.0, 0.2, 0.2])
+    assert table["variant"].tolist() == [
+        "gain_only",
+        "gain_rank",
+        "gain_rank_bce",
+        "gain_listwise_topk",
+        "clean_logits_mlp_gain_rank",
+        "clean_logits_mlp_gain_listwise",
+    ]
+    assert table["model_family"].tolist() == [
+        "image_cnn",
+        "image_cnn",
+        "image_cnn",
+        "image_cnn",
+        "mlp",
+        "mlp",
+    ]
+    assert table["feature_mode"].tolist() == [
+        "image",
+        "image",
+        "image",
+        "image",
+        "clean_logits",
+        "clean_logits",
+    ]
+    assert table["target_mode"].tolist() == ["nll_gain"] * 6
+    assert table["usefulness_head"].tolist() == [False, False, True, False, False, False]
+    assert table["rank_weight"].tolist() == pytest.approx([0.0, 0.2, 0.2, 0.2, 0.2, 0.2])
+    assert table["listwise_weight"].tolist() == pytest.approx([0.0, 0.0, 0.0, 0.1, 0.0, 0.1])
     assert set(table.columns) >= {
         "variant",
+        "feature_mode",
+        "target_mode",
+        "listwise_weight",
+        "listwise_top_k",
         "best_epoch",
         "best_val_loss",
         "best_val_nll",
@@ -251,6 +281,23 @@ def test_train_selector_loss_ablation_from_artifacts_writes_variant_table(
     }
     for checkpoint_path in table["checkpoint_path"]:
         assert Path(checkpoint_path).exists()
+
+
+def test_default_selector_loss_ablation_specs_keep_image_feature_mode() -> None:
+    assert {spec.feature_mode for spec in DEFAULT_SELECTOR_LOSS_ABLATIONS} == {
+        "image",
+        "clean_logits",
+    }
+
+
+def test_default_selector_loss_ablation_specs_keep_nll_gain_target_mode() -> None:
+    assert {spec.target_mode for spec in DEFAULT_SELECTOR_LOSS_ABLATIONS} == {"nll_gain"}
+
+
+def test_selector_loss_ablation_includes_listwise_variant() -> None:
+    names = {spec.variant for spec in DEFAULT_SELECTOR_LOSS_ABLATIONS}
+
+    assert "gain_listwise_topk" in names
 
 
 def test_train_selector_loss_ablation_cli_writes_variant_table(
@@ -346,26 +393,38 @@ def _write_targets(path: Path, rows: int, image_ids: list[str] | None = None) ->
 
 
 def _write_cache(cache_dir: Path) -> Path:
-    image_ids = ["public_val-0", "public_val-1"]
-    class_idxs = np.array([0, 1], dtype=np.int64)
-    write_teacher_shard(
-        cache_dir,
-        TeacherShard(
-            split="public_val",
-            aug_id="aug_000",
-            image_ids=image_ids,
-            class_idxs=class_idxs,
-            logits=np.array([[3.0, 0.0], [0.0, 3.0]], dtype=np.float32),
-        ),
-    )
-    write_teacher_shard(
-        cache_dir,
-        TeacherShard(
-            split="public_val",
-            aug_id="aug_001",
-            image_ids=image_ids,
-            class_idxs=class_idxs,
-            logits=np.array([[4.0, 0.0], [0.0, 1.0]], dtype=np.float32),
-        ),
-    )
+    for split, rows in (("public_train", 4), ("public_val", 2)):
+        image_ids = [f"{split}-{index}" for index in range(rows)]
+        class_idxs = np.array([index % 2 for index in range(rows)], dtype=np.int64)
+        clean_logits = np.stack(
+            [
+                np.array([3.0, 0.0], dtype=np.float32)
+                if class_idx == 0
+                else np.array([0.0, 3.0], dtype=np.float32)
+                for class_idx in class_idxs
+            ],
+            axis=0,
+        )
+        aug_logits = clean_logits.copy()
+        aug_logits[:, 0] += 1.0
+        write_teacher_shard(
+            cache_dir,
+            TeacherShard(
+                split=split,
+                aug_id="aug_000",
+                image_ids=image_ids,
+                class_idxs=class_idxs,
+                logits=clean_logits,
+            ),
+        )
+        write_teacher_shard(
+            cache_dir,
+            TeacherShard(
+                split=split,
+                aug_id="aug_001",
+                image_ids=image_ids,
+                class_idxs=class_idxs,
+                logits=aug_logits,
+            ),
+        )
     return cache_dir

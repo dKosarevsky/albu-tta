@@ -137,6 +137,31 @@ def test_tune_tta_from_artifacts_writes_selector_diagnostics(
     assert "mean_forwards_per_image" in selection_counts.columns
 
 
+def test_tune_tta_from_artifacts_writes_compute_policy_frontier(
+    tmp_path: Path,
+    tuning_artifacts: dict[str, Path],
+) -> None:
+    summary = tune_tta_from_artifacts(
+        split="public_val",
+        manifest_path=tuning_artifacts["manifest"],
+        cache_dir=tuning_artifacts["cache_dir"],
+        checkpoint_path=tuning_artifacts["checkpoint"],
+        output_dir=tmp_path / "selector",
+        aug_ids=["aug_000", "aug_001"],
+        top_k_grid=[0, 1],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        device="cpu",
+    )
+
+    assert summary.compute_policy_frontier_path is not None
+    assert summary.compute_policy_frontier_path.exists()
+    frontier = pd.read_csv(summary.compute_policy_frontier_path)
+    assert "top1_oracle_capture" in frontier.columns
+    assert {"clean", "learned_topk_uniform", "oracle_topk_uniform"} <= set(frontier["strategy"])
+
+
 def test_tune_tta_from_artifacts_rejects_private_split(tmp_path: Path) -> None:
     manifest_path = _write_manifest(tmp_path, split="private", count=2)
     cache_dir = _write_cache(tmp_path / "teacher_cache", split="private")

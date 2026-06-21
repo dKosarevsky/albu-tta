@@ -31,6 +31,7 @@ class SelectorLossParts:
     regression: torch.Tensor
     ranking: torch.Tensor
     usefulness_bce: torch.Tensor
+    listwise_topk: torch.Tensor
 
 
 def pairwise_rank_loss(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
@@ -50,6 +51,31 @@ def pairwise_rank_loss(predictions: torch.Tensor, targets: torch.Tensor) -> torc
     return F.softplus(-prediction_diff[mask]).mean()
 
 
+def listwise_topk_loss(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    top_k: int,
+) -> torch.Tensor:
+    """Cross-entropy against the target top-k augmentation membership per image."""
+
+    if predictions.shape != targets.shape:
+        raise ValueError("predictions and targets must have matching shapes")
+    if predictions.ndim != 2:
+        raise ValueError("predictions and targets must have shape [batch, augmentations]")
+    if top_k <= 0:
+        return predictions.new_zeros(())
+
+    capped_top_k = min(top_k, predictions.shape[1])
+    target_topk = targets.topk(k=capped_top_k, dim=1).indices
+    target_distribution = torch.zeros_like(targets).scatter(
+        dim=1,
+        index=target_topk,
+        value=1.0 / capped_top_k,
+    )
+    log_prob = F.log_softmax(predictions, dim=1)
+    return -(target_distribution * log_prob).sum(dim=1).mean()
+
+
 def selector_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
@@ -59,6 +85,8 @@ def selector_loss(
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
     identity_index: int | None = None,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 1,
 ) -> torch.Tensor:
     """SmoothL1 regression loss plus pairwise rank loss."""
 
@@ -71,6 +99,8 @@ def selector_loss(
         usefulness_tau=usefulness_tau,
         usefulness_weight=usefulness_weight,
         identity_index=identity_index,
+        listwise_weight=listwise_weight,
+        listwise_top_k=listwise_top_k,
     ).total
 
 
@@ -83,23 +113,32 @@ def selector_loss_components(
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
     identity_index: int | None = None,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 1,
 ) -> SelectorLossParts:
     """Return SmoothL1, pairwise rank, usefulness BCE, and weighted total."""
 
     regression = F.smooth_l1_loss(predictions, targets)
     ranking = pairwise_rank_loss(predictions, targets)
+    listwise = listwise_topk_loss(predictions, targets, top_k=listwise_top_k)
     usefulness_bce = _usefulness_bce_loss(
         useful_logits=useful_logits,
         gain=gain,
         usefulness_tau=usefulness_tau,
         identity_index=identity_index,
     )
-    total = regression + rank_weight * ranking + usefulness_weight * usefulness_bce
+    total = (
+        regression
+        + rank_weight * ranking
+        + usefulness_weight * usefulness_bce
+        + listwise_weight * listwise
+    )
     return SelectorLossParts(
         total=total,
         regression=regression,
         ranking=ranking,
         usefulness_bce=usefulness_bce,
+        listwise_topk=listwise,
     )
 
 
@@ -161,6 +200,8 @@ def save_checkpoint_if_best(
     usefulness_head: bool = False,
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 1,
 ) -> CheckpointState:
     """Save model checkpoint when validation NLL improves."""
 
@@ -184,6 +225,8 @@ def save_checkpoint_if_best(
     checkpoint["usefulness_head"] = usefulness_head
     checkpoint["usefulness_tau"] = usefulness_tau
     checkpoint["usefulness_weight"] = usefulness_weight
+    checkpoint["listwise_weight"] = listwise_weight
+    checkpoint["listwise_top_k"] = listwise_top_k
     torch.save(checkpoint, state.path)
     return CheckpointState(best_val_nll=val_nll, best_epoch=epoch, path=state.path)
 
@@ -197,6 +240,8 @@ def train_one_epoch(
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
     identity_index: int | None = None,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 1,
 ) -> dict[str, float]:
     """Train selector for one epoch over `(images, target_z)` batches."""
 
@@ -205,6 +250,7 @@ def train_one_epoch(
     regression_losses: list[float] = []
     rank_losses: list[float] = []
     usefulness_bces: list[float] = []
+    listwise_topk_losses: list[float] = []
     for batch in dataloader:
         images, targets, gain = _unpack_selector_batch(batch)
         images = images.to(device)
@@ -221,6 +267,8 @@ def train_one_epoch(
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
             identity_index=identity_index,
+            listwise_weight=listwise_weight,
+            listwise_top_k=listwise_top_k,
         )
         loss = loss_parts.total
         loss.backward()
@@ -229,12 +277,14 @@ def train_one_epoch(
         regression_losses.append(float(loss_parts.regression.detach().cpu().item()))
         rank_losses.append(float(loss_parts.ranking.detach().cpu().item()))
         usefulness_bces.append(float(loss_parts.usefulness_bce.detach().cpu().item()))
+        listwise_topk_losses.append(float(loss_parts.listwise_topk.detach().cpu().item()))
 
     return {
         "loss": _mean(losses),
         "regression_loss": _mean(regression_losses),
         "rank_loss": _mean(rank_losses),
         "usefulness_bce": _mean(usefulness_bces),
+        "listwise_topk_loss": _mean(listwise_topk_losses),
     }
 
 
@@ -247,6 +297,8 @@ def evaluate_regression(
     usefulness_tau: float = 0.01,
     usefulness_weight: float = 0.0,
     identity_index: int | None = None,
+    listwise_weight: float = 0.0,
+    listwise_top_k: int = 1,
 ) -> dict[str, float]:
     """Evaluate selector regression loss and Spearman rank correlation."""
 
@@ -255,6 +307,7 @@ def evaluate_regression(
     regression_losses: list[float] = []
     rank_losses: list[float] = []
     usefulness_bces: list[float] = []
+    listwise_topk_losses: list[float] = []
     correlations: list[float] = []
     for batch in dataloader:
         images, targets, gain = _unpack_selector_batch(batch)
@@ -271,11 +324,14 @@ def evaluate_regression(
             usefulness_tau=usefulness_tau,
             usefulness_weight=usefulness_weight,
             identity_index=identity_index,
+            listwise_weight=listwise_weight,
+            listwise_top_k=listwise_top_k,
         )
         losses.append(float(loss_parts.total.cpu().item()))
         regression_losses.append(float(loss_parts.regression.cpu().item()))
         rank_losses.append(float(loss_parts.ranking.cpu().item()))
         usefulness_bces.append(float(loss_parts.usefulness_bce.cpu().item()))
+        listwise_topk_losses.append(float(loss_parts.listwise_topk.cpu().item()))
         correlations.append(spearman_correlation(predictions.cpu(), targets.cpu()))
 
     return {
@@ -283,6 +339,7 @@ def evaluate_regression(
         "regression_loss": _mean(regression_losses),
         "rank_loss": _mean(rank_losses),
         "usefulness_bce": _mean(usefulness_bces),
+        "listwise_topk_loss": _mean(listwise_topk_losses),
         "spearman": _mean(correlations),
     }
 

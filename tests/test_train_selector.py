@@ -11,6 +11,7 @@ from learned_tta.targets import TargetStats
 from learned_tta.train_selector import (
     CheckpointState,
     evaluate_regression,
+    listwise_topk_loss,
     pairwise_rank_loss,
     save_checkpoint_if_best,
     selector_loss,
@@ -108,6 +109,18 @@ def test_selector_loss_components_add_usefulness_bce_with_identity_mask() -> Non
 
     assert good.usefulness_bce < bad.usefulness_bce
     assert good.total < bad.total
+
+
+def test_listwise_topk_loss_is_lower_when_topk_membership_matches() -> None:
+    targets = torch.tensor([[0.0, 2.0, 1.0, -1.0]], dtype=torch.float32)
+    good_predictions = torch.tensor([[0.0, 2.0, 1.0, -1.0]], dtype=torch.float32)
+    bad_predictions = torch.tensor([[2.0, -1.0, 0.0, 1.0]], dtype=torch.float32)
+
+    assert listwise_topk_loss(good_predictions, targets, top_k=2) < listwise_topk_loss(
+        bad_predictions,
+        targets,
+        top_k=2,
+    )
 
 
 @pytest.mark.parametrize(
@@ -250,6 +263,7 @@ def test_evaluate_regression_reports_loss_and_spearman() -> None:
         "regression_loss",
         "rank_loss",
         "usefulness_bce",
+        "listwise_topk_loss",
         "spearman",
     }
 
@@ -276,11 +290,13 @@ def test_train_and_evaluate_return_zero_metrics_for_empty_dataloader() -> None:
         "regression_loss": 0.0,
         "rank_loss": 0.0,
         "usefulness_bce": 0.0,
+        "listwise_topk_loss": 0.0,
     }
     assert eval_metrics == {
         "loss": 0.0,
         "regression_loss": 0.0,
         "rank_loss": 0.0,
         "usefulness_bce": 0.0,
+        "listwise_topk_loss": 0.0,
         "spearman": 0.0,
     }

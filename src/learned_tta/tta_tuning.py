@@ -15,11 +15,14 @@ from learned_tta.augmentations import load_augmentation_registry
 from learned_tta.cache import read_teacher_shard, teacher_shard_paths
 from learned_tta.config import load_experiment_config
 from learned_tta.data import ManifestRecord, load_manifest
+from learned_tta.selector_analysis import summarize_oracle_gap
 from learned_tta.selector_model import SelectorCNN
 from learned_tta.split_policy import validate_public_tuning_split
 from learned_tta.tta_eval import (
+    evaluate_clean,
     evaluate_learned_adaptive_uniform,
     evaluate_learned_topk_uniform,
+    evaluate_oracle_topk_uniform,
     select_best_k,
 )
 
@@ -40,6 +43,7 @@ class TTATuningSummary:
     selector_diagnostics: dict[str, object] | None = None
     diagnostics_path: Path | None = None
     selection_counts_path: Path | None = None
+    compute_policy_frontier_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +150,16 @@ def tune_tta_from_artifacts(
         selection_counts_path,
         index=False,
     )
+    compute_policy_frontier = _compute_policy_frontier(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        top_k_grid=top_k_grid,
+        identity_aug_id=identity_aug_id,
+    )
+    compute_policy_frontier_path = output_dir / f"{split}_compute_policy_frontier.csv"
+    pd.DataFrame(compute_policy_frontier).to_csv(compute_policy_frontier_path, index=False)
     result_path = output_dir / f"{split}_tta_tuning.json"
     result_path.write_text(
         json.dumps(
@@ -157,6 +171,7 @@ def tune_tta_from_artifacts(
                 "best_adaptive_threshold": best_adaptive_threshold,
                 "best_adaptive_max_k": best_adaptive_max_k,
                 "selector_diagnostics": selector_diagnostics,
+                "compute_policy_frontier": compute_policy_frontier,
                 "predicted_gain_shape": list(predicted_gain.shape),
                 "predicted_useful_shape": (
                     list(predictions.useful_prob.shape)
@@ -184,6 +199,7 @@ def tune_tta_from_artifacts(
         selector_diagnostics=selector_diagnostics,
         diagnostics_path=diagnostics_path,
         selection_counts_path=selection_counts_path,
+        compute_policy_frontier_path=compute_policy_frontier_path,
     )
 
 
@@ -413,6 +429,100 @@ def _selector_diagnostics(
     ]
     diagnostics["identity_index"] = int(identity_index)
     return diagnostics
+
+
+def _compute_policy_frontier(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    top_k_grid: list[int],
+    identity_aug_id: str,
+) -> list[dict[str, float | int | str]]:
+    clean_metrics = evaluate_clean(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        identity_aug_id=identity_aug_id,
+    )
+    rows: list[dict[str, float | int | str]] = [
+        _frontier_row(
+            strategy="clean",
+            k=0,
+            metrics=clean_metrics,
+            clean_metrics=clean_metrics,
+            oracle_metrics=clean_metrics,
+        )
+    ]
+    for k in top_k_grid:
+        if k <= 0:
+            continue
+        oracle_metrics = evaluate_oracle_topk_uniform(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            identity_aug_id=identity_aug_id,
+            k=k,
+        )
+        learned_metrics = evaluate_learned_topk_uniform(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            aug_ids=aug_ids,
+            predicted_gain=predicted_gain,
+            identity_aug_id=identity_aug_id,
+            k=k,
+        )
+        rows.append(
+            _frontier_row(
+                strategy="learned_topk_uniform",
+                k=k,
+                metrics=learned_metrics,
+                clean_metrics=clean_metrics,
+                oracle_metrics=oracle_metrics,
+            )
+        )
+        rows.append(
+            _frontier_row(
+                strategy="oracle_topk_uniform",
+                k=k,
+                metrics=oracle_metrics,
+                clean_metrics=clean_metrics,
+                oracle_metrics=oracle_metrics,
+            )
+        )
+    return rows
+
+
+def _frontier_row(
+    strategy: str,
+    k: int,
+    metrics: dict[str, float],
+    clean_metrics: dict[str, float],
+    oracle_metrics: dict[str, float],
+) -> dict[str, float | int | str]:
+    gap = summarize_oracle_gap(
+        clean_top1=clean_metrics["top1"],
+        oracle_top1=oracle_metrics["top1"],
+        learned_top1=metrics["top1"],
+        clean_nll=clean_metrics["nll"],
+        oracle_nll=oracle_metrics["nll"],
+        learned_nll=metrics["nll"],
+        forwards_per_image=metrics["forwards_per_image"],
+    )
+    return {
+        "strategy": strategy,
+        "k": int(k),
+        "top1": metrics["top1"],
+        "top5": metrics["top5"],
+        "nll": metrics["nll"],
+        "ece": metrics["ece"],
+        "forwards_per_image": metrics["forwards_per_image"],
+        "relative_compute_vs_all": metrics["relative_compute_vs_all"],
+        "top1_delta_pp_vs_clean": gap["top1_learned_delta_pp"],
+        "top1_oracle_delta_pp": gap["top1_oracle_delta_pp"],
+        "top1_oracle_capture": gap["top1_oracle_capture"],
+        "nll_delta_vs_clean": gap["nll_learned_delta"],
+        "nll_oracle_delta": gap["nll_oracle_delta"],
+        "nll_oracle_capture": gap["nll_oracle_capture"],
+    }
 
 
 def _topk_hit_rate(predicted_gain: np.ndarray, true_gain: np.ndarray, k: int) -> float:

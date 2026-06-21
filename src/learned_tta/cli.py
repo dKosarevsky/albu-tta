@@ -263,6 +263,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             selector_ablation_path=_optional_path(args.selector_ablation),
             selector_diagnostics_path=_optional_path(args.selector_diagnostics),
             adaptive_selection_counts_path=_optional_path(args.adaptive_selection_counts),
+            compute_policy_frontier_path=_optional_path(args.compute_policy_frontier),
             tuning_path=_optional_path(args.tuning),
             impact_targets_path=_optional_path(args.impact_targets),
             impact_manifest_path=_optional_path(args.impact_manifest),
@@ -751,6 +752,7 @@ def _build_parser() -> argparse.ArgumentParser:
     build_report.add_argument("--selector-ablation")
     build_report.add_argument("--selector-diagnostics")
     build_report.add_argument("--adaptive-selection-counts")
+    build_report.add_argument("--compute-policy-frontier")
     build_report.add_argument("--tuning")
     build_report.add_argument("--impact-targets")
     build_report.add_argument("--impact-manifest")
@@ -1428,6 +1430,7 @@ def _cmd_build_report(
     selector_ablation_path: Path | None,
     selector_diagnostics_path: Path | None,
     adaptive_selection_counts_path: Path | None,
+    compute_policy_frontier_path: Path | None,
     tuning_path: Path | None,
     impact_targets_path: Path | None,
     impact_manifest_path: Path | None,
@@ -1451,6 +1454,7 @@ def _cmd_build_report(
         selector_ablation_path=selector_ablation_path,
         selector_diagnostics_path=selector_diagnostics_path,
         adaptive_selection_counts_path=adaptive_selection_counts_path,
+        compute_policy_frontier_path=compute_policy_frontier_path,
         tuning_path=tuning_path,
         impact_targets_path=impact_targets_path,
         impact_manifest_path=impact_manifest_path,

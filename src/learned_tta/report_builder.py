@@ -50,6 +50,7 @@ class ReportBuildSummary:
     selector_ablation_csv: Path | None
     selector_diagnostics_json: Path | None
     adaptive_selection_counts_csv: Path | None
+    compute_policy_frontier_csv: Path | None
     gain_distribution_svg: Path
     oracle_overlap_svg: Path
     aggregation_weights_svg: Path | None
@@ -86,6 +87,7 @@ def build_report_from_artifacts(
     selector_ablation_path: Path | None = None,
     selector_diagnostics_path: Path | None = None,
     adaptive_selection_counts_path: Path | None = None,
+    compute_policy_frontier_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> ReportBuildSummary:
@@ -181,6 +183,11 @@ def build_report_from_artifacts(
         if adaptive_selection_counts_path
         else None
     )
+    compute_policy_frontier = (
+        _read_compute_policy_frontier_csv(compute_policy_frontier_path)
+        if compute_policy_frontier_path
+        else None
+    )
     private_metric_deltas = _build_private_metric_deltas_table(private_metrics)
 
     paths = ReportBuildSummary(
@@ -228,6 +235,11 @@ def build_report_from_artifacts(
         adaptive_selection_counts_csv=(
             tables_dir / "adaptive_selection_counts.csv"
             if adaptive_selection_counts is not None
+            else None
+        ),
+        compute_policy_frontier_csv=(
+            tables_dir / "compute_policy_frontier.csv"
+            if compute_policy_frontier is not None
             else None
         ),
         gain_distribution_svg=figures_dir / "gain_distribution.svg",
@@ -303,6 +315,8 @@ def build_report_from_artifacts(
         )
     if paths.adaptive_selection_counts_csv is not None and adaptive_selection_counts is not None:
         adaptive_selection_counts.to_csv(paths.adaptive_selection_counts_csv, index=False)
+    if paths.compute_policy_frontier_csv is not None and compute_policy_frontier is not None:
+        compute_policy_frontier.to_csv(paths.compute_policy_frontier_csv, index=False)
     paths.gain_distribution_svg.write_text(
         _gain_distribution_svg(targets.gain),
         encoding="utf-8",
@@ -360,6 +374,7 @@ def build_report_from_artifacts(
             selector_ablation=selector_ablation,
             selector_diagnostics=selector_diagnostics,
             adaptive_selection_counts=adaptive_selection_counts,
+            compute_policy_frontier=compute_policy_frontier,
             identity_aug_id=identity_aug_id,
             has_class_weights=aggregation_tables.class_weights is not None,
             has_corrections=corrections_table is not None,
@@ -386,6 +401,7 @@ def build_report_from_config(
     selector_ablation_path: Path | None = None,
     selector_diagnostics_path: Path | None = None,
     adaptive_selection_counts_path: Path | None = None,
+    compute_policy_frontier_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -443,6 +459,8 @@ def build_report_from_config(
         or _existing_path(
             config.artifacts.selector_dir / "public_val_adaptive_selection_counts.csv"
         ),
+        compute_policy_frontier_path=compute_policy_frontier_path
+        or _existing_path(config.artifacts.selector_dir / "public_val_compute_policy_frontier.csv"),
         image_size=image_size,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -549,6 +567,16 @@ def _read_selector_ablation_csv(path: Path) -> pd.DataFrame:
     missing = required_columns - set(table.columns)
     if missing:
         raise ValueError(f"selector ablation CSV is missing columns: {sorted(missing)}")
+    defaults: dict[str, object] = {
+        "feature_mode": "image",
+        "target_mode": "nll_gain",
+        "model_family": "image_cnn",
+        "listwise_weight": 0.0,
+        "listwise_top_k": 1,
+    }
+    for column, value in defaults.items():
+        if column not in table.columns:
+            table[column] = value
     return table[
         [
             "variant",
@@ -556,6 +584,11 @@ def _read_selector_ablation_csv(path: Path) -> pd.DataFrame:
             "usefulness_head",
             "usefulness_tau",
             "usefulness_weight",
+            "feature_mode",
+            "target_mode",
+            "model_family",
+            "listwise_weight",
+            "listwise_top_k",
             "best_epoch",
             "best_val_loss",
             "best_val_nll",
@@ -592,6 +625,47 @@ def _read_adaptive_selection_counts_csv(path: Path) -> pd.DataFrame:
             "median_forwards_per_image",
             "p90_forwards_per_image",
             "max_forwards_per_image",
+        ]
+    ].copy()
+
+
+def _read_compute_policy_frontier_csv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required_columns = {
+        "strategy",
+        "k",
+        "top1",
+        "top5",
+        "nll",
+        "ece",
+        "forwards_per_image",
+        "relative_compute_vs_all",
+        "top1_delta_pp_vs_clean",
+        "top1_oracle_delta_pp",
+        "top1_oracle_capture",
+        "nll_delta_vs_clean",
+        "nll_oracle_delta",
+        "nll_oracle_capture",
+    }
+    missing = required_columns - set(table.columns)
+    if missing:
+        raise ValueError(f"compute policy frontier CSV is missing columns: {sorted(missing)}")
+    return table[
+        [
+            "strategy",
+            "k",
+            "top1",
+            "top5",
+            "nll",
+            "ece",
+            "forwards_per_image",
+            "relative_compute_vs_all",
+            "top1_delta_pp_vs_clean",
+            "top1_oracle_delta_pp",
+            "top1_oracle_capture",
+            "nll_delta_vs_clean",
+            "nll_oracle_delta",
+            "nll_oracle_capture",
         ]
     ].copy()
 
@@ -895,6 +969,7 @@ def _results_markdown(
     selector_ablation: pd.DataFrame | None,
     selector_diagnostics: dict[str, Any] | None,
     adaptive_selection_counts: pd.DataFrame | None,
+    compute_policy_frontier: pd.DataFrame | None,
     identity_aug_id: str,
     has_class_weights: bool,
     has_corrections: bool,
@@ -947,20 +1022,36 @@ def _results_markdown(
         "",
         _markdown_table(private_metric_deltas),
         "",
-        "## Compute",
-        "",
-        _markdown_table(compute_table),
-        "",
-        "## Augmentation Impact",
-        "",
-        "- Table: `tables/augmentation_impact.csv`",
-        "",
-        *_augmentation_impact_summary_lines(impact_table, identity_aug_id=identity_aug_id),
-        "![Gain distribution](figures/gain_distribution.svg)",
-        "",
-        "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
-        "",
     ]
+    if compute_policy_frontier is not None:
+        lines.extend(
+            [
+                "## Oracle Gap Capture",
+                "",
+                "- Table: `tables/compute_policy_frontier.csv`",
+                "",
+                *_oracle_gap_capture_summary_lines(compute_policy_frontier),
+                _markdown_table(compute_policy_frontier),
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## Compute",
+            "",
+            _markdown_table(compute_table),
+            "",
+            "## Augmentation Impact",
+            "",
+            "- Table: `tables/augmentation_impact.csv`",
+            "",
+            *_augmentation_impact_summary_lines(impact_table, identity_aug_id=identity_aug_id),
+            "![Gain distribution](figures/gain_distribution.svg)",
+            "",
+            "![Learned versus oracle overlap](figures/oracle_overlap.svg)",
+            "",
+        ]
+    )
     if transform_class_impact is not None:
         lines.extend(
             [
@@ -1121,6 +1212,26 @@ def _selector_diagnostics_summary_lines(diagnostics: dict[str, Any]) -> list[str
     )
     return [
         _markdown_table(pd.DataFrame(rows)),
+        "",
+    ]
+
+
+def _oracle_gap_capture_summary_lines(frontier: pd.DataFrame) -> list[str]:
+    learned = frontier.loc[frontier["strategy"] == "learned_topk_uniform"].copy()
+    if learned.empty:
+        return [
+            "No learned selector row is present in the compute-policy frontier.",
+            "",
+        ]
+    best = learned.sort_values(
+        ["top1_oracle_capture", "top1_delta_pp_vs_clean"],
+        ascending=[False, False],
+    ).iloc[0]
+    return [
+        "Current public-val learned selector capture is "
+        f"{float(best['top1_oracle_capture']):.1%} of the same-k top-1 oracle gap "
+        f"at k={int(best['k'])} ({float(best['top1_delta_pp_vs_clean']):.3g} pp vs clean).",
+        "The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image budget.",
         "",
     ]
 

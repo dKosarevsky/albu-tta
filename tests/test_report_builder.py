@@ -126,6 +126,11 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
                 "usefulness_head": False,
                 "usefulness_tau": 0.01,
                 "usefulness_weight": 0.0,
+                "feature_mode": "image",
+                "target_mode": "nll_gain",
+                "model_family": "image_cnn",
+                "listwise_weight": 0.0,
+                "listwise_top_k": 1,
                 "best_epoch": 1,
                 "best_val_loss": 0.8,
                 "best_val_nll": 0.9,
@@ -136,6 +141,11 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
                 "usefulness_head": True,
                 "usefulness_tau": 0.01,
                 "usefulness_weight": 0.05,
+                "feature_mode": "image",
+                "target_mode": "nll_gain",
+                "model_family": "image_cnn",
+                "listwise_weight": 0.0,
+                "listwise_top_k": 1,
                 "best_epoch": 2,
                 "best_val_loss": 0.5,
                 "best_val_nll": 0.4,
@@ -166,6 +176,43 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
             }
         ]
     ).to_csv(adaptive_selection_counts_csv, index=False)
+    compute_policy_frontier_csv = tmp_path / "compute_policy_frontier.csv"
+    pd.DataFrame(
+        [
+            {
+                "strategy": "clean",
+                "k": 0,
+                "top1": 0.5,
+                "top5": 1.0,
+                "nll": 0.8,
+                "ece": 0.1,
+                "forwards_per_image": 1.0,
+                "relative_compute_vs_all": 0.5,
+                "top1_delta_pp_vs_clean": 0.0,
+                "top1_oracle_delta_pp": 0.0,
+                "top1_oracle_capture": 0.0,
+                "nll_delta_vs_clean": 0.0,
+                "nll_oracle_delta": 0.0,
+                "nll_oracle_capture": 0.0,
+            },
+            {
+                "strategy": "learned_topk_uniform",
+                "k": 1,
+                "top1": 1.0,
+                "top5": 1.0,
+                "nll": 0.4,
+                "ece": 0.05,
+                "forwards_per_image": 2.0,
+                "relative_compute_vs_all": 1.0,
+                "top1_delta_pp_vs_clean": 50.0,
+                "top1_oracle_delta_pp": 60.0,
+                "top1_oracle_capture": 0.833333,
+                "nll_delta_vs_clean": -0.4,
+                "nll_oracle_delta": -0.5,
+                "nll_oracle_capture": 0.8,
+            },
+        ]
+    ).to_csv(compute_policy_frontier_csv, index=False)
 
     tuning_json = tmp_path / "public_val_tta_tuning.json"
     tuning_json.write_text(
@@ -252,6 +299,7 @@ def report_artifacts(tmp_path: Path) -> dict[str, Path]:
         "selector_ablation": selector_ablation_csv,
         "selector_diagnostics": selector_diagnostics_json,
         "adaptive_selection_counts": adaptive_selection_counts_csv,
+        "compute_policy_frontier": compute_policy_frontier_csv,
         "tuning": tuning_json,
         "manifest": manifest_path,
         "targets": targets_path,
@@ -286,6 +334,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
         selector_ablation_path=report_artifacts["selector_ablation"],
         selector_diagnostics_path=report_artifacts["selector_diagnostics"],
         adaptive_selection_counts_path=report_artifacts["adaptive_selection_counts"],
+        compute_policy_frontier_path=report_artifacts["compute_policy_frontier"],
         device="cpu",
     )
 
@@ -307,6 +356,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_ablation_csv is not None
     assert summary.selector_diagnostics_json is not None
     assert summary.adaptive_selection_counts_csv is not None
+    assert summary.compute_policy_frontier_csv is not None
     assert summary.selector_history_svg is not None
     assert summary.transform_class_impact_csv is not None
     assert summary.transform_class_impact_svg is not None
@@ -319,6 +369,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     selector_history = pd.read_csv(summary.selector_history_csv)
     selector_ablation = pd.read_csv(summary.selector_ablation_csv)
     adaptive_selection_counts = pd.read_csv(summary.adaptive_selection_counts_csv)
+    compute_policy_frontier = pd.read_csv(summary.compute_policy_frontier_csv)
     transform_class_impact = pd.read_csv(summary.transform_class_impact_csv)
     transform_class_aggregation = pd.read_csv(summary.transform_class_aggregation_csv)
 
@@ -340,6 +391,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert summary.selector_ablation_csv.exists()
     assert summary.selector_diagnostics_json.exists()
     assert summary.adaptive_selection_counts_csv.exists()
+    assert summary.compute_policy_frontier_csv.exists()
     assert summary.selector_history_svg.exists()
     assert summary.transform_class_impact_csv.exists()
     assert summary.transform_class_impact_svg.exists()
@@ -447,6 +499,7 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert selector_history["val_tta_oracle_recall"].tolist() == pytest.approx([0.25, 0.75])
     assert selector_ablation["variant"].tolist() == ["gain_only", "gain_rank_bce"]
     assert adaptive_selection_counts["mean_forwards_per_image"].tolist() == pytest.approx([2.0])
+    assert compute_policy_frontier["top1_oracle_capture"].tolist() == pytest.approx([0.0, 0.833333])
     assert "state-of-the-art" not in markdown.lower()
     assert "figures/gain_distribution.svg" in markdown
     assert "figures/aggregation_weights.svg" in markdown
@@ -481,6 +534,9 @@ def test_build_report_from_artifacts_writes_tables_markdown_and_plots(
     assert "selector_loss_ablation.csv" in markdown
     assert "selector_diagnostics.json" in markdown
     assert "adaptive_selection_counts.csv" in markdown
+    assert "compute_policy_frontier.csv" in markdown
+    assert "Oracle Gap Capture" in markdown
+    assert "next target" in markdown.lower()
     assert "Selector Prediction Diagnostics" in markdown
     assert "Selector Baseline Decision" in markdown
     assert "learned_topk_uniform" in markdown
@@ -517,6 +573,8 @@ def test_build_report_cli_writes_final_results(
             str(report_artifacts["selector_diagnostics"]),
             "--adaptive-selection-counts",
             str(report_artifacts["adaptive_selection_counts"]),
+            "--compute-policy-frontier",
+            str(report_artifacts["compute_policy_frontier"]),
             "--tuning",
             str(report_artifacts["tuning"]),
             "--impact-targets",
@@ -550,6 +608,7 @@ def test_build_report_cli_writes_final_results(
     assert (report_dir / "tables" / "selector_loss_ablation.csv").exists()
     assert (report_dir / "tables" / "selector_diagnostics.json").exists()
     assert (report_dir / "tables" / "adaptive_selection_counts.csv").exists()
+    assert (report_dir / "tables" / "compute_policy_frontier.csv").exists()
     assert (report_dir / "figures" / "oracle_overlap.svg").exists()
     assert (report_dir / "figures" / "aggregation_weights.svg").exists()
     assert (report_dir / "tables" / "xgboost_feature_importance.csv").exists()
