@@ -227,6 +227,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             val_features_path=_optional_path(args.val_features),
             feature_projection_dim=args.feature_projection_dim,
             feature_projection_seed=int(args.feature_projection_seed),
+            feature_projection_method=str(args.feature_projection_method),
             top_k_grid=args.top_k,
             batch_size=int(args.batch_size),
             epochs=int(args.epochs),
@@ -237,6 +238,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             positive_gain_weight=float(args.positive_gain_weight),
             listwise_weight=float(args.listwise_weight),
             listwise_top_k=int(args.listwise_top_k),
+            listwise_loss=str(args.listwise_loss),
+            listwise_target_temperature=float(args.listwise_target_temperature),
             hard_example_weight=float(args.hard_example_weight),
             hard_example_confidence_threshold=float(args.hard_example_confidence_threshold),
             target_mode=str(args.target_mode),
@@ -256,6 +259,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             val_features_path=_optional_path(args.val_features),
             feature_projection_dim=args.feature_projection_dim,
             feature_projection_seed=int(args.feature_projection_seed),
+            feature_projection_method=str(args.feature_projection_method),
             top_k_grid=args.top_k,
             batch_size=int(args.batch_size),
             epochs=int(args.epochs),
@@ -266,6 +270,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             positive_gain_weight=float(args.positive_gain_weight),
             listwise_weight=float(args.listwise_weight),
             listwise_top_k=int(args.listwise_top_k),
+            listwise_loss=str(args.listwise_loss),
+            listwise_target_temperature=float(args.listwise_target_temperature),
             hard_example_weight=float(args.hard_example_weight),
             hard_example_confidence_threshold=float(args.hard_example_confidence_threshold),
             device=str(args.device),
@@ -280,14 +286,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             features_path=_optional_path(args.features),
             feature_projection_dim=args.feature_projection_dim,
             feature_projection_seed=int(args.feature_projection_seed),
+            feature_projection_method=str(args.feature_projection_method),
             top_k=int(args.top_k),
             batch_size=int(args.batch_size),
             strategy_name=str(args.strategy_name),
+            score_temperature=float(args.score_temperature),
             confidence_low_threshold=float(args.confidence_low_threshold),
             confidence_high_threshold=float(args.confidence_high_threshold),
             confidence_low_k=args.confidence_low_k,
             confidence_mid_k=args.confidence_mid_k,
             confidence_high_k=int(args.confidence_high_k),
+            confidence_policy_path=_optional_path(args.confidence_policy),
             device=str(args.device),
         )
     elif command == "tune-tta":
@@ -808,6 +817,11 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_selector.add_argument("--val-features")
     train_pairwise_selector.add_argument("--feature-projection-dim", type=int)
     train_pairwise_selector.add_argument("--feature-projection-seed", type=int, default=0)
+    train_pairwise_selector.add_argument(
+        "--feature-projection-method",
+        choices=["random", "pca_whiten"],
+        default="random",
+    )
     train_pairwise_selector.add_argument("--cache-dir", required=True)
     train_pairwise_selector.add_argument("--output-dir", required=True)
     train_pairwise_selector.add_argument("--identity-aug-id", default="aug_000")
@@ -822,6 +836,12 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_selector.add_argument("--positive-gain-weight", type=float, default=0.0)
     train_pairwise_selector.add_argument("--listwise-weight", type=float, default=0.0)
     train_pairwise_selector.add_argument("--listwise-top-k", type=int, default=16)
+    train_pairwise_selector.add_argument(
+        "--listwise-loss",
+        choices=["topk_ce", "topk_kl"],
+        default="topk_ce",
+    )
+    train_pairwise_selector.add_argument("--listwise-target-temperature", type=float, default=1.0)
     train_pairwise_selector.add_argument("--hard-example-weight", type=float, default=0.0)
     train_pairwise_selector.add_argument(
         "--hard-example-confidence-threshold",
@@ -830,7 +850,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     train_pairwise_selector.add_argument(
         "--target-mode",
-        choices=["nll_gain", "top1_delta"],
+        choices=["nll_gain", "top1_delta", "marginal_logit_gain"],
         default="nll_gain",
     )
     train_pairwise_selector.add_argument(
@@ -852,6 +872,11 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_comparison.add_argument("--val-features")
     train_pairwise_comparison.add_argument("--feature-projection-dim", type=int)
     train_pairwise_comparison.add_argument("--feature-projection-seed", type=int, default=0)
+    train_pairwise_comparison.add_argument(
+        "--feature-projection-method",
+        choices=["random", "pca_whiten"],
+        default="random",
+    )
     train_pairwise_comparison.add_argument("--cache-dir", required=True)
     train_pairwise_comparison.add_argument("--output-dir", required=True)
     train_pairwise_comparison.add_argument("--identity-aug-id", default="aug_000")
@@ -866,6 +891,12 @@ def _build_parser() -> argparse.ArgumentParser:
     train_pairwise_comparison.add_argument("--positive-gain-weight", type=float, default=0.0)
     train_pairwise_comparison.add_argument("--listwise-weight", type=float, default=0.0)
     train_pairwise_comparison.add_argument("--listwise-top-k", type=int, default=16)
+    train_pairwise_comparison.add_argument(
+        "--listwise-loss",
+        choices=["topk_ce", "topk_kl"],
+        default="topk_ce",
+    )
+    train_pairwise_comparison.add_argument("--listwise-target-temperature", type=float, default=1.0)
     train_pairwise_comparison.add_argument("--hard-example-weight", type=float, default=0.0)
     train_pairwise_comparison.add_argument(
         "--hard-example-confidence-threshold",
@@ -886,14 +917,21 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_pairwise.add_argument("--features")
     evaluate_pairwise.add_argument("--feature-projection-dim", type=int)
     evaluate_pairwise.add_argument("--feature-projection-seed", type=int, default=0)
+    evaluate_pairwise.add_argument(
+        "--feature-projection-method",
+        choices=["random", "pca_whiten"],
+        default="random",
+    )
     evaluate_pairwise.add_argument("--top-k", type=int, default=16)
     evaluate_pairwise.add_argument("--batch-size", type=int, default=8192)
     evaluate_pairwise.add_argument("--strategy-name", default="pairwise_topk_uniform")
+    evaluate_pairwise.add_argument("--score-temperature", type=float, default=1.0)
     evaluate_pairwise.add_argument("--confidence-low-threshold", type=float, default=0.75)
     evaluate_pairwise.add_argument("--confidence-high-threshold", type=float, default=0.9)
     evaluate_pairwise.add_argument("--confidence-low-k", type=int)
     evaluate_pairwise.add_argument("--confidence-mid-k", type=int)
     evaluate_pairwise.add_argument("--confidence-high-k", type=int, default=8)
+    evaluate_pairwise.add_argument("--confidence-policy")
     evaluate_pairwise.add_argument("--device", default="cpu")
 
     tune_tta = subparsers.add_parser(
@@ -1596,6 +1634,7 @@ def _cmd_train_pairwise_selector(
     val_features_path: Path | None,
     feature_projection_dim: int | None,
     feature_projection_seed: int,
+    feature_projection_method: str,
     top_k_grid: list[int] | None,
     batch_size: int,
     epochs: int,
@@ -1606,6 +1645,8 @@ def _cmd_train_pairwise_selector(
     positive_gain_weight: float,
     listwise_weight: float,
     listwise_top_k: int,
+    listwise_loss: str,
+    listwise_target_temperature: float,
     hard_example_weight: float,
     hard_example_confidence_threshold: float,
     target_mode: str,
@@ -1626,6 +1667,7 @@ def _cmd_train_pairwise_selector(
         val_features_path=val_features_path,
         feature_projection_dim=feature_projection_dim,
         feature_projection_seed=feature_projection_seed,
+        feature_projection_method=feature_projection_method,
         top_k_grid=top_k_grid,
         batch_size=batch_size,
         epochs=epochs,
@@ -1636,6 +1678,8 @@ def _cmd_train_pairwise_selector(
         positive_gain_weight=positive_gain_weight,
         listwise_weight=listwise_weight,
         listwise_top_k=listwise_top_k,
+        listwise_loss=listwise_loss,
+        listwise_target_temperature=listwise_target_temperature,
         hard_example_weight=hard_example_weight,
         hard_example_confidence_threshold=hard_example_confidence_threshold,
         target_mode=target_mode,
@@ -1657,6 +1701,7 @@ def _cmd_train_pairwise_selector_comparison(
     val_features_path: Path | None,
     feature_projection_dim: int | None,
     feature_projection_seed: int,
+    feature_projection_method: str,
     top_k_grid: list[int] | None,
     batch_size: int,
     epochs: int,
@@ -1667,6 +1712,8 @@ def _cmd_train_pairwise_selector_comparison(
     positive_gain_weight: float,
     listwise_weight: float,
     listwise_top_k: int,
+    listwise_loss: str,
+    listwise_target_temperature: float,
     hard_example_weight: float,
     hard_example_confidence_threshold: float,
     device: str,
@@ -1685,6 +1732,7 @@ def _cmd_train_pairwise_selector_comparison(
         val_features_path=val_features_path,
         feature_projection_dim=feature_projection_dim,
         feature_projection_seed=feature_projection_seed,
+        feature_projection_method=feature_projection_method,
         top_k_grid=top_k_grid,
         batch_size=batch_size,
         epochs=epochs,
@@ -1695,6 +1743,8 @@ def _cmd_train_pairwise_selector_comparison(
         positive_gain_weight=positive_gain_weight,
         listwise_weight=listwise_weight,
         listwise_top_k=listwise_top_k,
+        listwise_loss=listwise_loss,
+        listwise_target_temperature=listwise_target_temperature,
         hard_example_weight=hard_example_weight,
         hard_example_confidence_threshold=hard_example_confidence_threshold,
         device=device,
@@ -1711,14 +1761,17 @@ def _cmd_evaluate_pairwise_selector(
     features_path: Path | None,
     feature_projection_dim: int | None,
     feature_projection_seed: int,
+    feature_projection_method: str,
     top_k: int,
     batch_size: int,
     strategy_name: str,
+    score_temperature: float,
     confidence_low_threshold: float,
     confidence_high_threshold: float,
     confidence_low_k: int | None,
     confidence_mid_k: int | None,
     confidence_high_k: int,
+    confidence_policy_path: Path | None,
     device: str,
 ) -> None:
     from learned_tta.pairwise_selector import evaluate_pairwise_selector_from_artifacts
@@ -1732,14 +1785,17 @@ def _cmd_evaluate_pairwise_selector(
         features_path=features_path,
         feature_projection_dim=feature_projection_dim,
         feature_projection_seed=feature_projection_seed,
+        feature_projection_method=feature_projection_method,
         top_k=top_k,
         batch_size=batch_size,
         strategy_name=strategy_name,
+        score_temperature=score_temperature,
         confidence_low_threshold=confidence_low_threshold,
         confidence_high_threshold=confidence_high_threshold,
         confidence_low_k=confidence_low_k,
         confidence_mid_k=confidence_mid_k,
         confidence_high_k=confidence_high_k,
+        confidence_policy_path=confidence_policy_path,
         device=device,
     )
     print(f"pairwise selector evaluation: wrote {summary.metrics_csv}")

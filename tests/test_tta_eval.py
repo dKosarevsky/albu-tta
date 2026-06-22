@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -7,12 +9,15 @@ from learned_tta.tta_eval import (
     _mean_selection_size,
     adaptive_topk_selection,
     average_probabilities,
+    calibrate_confidence_bucket_policy,
     class_weighted_probabilities,
     confidence_adaptive_topk_selection,
+    confidence_bucket_topk_selection,
     evaluate_all_100_uniform,
     evaluate_class_weighted_tta,
     evaluate_clean,
     evaluate_confidence_adaptive_topk_uniform,
+    evaluate_confidence_bucket_topk_uniform,
     evaluate_fixed_light_tta,
     evaluate_global_weighted_tta,
     evaluate_learned_adaptive_uniform,
@@ -216,6 +221,177 @@ def test_evaluate_confidence_adaptive_topk_uniform_reports_variable_compute(
     assert metrics["forwards_per_image"] == pytest.approx(1.5)
 
 
+def test_calibrate_confidence_bucket_policy_selects_k_per_bucket() -> None:
+    logits_by_aug = {
+        "aug_000": np.array([[4.0, 0.0], [0.5, 0.4]], dtype=np.float32),
+        "aug_001": np.array([[3.5, 0.0], [3.0, 0.0]], dtype=np.float32),
+        "aug_002": np.array([[0.0, 3.5], [0.0, 3.0]], dtype=np.float32),
+    }
+    aug_ids = ["aug_000", "aug_001", "aug_002"]
+    class_idxs = np.array([0, 1], dtype=np.int64)
+    predicted_gain = np.array(
+        [
+            [0.0, 0.4, -1.0],
+            [0.0, -0.5, 1.0],
+        ],
+        dtype=np.float32,
+    )
+
+    policy = calibrate_confidence_bucket_policy(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        confidence_bins=[0.0, 0.75, 1.01],
+        k_grid=[0, 1],
+        metric="top1",
+    )
+    selected = confidence_bucket_topk_selection(
+        clean_logits=logits_by_aug["aug_000"],
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        confidence_bins=policy["confidence_bins"],
+        bucket_k=policy["bucket_k"],
+    )
+    metrics = evaluate_confidence_bucket_topk_uniform(
+        logits_by_aug=logits_by_aug,
+        class_idxs=class_idxs,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        confidence_bins=policy["confidence_bins"],
+        bucket_k=policy["bucket_k"],
+    )
+
+    assert policy["bucket_k"] == [1, 0]
+    assert selected == [["aug_000"], ["aug_000", "aug_002"]]
+    assert metrics["top1"] == pytest.approx(1.0)
+    assert metrics["forwards_per_image"] == pytest.approx(1.5)
+
+
+def test_confidence_bucket_policy_handles_empty_bucket_and_nll_metric() -> None:
+    logits_by_aug = {
+        "aug_000": np.array([[3.0, 0.0], [2.0, 0.0]], dtype=np.float32),
+        "aug_001": np.array([[0.0, 3.0], [0.0, 2.0]], dtype=np.float32),
+    }
+
+    policy = calibrate_confidence_bucket_policy(
+        logits_by_aug=logits_by_aug,
+        class_idxs=np.array([0, 0], dtype=np.int64),
+        aug_ids=["aug_000", "aug_001"],
+        predicted_gain=np.array([[0.0, 1.0], [0.0, 0.5]], dtype=np.float32),
+        identity_aug_id="aug_000",
+        confidence_bins=[0.0, 0.5, 1.01],
+        k_grid=[0, 1],
+        metric="nll",
+    )
+
+    assert policy["bucket_k"][0] == 0
+    assert policy["rows"][0]["image_count"] == 0
+    assert policy["metric"] == "nll"
+
+
+@pytest.mark.parametrize(
+    ("confidence_bins", "match"),
+    [
+        ([0.0], "at least two"),
+        ([-0.1, 1.0], "first"),
+        ([0.0, 1.2, 1.3], "interior"),
+        ([0.0, 0.9], "last"),
+        ([0.0, 0.5, 0.5, 1.01], "strictly increasing"),
+    ],
+)
+def test_confidence_bucket_policy_validates_bins(
+    confidence_bins: list[float],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        confidence_bucket_topk_selection(
+            clean_logits=np.array([[1.0, 0.0]], dtype=np.float32),
+            aug_ids=["aug_000", "aug_001"],
+            predicted_gain=np.array([[0.0, 1.0]], dtype=np.float32),
+            identity_aug_id="aug_000",
+            confidence_bins=confidence_bins,
+            bucket_k=[1],
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"clean_logits": np.array([1.0, 0.0], dtype=np.float32)}, "clean_logits"),
+        (
+            {"predicted_gain": np.array([[0.0, 1.0], [0.0, 1.0]], dtype=np.float32)},
+            "predicted_gain",
+        ),
+        ({"bucket_k": [1, 2]}, "bucket_k"),
+        ({"bucket_k": [-1]}, "non-negative"),
+    ],
+)
+def test_confidence_bucket_selection_validates_inputs(
+    kwargs: dict[str, np.ndarray | list[int]],
+    match: str,
+) -> None:
+    params = {
+        "clean_logits": np.array([[1.0, 0.0]], dtype=np.float32),
+        "aug_ids": ["aug_000", "aug_001"],
+        "predicted_gain": np.array([[0.0, 1.0]], dtype=np.float32),
+        "identity_aug_id": "aug_000",
+        "confidence_bins": [0.0, 1.01],
+        "bucket_k": [1],
+    }
+    params.update(kwargs)
+
+    with pytest.raises(ValueError, match=match):
+        confidence_bucket_topk_selection(**params)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"metric": "accuracy"}, "metric"),
+        ({"k_grid": []}, "k_grid"),
+        ({"k_grid": [-1]}, "non-negative"),
+        ({"identity_aug_id": "missing"}, "identity_aug_id"),
+        (
+            {"predicted_gain": np.array([[0.0, 1.0], [0.0, 1.0]], dtype=np.float32)},
+            "predicted_gain",
+        ),
+        (
+            {
+                "logits_by_aug": {
+                    "aug_000": np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+                    "aug_001": np.array([[0.0, 1.0]], dtype=np.float32),
+                }
+            },
+            "identity logits",
+        ),
+    ],
+)
+def test_calibrate_confidence_bucket_policy_validates_inputs(
+    kwargs: dict[str, object],
+    match: str,
+) -> None:
+    params: dict[str, Any] = {
+        "logits_by_aug": {
+            "aug_000": np.array([[1.0, 0.0]], dtype=np.float32),
+            "aug_001": np.array([[0.0, 1.0]], dtype=np.float32),
+        },
+        "class_idxs": np.array([0], dtype=np.int64),
+        "aug_ids": ["aug_000", "aug_001"],
+        "predicted_gain": np.array([[0.0, 1.0]], dtype=np.float32),
+        "identity_aug_id": "aug_000",
+        "confidence_bins": [0.0, 1.01],
+        "k_grid": [0, 1],
+    }
+    params.update(kwargs)
+
+    with pytest.raises(ValueError, match=match):
+        calibrate_confidence_bucket_policy(**params)
+
+
 def test_fixed_and_random_selection_are_reproducible(aug_ids: list[str]) -> None:
     fixed = fixed_light_tta_selection(aug_ids, identity_aug_id="aug_000", k=2)
     first = random_topk_selection(
@@ -359,6 +535,37 @@ def test_learned_weighted_tta_uses_selector_scores(
 
     assert weighted["forwards_per_image"] == pytest.approx(uniform["forwards_per_image"])
     assert weighted["nll"] != pytest.approx(uniform["nll"])
+
+
+def test_weighted_tta_score_temperature_changes_weights(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+) -> None:
+    selected = learned_topk_selection(
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id="aug_000",
+        k=2,
+    )
+
+    cold = weighted_average_probabilities(
+        logits_by_aug=logits_by_aug,
+        selected_aug_ids=selected,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        score_temperature=0.25,
+    )
+    hot = weighted_average_probabilities(
+        logits_by_aug=logits_by_aug,
+        selected_aug_ids=selected,
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        score_temperature=4.0,
+    )
+
+    assert cold.shape == hot.shape
+    assert not np.allclose(cold, hot)
 
 
 def test_global_weighted_tta_uses_nonzero_weights_as_compute(

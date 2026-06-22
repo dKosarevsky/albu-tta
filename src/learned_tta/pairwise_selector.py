@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,8 +19,10 @@ from learned_tta.selector_error_analysis import build_selector_error_analysis_ta
 from learned_tta.selector_features import clean_logit_uncertainty_features, load_selector_features
 from learned_tta.targets import load_selector_targets
 from learned_tta.tta_eval import (
+    ConfidenceBucketPolicy,
     evaluate_clean,
     evaluate_confidence_adaptive_topk_uniform,
+    evaluate_confidence_bucket_topk_uniform,
     evaluate_learned_topk_softmax_weighted,
     evaluate_learned_topk_uniform,
     evaluate_oracle_topk_uniform,
@@ -86,6 +89,7 @@ class _PairwiseCheckpoint:
     hidden_dim: int
     aug_ids: list[str]
     feature_names: list[str]
+    feature_projection_state: dict[str, Any] | None = None
 
 
 class PairwiseSelectorMLP(torch.nn.Module):
@@ -116,6 +120,8 @@ def build_pairwise_feature_bundle(
     target_mode: str = "nll_gain",
     feature_projection_dim: int | None = None,
     feature_projection_seed: int = 0,
+    feature_projection_method: str = "random",
+    feature_projection_state: Mapping[str, Any] | None = None,
 ) -> PairwiseFeatureBundle:
     """Build flattened `(image, augmentation)` features from cached teacher outputs."""
 
@@ -157,6 +163,8 @@ def build_pairwise_feature_bundle(
             feature_names=pretrained.feature_names,
             projection_dim=feature_projection_dim,
             projection_seed=feature_projection_seed,
+            projection_method=feature_projection_method,
+            projection_state=feature_projection_state,
         )
         image_features.append(optional_features)
         image_feature_names.extend(optional_feature_names)
@@ -171,8 +179,21 @@ def build_pairwise_feature_bundle(
             image_ids=image_ids,
             identity_aug_id=identity_aug_id,
         )
+    elif target_mode == "marginal_logit_gain":
+        logits_by_aug = _read_logits_by_aug(
+            cache_dir=cache_dir,
+            split=split,
+            aug_ids=targets.aug_ids,
+            image_ids=image_ids,
+        )
+        target_matrix = build_pairwise_marginal_logit_gain_targets(
+            logits_by_aug=logits_by_aug,
+            aug_ids=targets.aug_ids,
+            class_idxs=class_idxs,
+            identity_aug_id=identity_aug_id,
+        )
     else:
-        raise ValueError("target_mode must be 'nll_gain' or 'top1_delta'")
+        raise ValueError("target_mode must be 'nll_gain', 'top1_delta', or 'marginal_logit_gain'")
 
     per_image_features = np.concatenate(image_features, axis=1).astype(np.float32)
     return _build_pairwise_bundle_from_image_features(
@@ -193,6 +214,8 @@ def build_pairwise_inference_bundle(
     features_path: Path | None = None,
     feature_projection_dim: int | None = None,
     feature_projection_seed: int = 0,
+    feature_projection_method: str = "random",
+    feature_projection_state: Mapping[str, Any] | None = None,
 ) -> PairwiseFeatureBundle:
     """Build flattened pairwise features for inference without selector targets."""
 
@@ -231,6 +254,8 @@ def build_pairwise_inference_bundle(
             feature_names=pretrained.feature_names,
             projection_dim=feature_projection_dim,
             projection_seed=feature_projection_seed,
+            projection_method=feature_projection_method,
+            projection_state=feature_projection_state,
         )
         image_features.append(optional_features)
         image_feature_names.extend(optional_feature_names)
@@ -256,14 +281,17 @@ def evaluate_pairwise_selector_from_artifacts(
     features_path: Path | None = None,
     feature_projection_dim: int | None = None,
     feature_projection_seed: int = 0,
+    feature_projection_method: str = "random",
     top_k: int = 16,
     batch_size: int = 8192,
     strategy_name: str = "pairwise_topk_uniform",
+    score_temperature: float = 1.0,
     confidence_low_threshold: float = 0.75,
     confidence_high_threshold: float = 0.9,
     confidence_low_k: int | None = None,
     confidence_mid_k: int | None = None,
     confidence_high_k: int = 8,
+    confidence_policy_path: Path | None = None,
     device: str | torch.device = "cpu",
 ) -> PairwiseEvaluationSummary:
     """Evaluate a pairwise selector checkpoint on a target-free cached split."""
@@ -287,6 +315,8 @@ def evaluate_pairwise_selector_from_artifacts(
         features_path=features_path,
         feature_projection_dim=feature_projection_dim,
         feature_projection_seed=feature_projection_seed,
+        feature_projection_method=feature_projection_method,
+        feature_projection_state=checkpoint.feature_projection_state,
     )
     if bundle.feature_names != checkpoint.feature_names:
         raise ValueError("checkpoint feature_names must match inference feature_names")
@@ -307,6 +337,11 @@ def evaluate_pairwise_selector_from_artifacts(
     )
     low_k = top_k if confidence_low_k is None else confidence_low_k
     mid_k = top_k if confidence_mid_k is None else confidence_mid_k
+    confidence_policy = (
+        _load_confidence_bucket_policy(confidence_policy_path)
+        if confidence_policy_path is not None
+        else None
+    )
     metrics_by_strategy = {
         "clean": evaluate_clean(
             logits_by_aug=logits_by_aug,
@@ -328,6 +363,7 @@ def evaluate_pairwise_selector_from_artifacts(
             predicted_gain=predicted_gain,
             identity_aug_id=identity_aug_id,
             k=top_k,
+            score_temperature=score_temperature,
         ),
         f"{strategy_name}_confidence_adaptive": evaluate_confidence_adaptive_topk_uniform(
             logits_by_aug=logits_by_aug,
@@ -348,6 +384,18 @@ def evaluate_pairwise_selector_from_artifacts(
             k=top_k,
         ),
     }
+    if confidence_policy is not None:
+        metrics_by_strategy[f"{strategy_name}_confidence_policy"] = (
+            evaluate_confidence_bucket_topk_uniform(
+                logits_by_aug=logits_by_aug,
+                class_idxs=bundle.class_idxs,
+                aug_ids=bundle.aug_ids,
+                predicted_gain=predicted_gain,
+                identity_aug_id=identity_aug_id,
+                confidence_bins=confidence_policy["confidence_bins"],
+                bucket_k=confidence_policy["bucket_k"],
+            )
+        )
     metrics_csv = output_dir / "pairwise_selector_metrics.csv"
     build_metrics_table(metrics_by_strategy).to_csv(metrics_csv, index=False)
     scores_npz = output_dir / "pairwise_selector_scores.npz"
@@ -387,6 +435,7 @@ def train_pairwise_selector_from_artifacts(
     val_features_path: Path | None = None,
     feature_projection_dim: int | None = None,
     feature_projection_seed: int = 0,
+    feature_projection_method: str = "random",
     top_k_grid: list[int] | None = None,
     batch_size: int = 1024,
     epochs: int = 5,
@@ -397,6 +446,8 @@ def train_pairwise_selector_from_artifacts(
     positive_gain_weight: float = 0.0,
     listwise_weight: float = 0.0,
     listwise_top_k: int = 16,
+    listwise_loss: str = "topk_ce",
+    listwise_target_temperature: float = 1.0,
     hard_example_weight: float = 0.0,
     hard_example_confidence_threshold: float = 0.75,
     target_mode: str = "nll_gain",
@@ -407,6 +458,11 @@ def train_pairwise_selector_from_artifacts(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    feature_projection_state = _fit_optional_pairwise_feature_projection(
+        features_path=train_features_path,
+        projection_dim=feature_projection_dim,
+        projection_method=feature_projection_method,
+    )
     train_bundle = build_pairwise_feature_bundle(
         manifest_path=train_manifest_path,
         targets_path=train_targets_path,
@@ -416,6 +472,8 @@ def train_pairwise_selector_from_artifacts(
         target_mode=target_mode,
         feature_projection_dim=feature_projection_dim,
         feature_projection_seed=feature_projection_seed,
+        feature_projection_method=feature_projection_method,
+        feature_projection_state=feature_projection_state,
     )
     val_bundle = build_pairwise_feature_bundle(
         manifest_path=val_manifest_path,
@@ -426,6 +484,8 @@ def train_pairwise_selector_from_artifacts(
         target_mode=target_mode,
         feature_projection_dim=feature_projection_dim,
         feature_projection_seed=feature_projection_seed,
+        feature_projection_method=feature_projection_method,
+        feature_projection_state=feature_projection_state,
     )
     model = PairwiseSelectorMLP(input_dim=train_bundle.features.shape[1], hidden_dim=hidden_dim)
     torch_device = torch.device(device)
@@ -474,6 +534,8 @@ def train_pairwise_selector_from_artifacts(
             positive_gain_weight=positive_gain_weight,
             listwise_weight=listwise_weight,
             listwise_top_k=listwise_top_k,
+            listwise_loss=listwise_loss,
+            listwise_target_temperature=listwise_target_temperature,
         )
         val_scores = predict_pairwise_scores(
             model=model,
@@ -517,8 +579,11 @@ def train_pairwise_selector_from_artifacts(
                     "hidden_dim": hidden_dim,
                     "aug_ids": train_bundle.aug_ids,
                     "feature_names": train_bundle.feature_names,
+                    "feature_projection_state": feature_projection_state,
                     "listwise_weight": listwise_weight,
                     "listwise_top_k": listwise_top_k,
+                    "listwise_loss": listwise_loss,
+                    "listwise_target_temperature": listwise_target_temperature,
                     "hard_example_weight": hard_example_weight,
                     "hard_example_confidence_threshold": hard_example_confidence_threshold,
                 },
@@ -548,6 +613,7 @@ def train_pairwise_selector_comparison_from_artifacts(
     val_features_path: Path | None = None,
     feature_projection_dim: int | None = None,
     feature_projection_seed: int = 0,
+    feature_projection_method: str = "random",
     top_k_grid: list[int] | None = None,
     batch_size: int = 1024,
     epochs: int = 5,
@@ -558,6 +624,8 @@ def train_pairwise_selector_comparison_from_artifacts(
     positive_gain_weight: float = 0.0,
     listwise_weight: float = 0.0,
     listwise_top_k: int = 16,
+    listwise_loss: str = "topk_ce",
+    listwise_target_temperature: float = 1.0,
     hard_example_weight: float = 0.0,
     hard_example_confidence_threshold: float = 0.75,
     device: str | torch.device = "cpu",
@@ -585,6 +653,7 @@ def train_pairwise_selector_comparison_from_artifacts(
             val_features_path=val_features_path,
             feature_projection_dim=feature_projection_dim,
             feature_projection_seed=feature_projection_seed,
+            feature_projection_method=feature_projection_method,
             top_k_grid=top_k_grid,
             batch_size=batch_size,
             epochs=epochs,
@@ -595,6 +664,8 @@ def train_pairwise_selector_comparison_from_artifacts(
             positive_gain_weight=positive_gain_weight,
             listwise_weight=listwise_weight,
             listwise_top_k=listwise_top_k,
+            listwise_loss=listwise_loss,
+            listwise_target_temperature=listwise_target_temperature,
             hard_example_weight=hard_example_weight,
             hard_example_confidence_threshold=hard_example_confidence_threshold,
             target_mode=target_mode,
@@ -606,8 +677,11 @@ def train_pairwise_selector_comparison_from_artifacts(
                 "variant": variant,
                 "target_mode": target_mode,
                 "selection_metric": selection_metric,
+                "feature_projection_method": feature_projection_method,
                 "listwise_weight": listwise_weight,
                 "listwise_top_k": listwise_top_k,
+                "listwise_loss": listwise_loss,
+                "listwise_target_temperature": listwise_target_temperature,
                 "hard_example_weight": hard_example_weight,
                 "hard_example_confidence_threshold": hard_example_confidence_threshold,
                 "best_epoch": summary.best_epoch,
@@ -717,6 +791,75 @@ def pairwise_listwise_topk_loss(
     ).mean()
 
 
+def pairwise_topk_kl_loss(
+    predicted_gain: torch.Tensor,
+    target_gain: torch.Tensor,
+    *,
+    top_k: int,
+    target_temperature: float = 1.0,
+) -> torch.Tensor:
+    """KL loss to a soft target distribution over target top-k augmentations."""
+
+    predicted_gain = predicted_gain.float()
+    target_gain = target_gain.float()
+    if predicted_gain.shape != target_gain.shape:
+        raise ValueError("predicted_gain and target_gain must have the same shape")
+    if predicted_gain.ndim != 2:
+        raise ValueError("predicted_gain must have shape [images, augmentations]")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive")
+    if target_temperature <= 0.0:
+        raise ValueError("target_temperature must be positive")
+
+    capped_top_k = min(top_k, target_gain.shape[1])
+    target_topk = target_gain.topk(k=capped_top_k, dim=1).indices
+    topk_targets = torch.gather(target_gain, dim=1, index=target_topk)
+    topk_distribution = torch.nn.functional.softmax(
+        topk_targets / float(target_temperature),
+        dim=1,
+    )
+    target_distribution = torch.zeros_like(target_gain)
+    target_distribution.scatter_(dim=1, index=target_topk, src=topk_distribution)
+    log_predicted = torch.nn.functional.log_softmax(predicted_gain, dim=1)
+    log_target = torch.log(torch.clamp(target_distribution, min=1e-12))
+    return torch.sum(target_distribution * (log_target - log_predicted), dim=1).mean()
+
+
+def build_pairwise_marginal_logit_gain_targets(
+    logits_by_aug: dict[str, np.ndarray],
+    aug_ids: list[str],
+    class_idxs: np.ndarray,
+    identity_aug_id: str,
+) -> np.ndarray:
+    """Score each augmentation by true-class logit gain when paired with identity."""
+
+    if identity_aug_id not in aug_ids:
+        raise ValueError("identity augmentation must be present in aug_ids")
+    class_idxs = np.asarray(class_idxs, dtype=np.int64)
+    clean_logits = np.asarray(logits_by_aug[identity_aug_id], dtype=np.float32)
+    if clean_logits.ndim != 2:
+        raise ValueError("identity logits must have shape [images, classes]")
+    if class_idxs.shape != (clean_logits.shape[0],):
+        raise ValueError("class_idxs must have shape [images]")
+    if np.any(class_idxs < 0) or np.any(class_idxs >= clean_logits.shape[1]):
+        raise ValueError("class_idxs values must fall inside logits class dimension")
+
+    row_indices = np.arange(clean_logits.shape[0])
+    clean_true_logits = clean_logits[row_indices, class_idxs]
+    columns = []
+    for aug_id in aug_ids:
+        aug_logits = np.asarray(logits_by_aug[aug_id], dtype=np.float32)
+        if aug_logits.shape != clean_logits.shape:
+            raise ValueError("all augmentation logits must match identity logits shape")
+        if aug_id == identity_aug_id:
+            columns.append(np.zeros_like(clean_true_logits, dtype=np.float32))
+            continue
+        ensemble_logits = (clean_logits + aug_logits) / 2.0
+        ensemble_true_logits = ensemble_logits[row_indices, class_idxs]
+        columns.append((ensemble_true_logits - clean_true_logits).astype(np.float32))
+    return np.stack(columns, axis=1).astype(np.float32)
+
+
 def build_pairwise_hard_example_weights(
     bundle: PairwiseFeatureBundle,
     *,
@@ -773,6 +916,8 @@ def _train_one_epoch(
     positive_gain_weight: float,
     listwise_weight: float,
     listwise_top_k: int,
+    listwise_loss: str,
+    listwise_target_temperature: float,
 ) -> float:
     model.train()
     losses = []
@@ -795,12 +940,14 @@ def _train_one_epoch(
             positive_gain_weight=positive_gain_weight,
             row_weights=row_weights.reshape(-1),
         )
-        listwise_loss = pairwise_listwise_topk_loss(
-            scores,
-            targets,
+        listwise_term = _pairwise_listwise_loss(
+            predicted_gain=scores,
+            target_gain=targets,
             top_k=listwise_top_k,
+            loss_name=listwise_loss,
+            target_temperature=listwise_target_temperature,
         )
-        loss = loss_terms["loss"] + float(listwise_weight) * listwise_loss
+        loss = loss_terms["loss"] + float(listwise_weight) * listwise_term
         loss.backward()
         optimizer.step()
         losses.append(float(loss.detach().cpu().item()))
@@ -813,17 +960,56 @@ def _is_better_pairwise_metric(current: float, best: float, selection_metric: st
     return current < best
 
 
+def _pairwise_listwise_loss(
+    predicted_gain: torch.Tensor,
+    target_gain: torch.Tensor,
+    *,
+    top_k: int,
+    loss_name: str,
+    target_temperature: float,
+) -> torch.Tensor:
+    if loss_name == "topk_ce":
+        return pairwise_listwise_topk_loss(
+            predicted_gain,
+            target_gain,
+            top_k=top_k,
+        )
+    if loss_name == "topk_kl":
+        return pairwise_topk_kl_loss(
+            predicted_gain,
+            target_gain,
+            top_k=top_k,
+            target_temperature=target_temperature,
+        )
+    raise ValueError("listwise_loss must be 'topk_ce' or 'topk_kl'")
+
+
 def _prepare_optional_image_features(
     features: np.ndarray,
     feature_names: list[str],
     projection_dim: int | None,
     projection_seed: int,
+    projection_method: str,
+    projection_state: Mapping[str, Any] | None,
 ) -> tuple[np.ndarray, list[str]]:
     features = np.asarray(features, dtype=np.float32)
+    if projection_state is not None:
+        return apply_pairwise_feature_projection(features, projection_state)
     if projection_dim is None:
         return features, list(feature_names)
     if projection_dim <= 0:
         raise ValueError("feature_projection_dim must be positive")
+    if projection_method == "pca_whiten":
+        return apply_pairwise_feature_projection(
+            features,
+            fit_pairwise_feature_projection(
+                features,
+                projection_dim=projection_dim,
+                method=projection_method,
+            ),
+        )
+    if projection_method != "random":
+        raise ValueError("feature_projection_method must be 'random' or 'pca_whiten'")
     if projection_dim >= features.shape[1]:
         return features, list(feature_names)
     rng = np.random.default_rng(projection_seed)
@@ -835,6 +1021,82 @@ def _prepare_optional_image_features(
     projected = features @ projection
     projected_names = [f"projected_feature_{index:04d}" for index in range(projection_dim)]
     return projected.astype(np.float32), projected_names
+
+
+def _fit_optional_pairwise_feature_projection(
+    features_path: Path | None,
+    projection_dim: int | None,
+    projection_method: str,
+) -> dict[str, Any] | None:
+    if projection_method != "pca_whiten":
+        return None
+    if projection_dim is None:
+        return None
+    if features_path is None:
+        raise ValueError("pca_whiten feature projection requires --train-features")
+    pretrained = load_selector_features(features_path)
+    return fit_pairwise_feature_projection(
+        pretrained.features,
+        projection_dim=projection_dim,
+        method=projection_method,
+    )
+
+
+def fit_pairwise_feature_projection(
+    features: np.ndarray,
+    *,
+    projection_dim: int,
+    method: str = "pca_whiten",
+    eps: float = 1e-6,
+) -> dict[str, Any]:
+    """Fit a deterministic feature projection state for optional image features."""
+
+    features = np.asarray(features, dtype=np.float32)
+    if features.ndim != 2:
+        raise ValueError("features must have shape [images, features]")
+    if projection_dim <= 0:
+        raise ValueError("projection_dim must be positive")
+    if method != "pca_whiten":
+        raise ValueError("method must be 'pca_whiten'")
+    mean = features.mean(axis=0).astype(np.float32)
+    centered = features - mean
+    _, _, vt = np.linalg.svd(centered, full_matrices=False)
+    effective_dim = min(projection_dim, vt.shape[0])
+    components = vt[:effective_dim].T.astype(np.float32)
+    projected = centered @ components
+    scale = np.maximum(projected.std(axis=0), eps).astype(np.float32)
+    return {
+        "method": "pca_whiten",
+        "mean": mean,
+        "components": components,
+        "scale": scale,
+        "feature_names": [f"pca_whiten_feature_{index:04d}" for index in range(effective_dim)],
+    }
+
+
+def apply_pairwise_feature_projection(
+    features: np.ndarray,
+    projection_state: Mapping[str, Any],
+) -> tuple[np.ndarray, list[str]]:
+    """Apply a fitted optional image feature projection state."""
+
+    features = np.asarray(features, dtype=np.float32)
+    if projection_state.get("method") != "pca_whiten":
+        raise ValueError("unsupported feature projection state method")
+    mean = np.asarray(projection_state["mean"], dtype=np.float32)
+    components = np.asarray(projection_state["components"], dtype=np.float32)
+    scale = np.asarray(projection_state["scale"], dtype=np.float32)
+    if features.ndim != 2:
+        raise ValueError("features must have shape [images, features]")
+    if mean.shape != (features.shape[1],):
+        raise ValueError("projection mean must match feature dimension")
+    if components.shape[0] != features.shape[1]:
+        raise ValueError("projection components must match feature dimension")
+    if scale.shape != (components.shape[1],):
+        raise ValueError("projection scale must match projected dimension")
+    projected = (features - mean) @ components
+    projected = projected / scale
+    return projected.astype(np.float32), [str(name) for name in projection_state["feature_names"]]
 
 
 def _build_pairwise_bundle_from_image_features(
@@ -916,7 +1178,25 @@ def _load_pairwise_checkpoint(checkpoint_path: Path, device: torch.device) -> _P
         hidden_dim=int(checkpoint["hidden_dim"]),
         aug_ids=[str(aug_id) for aug_id in checkpoint["aug_ids"]],
         feature_names=[str(name) for name in checkpoint["feature_names"]],
+        feature_projection_state=cast(
+            "dict[str, Any] | None",
+            checkpoint.get("feature_projection_state"),
+        ),
     )
+
+
+def _load_confidence_bucket_policy(policy_path: Path) -> ConfidenceBucketPolicy:
+    raw_policy = json.loads(Path(policy_path).read_text(encoding="utf-8"))
+    if not isinstance(raw_policy, dict):
+        raise ValueError("confidence policy JSON must contain an object")
+    if "confidence_bins" not in raw_policy or "bucket_k" not in raw_policy:
+        raise ValueError("confidence policy must contain confidence_bins and bucket_k")
+
+    confidence_bins = [float(value) for value in raw_policy["confidence_bins"]]
+    bucket_k = [int(value) for value in raw_policy["bucket_k"]]
+    if len(bucket_k) != len(confidence_bins) - 1:
+        raise ValueError("confidence policy bucket_k must match confidence_bins intervals")
+    return {"confidence_bins": confidence_bins, "bucket_k": bucket_k}
 
 
 def _top1_delta_targets(

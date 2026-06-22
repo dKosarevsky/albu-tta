@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import random
-from typing import cast
+from typing import TypedDict, cast
 
 import numpy as np
 
 from learned_tta.metrics import classification_metrics, expected_calibration_error
 from learned_tta.targets import compute_gain_targets
+
+
+class ConfidenceBucketPolicy(TypedDict, total=False):
+    """Calibrated clean-confidence bucket policy."""
+
+    confidence_bins: list[float]
+    bucket_k: list[int]
+    metric: str
+    rows: list[dict[str, float | int]]
 
 
 def average_probabilities(
@@ -26,6 +35,7 @@ def weighted_average_probabilities(
     selected_aug_ids: list[list[str]],
     aug_ids: list[str],
     predicted_gain: np.ndarray,
+    score_temperature: float = 1.0,
 ) -> np.ndarray:
     """Average per-image softmax probabilities with selector-score softmax weights."""
 
@@ -34,12 +44,16 @@ def weighted_average_probabilities(
         raise ValueError("predicted_gain must have shape [num_images, augmentations]")
     if predicted_gain.shape != (len(selected_aug_ids), len(aug_ids)):
         raise ValueError("predicted_gain shape must match selected images and aug_ids")
+    if score_temperature <= 0.0:
+        raise ValueError("score_temperature must be positive")
 
     aug_index = {aug_id: index for index, aug_id in enumerate(aug_ids)}
     rows = []
     for image_index, image_aug_ids in enumerate(selected_aug_ids):
         selection_indices = [aug_index[aug_id] for aug_id in image_aug_ids]
-        weights = _softmax_vector(predicted_gain[image_index, selection_indices])
+        weights = _softmax_vector(
+            predicted_gain[image_index, selection_indices] / float(score_temperature)
+        )
         row_probabilities = np.stack(
             [
                 _softmax(logits_by_aug[aug_id][image_index : image_index + 1])[0]
@@ -149,6 +163,137 @@ def confidence_adaptive_topk_selection(
     return selections
 
 
+def confidence_bucket_topk_selection(
+    clean_logits: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    identity_aug_id: str,
+    confidence_bins: list[float],
+    bucket_k: list[int],
+) -> list[list[str]]:
+    """Select per-image top-k using an arbitrary clean-confidence bucket policy."""
+
+    clean_logits = np.asarray(clean_logits, dtype=np.float32)
+    predicted_gain = np.asarray(predicted_gain, dtype=np.float32)
+    bins = _validate_confidence_bins(confidence_bins)
+    if clean_logits.ndim != 2:
+        raise ValueError("clean_logits must have shape [images, classes]")
+    if predicted_gain.shape != (clean_logits.shape[0], len(aug_ids)):
+        raise ValueError("predicted_gain shape must match clean_logits rows and aug_ids")
+    if len(bucket_k) != len(bins) - 1:
+        raise ValueError("bucket_k must contain one k value per confidence interval")
+    if min(bucket_k, default=0) < 0:
+        raise ValueError("bucket_k values must be non-negative")
+
+    confidence = _softmax(clean_logits).max(axis=1)
+    bucket_indices = _confidence_bucket_indices(confidence, bins)
+    identity_index = aug_ids.index(identity_aug_id)
+    selections = []
+    for bucket_index, image_gain in zip(bucket_indices, predicted_gain, strict=True):
+        k = bucket_k[int(bucket_index)]
+        ranked_indices = [
+            index for index in np.argsort(image_gain)[::-1].tolist() if index != identity_index
+        ][:k]
+        selections.append([identity_aug_id, *[aug_ids[index] for index in ranked_indices]])
+    return selections
+
+
+def calibrate_confidence_bucket_policy(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    identity_aug_id: str,
+    confidence_bins: list[float],
+    k_grid: list[int],
+    metric: str = "top1",
+) -> ConfidenceBucketPolicy:
+    """Choose the best learned top-k value independently for each confidence bucket."""
+
+    class_idxs = np.asarray(class_idxs, dtype=np.int64)
+    predicted_gain = np.asarray(predicted_gain, dtype=np.float32)
+    bins = _validate_confidence_bins(confidence_bins)
+    if metric not in {"top1", "nll"}:
+        raise ValueError("metric must be 'top1' or 'nll'")
+    if not k_grid:
+        raise ValueError("k_grid must not be empty")
+    if min(k_grid) < 0:
+        raise ValueError("k_grid values must be non-negative")
+    if identity_aug_id not in logits_by_aug:
+        raise ValueError("identity_aug_id must exist in logits_by_aug")
+    if predicted_gain.shape != (len(class_idxs), len(aug_ids)):
+        raise ValueError("predicted_gain shape must match class_idxs rows and aug_ids")
+
+    clean_logits = np.asarray(logits_by_aug[identity_aug_id], dtype=np.float32)
+    if clean_logits.shape[0] != len(class_idxs):
+        raise ValueError("identity logits and class_idxs must have matching rows")
+
+    confidence = _softmax(clean_logits).max(axis=1)
+    bucket_indices = _confidence_bucket_indices(confidence, bins)
+    higher_is_better = metric == "top1"
+    chosen_k: list[int] = []
+    rows: list[dict[str, float | int]] = []
+
+    for bucket_index in range(len(bins) - 1):
+        mask = bucket_indices == bucket_index
+        image_count = int(mask.sum())
+        if image_count == 0:
+            chosen_k.append(0)
+            rows.append(
+                _confidence_policy_row(
+                    bucket_index=bucket_index,
+                    confidence_min=bins[bucket_index],
+                    confidence_max=bins[bucket_index + 1],
+                    image_count=0,
+                    k=0,
+                    metrics={},
+                )
+            )
+            continue
+
+        bucket_logits = {aug_id: logits[mask] for aug_id, logits in logits_by_aug.items()}
+        bucket_class_idxs = class_idxs[mask]
+        bucket_gain = predicted_gain[mask]
+        scored_candidates: list[tuple[int, dict[str, float]]] = []
+        for k in k_grid:
+            metrics = evaluate_learned_topk_uniform(
+                logits_by_aug=bucket_logits,
+                class_idxs=bucket_class_idxs,
+                aug_ids=aug_ids,
+                predicted_gain=bucket_gain,
+                identity_aug_id=identity_aug_id,
+                k=k,
+            )
+            scored_candidates.append((k, metrics))
+            rows.append(
+                _confidence_policy_row(
+                    bucket_index=bucket_index,
+                    confidence_min=bins[bucket_index],
+                    confidence_max=bins[bucket_index + 1],
+                    image_count=image_count,
+                    k=k,
+                    metrics=metrics,
+                )
+            )
+
+        chosen_k.append(
+            min(
+                scored_candidates,
+                key=lambda candidate: (
+                    -candidate[1][metric] if higher_is_better else candidate[1][metric],
+                    candidate[0],
+                ),
+            )[0]
+        )
+
+    return {
+        "confidence_bins": [float(value) for value in bins],
+        "bucket_k": chosen_k,
+        "metric": metric,
+        "rows": rows,
+    }
+
+
 def fixed_light_tta_selection(aug_ids: list[str], identity_aug_id: str, k: int) -> list[str]:
     """Select identity plus the first k non-identity augmentations."""
 
@@ -218,6 +363,7 @@ def evaluate_weighted_selected_tta(
     class_idxs: np.ndarray,
     aug_ids: list[str],
     predicted_gain: np.ndarray,
+    score_temperature: float = 1.0,
 ) -> dict[str, float]:
     """Evaluate per-image selected TTA with selector-score softmax weights."""
 
@@ -226,6 +372,7 @@ def evaluate_weighted_selected_tta(
         selected_aug_ids=selected_aug_ids,
         aug_ids=aug_ids,
         predicted_gain=predicted_gain,
+        score_temperature=score_temperature,
     )
     metrics = classification_metrics(probabilities, class_idxs, topk=(1, 5))
     metrics["ece"] = expected_calibration_error(probabilities, class_idxs)
@@ -439,6 +586,28 @@ def evaluate_confidence_adaptive_topk_uniform(
     return evaluate_selected_tta(logits_by_aug, selected_aug_ids, class_idxs)
 
 
+def evaluate_confidence_bucket_topk_uniform(
+    logits_by_aug: dict[str, np.ndarray],
+    class_idxs: np.ndarray,
+    aug_ids: list[str],
+    predicted_gain: np.ndarray,
+    identity_aug_id: str,
+    confidence_bins: list[float],
+    bucket_k: list[int],
+) -> dict[str, float]:
+    """Evaluate a learned confidence-bucket top-k policy with uniform averaging."""
+
+    selected_aug_ids = confidence_bucket_topk_selection(
+        clean_logits=logits_by_aug[identity_aug_id],
+        aug_ids=aug_ids,
+        predicted_gain=predicted_gain,
+        identity_aug_id=identity_aug_id,
+        confidence_bins=confidence_bins,
+        bucket_k=bucket_k,
+    )
+    return evaluate_selected_tta(logits_by_aug, selected_aug_ids, class_idxs)
+
+
 def evaluate_learned_topk_softmax_weighted(
     logits_by_aug: dict[str, np.ndarray],
     class_idxs: np.ndarray,
@@ -446,6 +615,7 @@ def evaluate_learned_topk_softmax_weighted(
     predicted_gain: np.ndarray,
     identity_aug_id: str,
     k: int,
+    score_temperature: float = 1.0,
 ) -> dict[str, float]:
     """Evaluate learned top-k selection with selector-score softmax weights."""
 
@@ -461,6 +631,7 @@ def evaluate_learned_topk_softmax_weighted(
         class_idxs=class_idxs,
         aug_ids=aug_ids,
         predicted_gain=predicted_gain,
+        score_temperature=score_temperature,
     )
 
 
@@ -542,6 +713,48 @@ def _mean_selection_size(selected_aug_ids: list[str] | list[list[str]]) -> float
         return float(len(selected_aug_ids))
     per_image_aug_ids = cast(list[list[str]], selected_aug_ids)
     return float(np.mean([len(selection) for selection in per_image_aug_ids]))
+
+
+def _validate_confidence_bins(confidence_bins: list[float]) -> list[float]:
+    bins = [float(value) for value in confidence_bins]
+    if len(bins) < 2:
+        raise ValueError("confidence_bins must contain at least two edges")
+    if bins[0] < 0.0 or bins[0] > 1.0:
+        raise ValueError("the first confidence bin edge must be within [0, 1]")
+    if any(value < 0.0 or value > 1.0 for value in bins[1:-1]):
+        raise ValueError("interior confidence bin edges must be within [0, 1]")
+    if bins[-1] < 1.0:
+        raise ValueError("the last confidence bin edge must cover confidence 1.0")
+    if any(right <= left for left, right in zip(bins, bins[1:], strict=False)):
+        raise ValueError("confidence_bins must be strictly increasing")
+    return bins
+
+
+def _confidence_bucket_indices(confidence: np.ndarray, bins: list[float]) -> np.ndarray:
+    bucket_indices = np.searchsorted(np.asarray(bins[1:-1], dtype=np.float32), confidence, "right")
+    return np.clip(bucket_indices, 0, len(bins) - 2).astype(np.int64)
+
+
+def _confidence_policy_row(
+    bucket_index: int,
+    confidence_min: float,
+    confidence_max: float,
+    image_count: int,
+    k: int,
+    metrics: dict[str, float],
+) -> dict[str, float | int]:
+    return {
+        "bucket_index": bucket_index,
+        "confidence_min": confidence_min,
+        "confidence_max": confidence_max,
+        "image_count": image_count,
+        "k": k,
+        "top1": float(metrics.get("top1", 0.0)),
+        "top5": float(metrics.get("top5", 0.0)),
+        "nll": float(metrics.get("nll", 0.0)),
+        "ece": float(metrics.get("ece", 0.0)),
+        "forwards_per_image": float(metrics.get("forwards_per_image", 0.0)),
+    }
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:

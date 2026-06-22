@@ -112,7 +112,7 @@ Adding per-image softmax logit weighting improves the same k=16 checkpoint to
 0.82828 private top-1, which is +2.36 pp vs clean, captures 33.6% of the
 private same-k oracle top-1 gap, and remains 4.664 pp below oracle@k16.
 
-The best private policy point found here is k=8 with softmax-weighted selected
+The previous best private policy point was k=8 with softmax-weighted selected
 logits: 0.82912 top-1 at 9 forwards/image. That is +2.444 pp vs clean and
 +0.184 pp vs the previous k=16 pairwise_top1_delta result while using roughly
 half the inference compute. The corresponding oracle@k8 is 0.89032, so the
@@ -121,6 +121,17 @@ is slightly weaker on top-1 (0.82456) but stronger on NLL (0.69459 vs 0.72518).
 Two training variants with pretrained-feature projection plus listwise/hard
 example losses were tried, but did not beat the existing public-val top-1-delta
 checkpoint; keep them as implementation support, not as the selected model.
+
+The latest tuning pass keeps the same public-val-selected top-1-delta checkpoint
+and k=8 policy, but tunes the selected-logit softmax temperature on public-val.
+Temperature 0.25 is the best public-val setting and improves the frozen private
+result to 0.83128 top-1 at the same 9 forwards/image. That is +2.66 pp vs clean
+and 31.1% capture of the oracle@k8 top-1 gap. A calibrated confidence-bucket
+policy reduces compute to 6.93 forwards/image, but drops to 0.82760 top-1, so it
+is a compute-saving ablation rather than the primary result.
+
+- Temperature grid: `tables/pairwise_public_temperature_grid.csv`
+- Confidence policy calibration: `tables/pairwise_public_confidence_policy.csv`
 
 | strategy | top1 | top5 | nll | ece | forwards_per_image | top1_delta_pp_vs_clean | top1_gap_pp_to_oracle | top1_oracle_capture |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -131,7 +142,9 @@ checkpoint; keep them as implementation support, not as the selected model.
 | pairwise_top1_delta_confidence_adaptive | 0.82732 | 0.94668 | 0.736047 | 0.0344373 | 11.0051 | 2.264 | 4.76 | 0.322323 |
 | pairwise_top1_delta_k8 | 0.828 | 0.94556 | 0.739722 | 0.0359456 | 9 | 2.332 | 6.232 | 0.272303 |
 | pairwise_top1_delta_k8_softmax_weighted | 0.82912 | 0.94564 | 0.739128 | 0.0343512 | 9 | 2.444 | 6.12 | 0.285381 |
+| pairwise_top1_delta_k8_t025_softmax_weighted | 0.83128 | 0.94552 | 0.737878 | 0.0329303 | 9 | 2.66 | 5.904 | 0.310603 |
 | pairwise_top1_delta_k8_confidence_adaptive | 0.82812 | 0.9448 | 0.75291 | 0.0364064 | 6.00256 | 2.344 | 6.22 | 0.273704 |
+| pairwise_top1_delta_k8_t025_confidence_policy | 0.8276 | 0.94532 | 0.75467 | 0.0371669 | 6.92936 | 2.292 | 6.272 | 0.267632 |
 | oracle_topk_uniform_k8 | 0.89032 | 0.96756 | 0.433547 | 0.00665417 | 9 | 8.564 | 0 | 1 |
 | oracle_topk_uniform | 0.87492 | 0.96312 | 0.489845 | 0.0135182 | 17 | 7.024 | 0 | 1 |
 

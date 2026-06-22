@@ -8,6 +8,22 @@
 
 **Tech Stack:** Python, PyTorch, NumPy, pytest, existing `learned_tta` CLI/reporting modules.
 
+## 2026-06-22 Follow-Up Status
+
+- [x] Added marginal-logit ensemble contribution targets for pairwise training.
+- [x] Added top-k KL listwise loss focused on selected augmentations.
+- [x] Added fitted PCA/whitening projection for pretrained selector features.
+- [x] Added arbitrary confidence-bucket policy calibration and JSON-backed evaluation.
+- [x] Tuned selected-logit softmax temperature on public-val and refreshed private results.
+
+Outcome: the new target/projection/listwise training variants did not beat the
+existing public-val-selected `pairwise_top1_delta` checkpoint on top-1, so the
+selected model stays unchanged. The useful improvement came from aggregation
+tuning: public-val selected `score_temperature=0.25`, which improves private
+k=8 softmax-weighted top-1 from 0.82912 to 0.83128 at the same 9 forwards/image.
+The confidence-bucket policy is useful as a lower-compute ablation
+(0.82760 top-1 at 6.93 forwards/image), not as the primary result.
+
 ---
 
 ## File Structure
