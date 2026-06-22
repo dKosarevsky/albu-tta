@@ -23,6 +23,12 @@ from learned_tta.stacking import (
     load_aggregation_artifact,
     xgboost_multiclass_probabilities,
 )
+from learned_tta.standard_baselines import (
+    evaluate_cached_standard_baselines,
+    evaluate_ten_crop_artifact,
+    load_ten_crop_logits,
+    ten_crop_probabilities,
+)
 from learned_tta.tta_eval import (
     adaptive_topk_selection,
     average_probabilities,
@@ -76,6 +82,7 @@ def evaluate_private_from_artifacts(
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
     xgboost_aggregator_path: Path | None = None,
+    ten_crop_logits_path: Path | None = None,
     device: str | torch.device = "cpu",
     identity_aug_id: str = "aug_000",
 ) -> PrivateEvaluationSummary:
@@ -113,6 +120,7 @@ def evaluate_private_from_artifacts(
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
+        ten_crop_logits_path=ten_crop_logits_path,
     )
 
     tables_dir = Path(output_dir) / "tables"
@@ -137,6 +145,7 @@ def evaluate_private_from_artifacts(
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
+        ten_crop_logits_path=ten_crop_logits_path,
     ).to_csv(corrections_csv, index=False)
     if global_aggregator_path is not None:
         artifact = load_aggregation_artifact(global_aggregator_path)
@@ -170,6 +179,7 @@ def evaluate_private_from_config(
     global_aggregator_path: Path | None = None,
     class_aggregator_path: Path | None = None,
     xgboost_aggregator_path: Path | None = None,
+    ten_crop_logits_path: Path | None = None,
     image_size: int = 224,
     batch_size: int = 64,
     num_workers: int = 4,
@@ -216,6 +226,7 @@ def evaluate_private_from_config(
         global_aggregator_path=resolved_global_aggregator_path,
         class_aggregator_path=resolved_class_aggregator_path,
         xgboost_aggregator_path=resolved_xgboost_aggregator_path,
+        ten_crop_logits_path=ten_crop_logits_path,
         device=device,
         identity_aug_id=config.augmentations.identity_id,
     )
@@ -235,6 +246,7 @@ def _evaluate_private_strategies(
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
     xgboost_aggregator_path: Path | None,
+    ten_crop_logits_path: Path | None,
 ) -> dict[str, dict[str, float]]:
     random_metrics = [
         evaluate_random_topk(
@@ -248,6 +260,12 @@ def _evaluate_private_strategies(
         for seed in random_seeds
     ]
     metrics = {
+        **evaluate_cached_standard_baselines(
+            logits_by_aug=logits_by_aug,
+            class_idxs=class_idxs,
+            identity_aug_id=identity_aug_id,
+            reference_aug_count=len(aug_ids),
+        ),
         "clean": evaluate_clean(logits_by_aug, class_idxs, identity_aug_id=identity_aug_id),
         "fixed_light_tta": evaluate_fixed_light_tta(
             logits_by_aug,
@@ -316,6 +334,12 @@ def _evaluate_private_strategies(
             logits_by_aug=logits_by_aug,
             class_idxs=class_idxs,
             total_augments=len(aug_ids),
+        )
+    if ten_crop_logits_path is not None:
+        metrics["ten_crop"] = evaluate_ten_crop_artifact(
+            ten_crop_logits_path,
+            expected_class_idxs=class_idxs,
+            reference_aug_count=len(aug_ids),
         )
     return metrics
 
@@ -413,6 +437,7 @@ def _build_private_corrections(
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
     xgboost_aggregator_path: Path | None,
+    ten_crop_logits_path: Path | None,
 ) -> pd.DataFrame:
     probabilities_by_strategy = _private_probabilities_by_strategy(
         logits_by_aug=logits_by_aug,
@@ -427,6 +452,7 @@ def _build_private_corrections(
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
+        ten_crop_logits_path=ten_crop_logits_path,
     )
     predictions_by_strategy = {
         strategy: probabilities.argmax(axis=1)
@@ -496,8 +522,10 @@ def _private_probabilities_by_strategy(
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
     xgboost_aggregator_path: Path | None,
+    ten_crop_logits_path: Path | None,
 ) -> dict[str, np.ndarray]:
     probabilities = {
+        "clean_center_crop": average_probabilities(logits_by_aug, [identity_aug_id]),
         "clean": average_probabilities(logits_by_aug, [identity_aug_id]),
         "fixed_light_tta": average_probabilities(
             logits_by_aug,
@@ -509,6 +537,11 @@ def _private_probabilities_by_strategy(
         ),
         "all_100_uniform": average_probabilities(logits_by_aug, aug_ids),
     }
+    if "aug_005" in logits_by_aug:
+        probabilities["center_crop_hflip"] = average_probabilities(
+            logits_by_aug,
+            [identity_aug_id, "aug_005"],
+        )
     selected_aug_ids = learned_topk_selection(
         aug_ids=aug_ids,
         predicted_gain=predicted_gain,
@@ -565,6 +598,11 @@ def _private_probabilities_by_strategy(
             artifact_path=xgboost_aggregator_path,
             logits_by_aug=logits_by_aug,
         )
+    if ten_crop_logits_path is not None:
+        artifact = load_ten_crop_logits(ten_crop_logits_path)
+        if not np.array_equal(artifact.class_idxs, class_idxs):
+            raise ValueError("10-crop class_idxs do not match private cache order")
+        probabilities["ten_crop"] = ten_crop_probabilities(artifact.crop_logits)
     return probabilities
 
 

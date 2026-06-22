@@ -333,6 +333,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             active_threshold=float(args.active_threshold),
             device=str(args.device),
         )
+    elif command == "run-ten-crop-baseline":
+        _cmd_run_ten_crop_baseline(
+            config_path=Path(args.config),
+            split=str(args.split),
+            manifest_path=_optional_path(args.manifest),
+            output_logits_path=_optional_path(args.output_logits),
+            metrics_output_path=_optional_path(args.metrics_output),
+            batch_size=int(args.batch_size),
+            num_workers=int(args.num_workers),
+            device=str(args.device),
+        )
     elif command == "evaluate-private":
         output_dir = Path(args.output_dir) if args.output_dir is not None else None
         _cmd_evaluate_private(
@@ -347,6 +358,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             global_aggregator_path=_optional_path(args.global_aggregator),
             class_aggregator_path=_optional_path(args.class_aggregator),
             xgboost_aggregator_path=_optional_path(args.xgboost_aggregator),
+            ten_crop_logits_path=_optional_path(args.ten_crop_logits),
             random_seeds=args.random_seed,
             image_size=int(args.image_size),
             batch_size=int(args.batch_size),
@@ -987,6 +999,19 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     train_aggregator.add_argument("--device", default="cpu")
 
+    ten_crop = subparsers.add_parser(
+        "run-ten-crop-baseline",
+        help="Run standard ImageNet 10-crop inference and write logits plus metrics.",
+    )
+    ten_crop.add_argument("--config", required=True, help="Path to experiment YAML config.")
+    ten_crop.add_argument("--split", default="private")
+    ten_crop.add_argument("--manifest")
+    ten_crop.add_argument("--output-logits")
+    ten_crop.add_argument("--metrics-output")
+    ten_crop.add_argument("--batch-size", type=int, default=64)
+    ten_crop.add_argument("--num-workers", type=int, default=4)
+    ten_crop.add_argument("--device", default="cpu")
+
     evaluate_private = subparsers.add_parser(
         "evaluate-private",
         help="Evaluate frozen learned TTA and baselines on the private split.",
@@ -1000,6 +1025,7 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_private.add_argument("--global-aggregator")
     evaluate_private.add_argument("--class-aggregator")
     evaluate_private.add_argument("--xgboost-aggregator")
+    evaluate_private.add_argument("--ten-crop-logits")
     evaluate_private.add_argument("--output-dir")
     evaluate_private.add_argument("--candidate-id", action="append")
     evaluate_private.add_argument("--random-seed", type=int, action="append")
@@ -1889,6 +1915,7 @@ def _cmd_evaluate_private(
     global_aggregator_path: Path | None,
     class_aggregator_path: Path | None,
     xgboost_aggregator_path: Path | None,
+    ten_crop_logits_path: Path | None,
     random_seeds: list[int] | None,
     image_size: int,
     batch_size: int,
@@ -1909,6 +1936,7 @@ def _cmd_evaluate_private(
         global_aggregator_path=global_aggregator_path,
         class_aggregator_path=class_aggregator_path,
         xgboost_aggregator_path=xgboost_aggregator_path,
+        ten_crop_logits_path=ten_crop_logits_path,
         random_seeds=random_seeds,
         image_size=image_size,
         batch_size=batch_size,
@@ -1916,6 +1944,35 @@ def _cmd_evaluate_private(
         device=device,
     )
     print(f"private evaluation: best k {summary.best_k}, wrote {summary.private_metrics_csv}")
+
+
+def _cmd_run_ten_crop_baseline(
+    config_path: Path,
+    split: str,
+    manifest_path: Path | None,
+    output_logits_path: Path | None,
+    metrics_output_path: Path | None,
+    batch_size: int,
+    num_workers: int,
+    device: str,
+) -> None:
+    from learned_tta.standard_baselines import run_ten_crop_baseline_from_config
+
+    summary = run_ten_crop_baseline_from_config(
+        config_path=config_path,
+        split=split,
+        manifest_path=manifest_path,
+        output_logits_path=output_logits_path,
+        metrics_output_path=metrics_output_path,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        device=device,
+    )
+    print(
+        "ten-crop baseline: "
+        f"top1 {summary.metrics['top1']:.6g}, "
+        f"wrote {summary.logits_path} and {summary.metrics_path}"
+    )
 
 
 def _cmd_build_report(

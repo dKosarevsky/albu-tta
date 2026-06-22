@@ -27,6 +27,8 @@ Current selector baseline: `learned_topk_uniform` with the tuned `k` above. `lea
 
 | strategy | top1 | top5 | nll | ece | forwards_per_image | relative_compute_vs_all |
 | --- | --- | --- | --- | --- | --- | --- |
+| clean_center_crop | 0.80468 | 0.94592 | 0.939441 | 0.0867522 | 1 | 0.01 |
+| center_crop_hflip | 0.8086 | 0.94728 | 0.900318 | 0.0757235 | 2 | 0.02 |
 | clean | 0.80468 | 0.94592 | 0.939441 | 0.0867522 | 1 | 0.01 |
 | fixed_light_tta | 0.80848 | 0.94052 | 0.857318 | 0.0460779 | 17 | 0.17 |
 | random_topk | 0.80888 | 0.945448 | 0.821023 | 0.0307059 | 17 | 0.17 |
@@ -44,6 +46,8 @@ Current selector baseline: `learned_topk_uniform` with the tuned `k` above. `lea
 
 | strategy | top1_delta_vs_clean | top5_delta_vs_clean | nll_delta_vs_clean | ece_delta_vs_clean | forwards_per_image | relative_compute_vs_all |
 | --- | --- | --- | --- | --- | --- | --- |
+| clean_center_crop | 0 | 0 | 0 | 0 | 1 | 0.01 |
+| center_crop_hflip | 0.00392 | 0.00136 | -0.0391232 | -0.0110287 | 2 | 0.02 |
 | clean | 0 | 0 | 0 | 0 | 1 | 0.01 |
 | fixed_light_tta | 0.0038 | -0.0054 | -0.0821228 | -0.0406743 | 17 | 0.17 |
 | random_topk | 0.0042 | -0.000472 | -0.118418 | -0.0560463 | 17 | 0.17 |
@@ -155,6 +159,8 @@ is a compute-saving ablation rather than the primary result.
 | public_val | learned_topk_uniform | 17 | 0.17 |
 | public_val | global_weighted_tta | 100 | 1 |
 | public_val | class_weighted_tta | 100 | 1 |
+| private | clean_center_crop | 1 | 0.01 |
+| private | center_crop_hflip | 2 | 0.02 |
 | private | clean | 1 | 0.01 |
 | private | fixed_light_tta | 17 | 0.17 |
 | private | random_topk | 17 | 0.17 |

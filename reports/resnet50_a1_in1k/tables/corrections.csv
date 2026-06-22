@@ -1,4 +1,6 @@
 strategy,clean_correct,tta_correct,both_right,clean_wrong_tta_right,clean_right_tta_wrong,both_wrong,num_images
+clean_center_crop,20117.0,20117.0,20117.0,0.0,0.0,4883.0,25000.0
+center_crop_hflip,20117.0,20215.0,19891.0,324.0,226.0,4559.0,25000.0
 clean,20117.0,20117.0,20117.0,0.0,0.0,4883.0,25000.0
 fixed_light_tta,20117.0,20212.0,19601.0,611.0,516.0,4272.0,25000.0
 all_100_uniform,20117.0,20255.0,19968.0,287.0,149.0,4596.0,25000.0

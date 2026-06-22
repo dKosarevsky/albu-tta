@@ -96,6 +96,7 @@ def test_evaluate_private_from_artifacts_writes_metric_tables(
     assert summary.global_topn_metrics_csv is not None
     assert summary.global_topn_metrics_csv.exists()
     assert set(table["strategy"]) == {
+        "clean_center_crop",
         "clean",
         "fixed_light_tta",
         "random_topk",
@@ -176,6 +177,52 @@ def test_evaluate_private_from_artifacts_adds_adaptive_strategy_when_tuned(
     assert summary.metrics_by_strategy["learned_adaptive_uniform"][
         "forwards_per_image"
     ] == pytest.approx(2.0)
+
+
+def test_evaluate_private_from_artifacts_adds_ten_crop_when_logits_are_available(
+    tmp_path: Path,
+    private_eval_artifacts: dict[str, Path],
+) -> None:
+    from learned_tta.standard_baselines import write_ten_crop_logits
+
+    ten_crop_path = tmp_path / "ten_crop_logits.npz"
+    write_ten_crop_logits(
+        path=ten_crop_path,
+        crop_logits=np.array(
+            [
+                [[4.0, 0.0]] * 10,
+                [[0.0, 4.0]] * 10,
+            ],
+            dtype=np.float32,
+        ),
+        class_idxs=np.array([0, 1], dtype=np.int64),
+        image_ids=["private-0", "private-1"],
+    )
+
+    summary = evaluate_private_from_artifacts(
+        split="private",
+        manifest_path=private_eval_artifacts["manifest"],
+        cache_dir=private_eval_artifacts["cache_dir"],
+        checkpoint_path=private_eval_artifacts["checkpoint"],
+        tuning_path=private_eval_artifacts["tuning"],
+        output_dir=tmp_path / "reports",
+        aug_ids=["aug_000", "aug_001", "aug_002"],
+        image_size=16,
+        batch_size=2,
+        num_workers=0,
+        random_seeds=[1],
+        ten_crop_logits_path=ten_crop_path,
+        device="cpu",
+    )
+    table = pd.read_csv(summary.private_metrics_csv)
+    corrections = pd.read_csv(summary.corrections_csv)
+
+    assert "ten_crop" in set(table["strategy"])
+    assert "ten_crop" in set(corrections["strategy"])
+    assert summary.metrics_by_strategy["ten_crop"]["forwards_per_image"] == pytest.approx(10.0)
+    assert summary.metrics_by_strategy["ten_crop"]["relative_compute_vs_all"] == pytest.approx(
+        10 / 3
+    )
 
 
 def test_private_tuning_payload_coercion_rejects_bad_values(tmp_path: Path) -> None:
@@ -294,6 +341,64 @@ def test_evaluate_private_cli_writes_private_metrics(
     assert "private evaluation: best k 1" in captured.out
     assert (output_dir / "tables" / "private_metrics.csv").exists()
     assert (output_dir / "tables" / "corrections.csv").exists()
+
+
+def test_evaluate_private_cli_accepts_ten_crop_logits(
+    tmp_path: Path,
+    private_eval_artifacts: dict[str, Path],
+) -> None:
+    from learned_tta.cli import main
+    from learned_tta.standard_baselines import write_ten_crop_logits
+
+    output_dir = tmp_path / "reports"
+    ten_crop_path = tmp_path / "ten_crop_logits.npz"
+    write_ten_crop_logits(
+        path=ten_crop_path,
+        crop_logits=np.array(
+            [
+                [[4.0, 0.0]] * 10,
+                [[0.0, 4.0]] * 10,
+            ],
+            dtype=np.float32,
+        ),
+        class_idxs=np.array([0, 1], dtype=np.int64),
+        image_ids=["private-0", "private-1"],
+    )
+
+    main(
+        [
+            "evaluate-private",
+            "--config",
+            str(Path(__file__).resolve().parents[1] / "configs/experiment/resnet50_a1_in1k.yaml"),
+            "--manifest",
+            str(private_eval_artifacts["manifest"]),
+            "--cache-dir",
+            str(private_eval_artifacts["cache_dir"]),
+            "--checkpoint",
+            str(private_eval_artifacts["checkpoint"]),
+            "--tuning",
+            str(private_eval_artifacts["tuning"]),
+            "--output-dir",
+            str(output_dir),
+            "--candidate-id",
+            "aug_000",
+            "--candidate-id",
+            "aug_001",
+            "--candidate-id",
+            "aug_002",
+            "--ten-crop-logits",
+            str(ten_crop_path),
+            "--batch-size",
+            "2",
+            "--num-workers",
+            "0",
+            "--image-size",
+            "16",
+        ]
+    )
+
+    table = pd.read_csv(output_dir / "tables" / "private_metrics.csv")
+    assert "ten_crop" in set(table["strategy"])
 
 
 def _write_manifest(root: Path, split: str, count: int) -> Path:

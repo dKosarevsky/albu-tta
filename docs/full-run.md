@@ -163,6 +163,38 @@ uv run python -m learned_tta.cli summarize-clean-baseline \
 The identity shards are reused by the full run; valid shards are skipped by
 cache resume.
 
+## Standard TTA Baselines
+
+`evaluate-private` writes two standard cached rows when the corresponding
+teacher-cache shards are present:
+
+- `clean_center_crop`: identity `aug_000`, equivalent to the clean CenterCrop
+  path.
+- `center_crop_hflip`: identity plus `aug_005`, the configured horizontal flip
+  candidate.
+
+The classic 10-crop baseline is not one of the 100 AlbumentationsX candidates,
+so generate it once as a separate logits artifact:
+
+```bash
+uv run python -m learned_tta.cli run-ten-crop-baseline \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --split private \
+  --device cuda
+```
+
+Then include it in the frozen private table and rebuild the report:
+
+```bash
+uv run python -m learned_tta.cli evaluate-private \
+  --config configs/experiment/resnet50_a1_in1k.yaml \
+  --ten-crop-logits reports/resnet50_a1_in1k/tables/private_ten_crop_logits.npz \
+  --device cuda
+
+uv run python -m learned_tta.cli build-report \
+  --config configs/experiment/resnet50_a1_in1k.yaml
+```
+
 ## Full GPU Order
 
 The supervisor should drive the required order. Manual commands are useful for

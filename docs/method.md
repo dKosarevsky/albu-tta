@@ -18,6 +18,11 @@ This separation keeps article diagnostics clear: selection answers which
 AlbumentationsX transforms are useful, while aggregation answers how strongly to
 combine predictions once TTA views are available.
 
+Standard non-learned comparison rows are reported separately: clean CenterCrop,
+CenterCrop plus horizontal flip, and optionally classic 10-crop when its logits
+artifact has been generated. These are deployment baselines, while private
+oracle rows remain diagnostic upper bounds.
+
 ## Selector Target Formulation
 
 The selector is an augmentation utility predictor: it predicts

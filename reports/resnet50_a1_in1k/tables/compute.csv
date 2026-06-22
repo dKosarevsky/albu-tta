@@ -2,6 +2,8 @@ split,strategy,forwards_per_image,relative_compute_vs_all
 public_val,learned_topk_uniform,17.0,0.17
 public_val,global_weighted_tta,100.0,1.0
 public_val,class_weighted_tta,100.0,1.0
+private,clean_center_crop,1.0,0.01
+private,center_crop_hflip,2.0,0.02
 private,clean,1.0,0.01
 private,fixed_light_tta,17.0,0.17
 private,random_topk,17.0,0.17

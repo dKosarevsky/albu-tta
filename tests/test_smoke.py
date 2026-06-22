@@ -98,6 +98,7 @@ def test_run_smoke_e2e_writes_end_to_end_artifacts(tmp_path: Path) -> None:
     ]
     assert {"global_weighted_tta", "class_weighted_tta"} <= set(private_metrics["strategy"])
     assert set(private_metrics["strategy"]) == {
+        "clean_center_crop",
         "clean",
         "fixed_light_tta",
         "random_topk",
