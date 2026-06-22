@@ -39,6 +39,7 @@ Current selector baseline: `learned_topk_uniform` with the tuned `k` above. `lea
 | learned_adaptive_uniform | 0.81004 | 0.9486 | 0.819412 | 0.0431932 | 17 | 0.17 |
 | global_weighted_tta | 0.81488 | 0.94984 | 0.771035 | 0.0289746 | 100 | 1 |
 | class_weighted_tta | 0.80536 | 0.94128 | 0.839763 | 0.030029 | 100 | 1 |
+| ten_crop | 0.81448 | 0.95104 | 0.82422 | 0.0465716 | 10 | 0.1 |
 
 - Delta table: `tables/private_metric_deltas.csv`
 
@@ -55,9 +56,23 @@ Current selector baseline: `learned_topk_uniform` with the tuned `k` above. `lea
 | learned_topk_uniform | 0.0054 | 0.00264 | -0.12001 | -0.0435747 | 17 | 0.17 |
 | learned_topk_softmax_weighted | 0.00564 | 0.00248 | -0.119921 | -0.0440532 | 17 | 0.17 |
 | oracle_topk_uniform | 0.07024 | 0.0172 | -0.449596 | -0.073234 | 17 | 0.17 |
-| learned_adaptive_uniform | 0.00536 | 0.00268 | -0.120029 | -0.0435589 | 17 | 0.17 |
+| learned_adaptive_uniform | 0.00536 | 0.00268 | -0.120029 | -0.043559 | 17 | 0.17 |
 | global_weighted_tta | 0.0102 | 0.00392 | -0.168406 | -0.0577776 | 100 | 1 |
 | class_weighted_tta | 0.00068 | -0.00464 | -0.0996776 | -0.0567231 | 100 | 1 |
+| ten_crop | 0.0098 | 0.00512 | -0.115221 | -0.0401805 | 10 | 0.1 |
+
+## Standard Baselines and Current Framing
+
+The standard private baselines are now in the same table: center crop is 0.80468
+top-1, center crop plus hflip is 0.80860, and 10-crop is 0.81448 at 10
+forwards/image. 10-crop is the strongest conventional low-cost baseline here:
++0.98 pp vs clean and +0.588 pp vs hflip.
+
+The generated `learned_topk_*` rows are the older selector baseline. The current
+best project selector result is still the pairwise top-1-delta k=8 policy with
+public-val-tuned softmax temperature 0.25: 0.83128 top-1 at 9 forwards/image.
+That is +1.68 pp vs 10-crop while using one fewer forward, but it remains 5.904
+pp below the same-compute oracle@k8.
 
 ## Oracle Gap Capture
 
@@ -90,68 +105,6 @@ The next target is +1.5...2.0 pp top-1 at roughly the same 17 forwards/image bud
 | learned_topk_uniform | 2 | 0.81 | -0.2 | 9.7 | -0.0206186 | 3 |
 | learned_topk_uniform | 1 | 0.8098 | -0.22 | 7.88 | -0.0279188 | 2 |
 
-## Pairwise Selector Comparison
-
-- Table: `tables/pairwise_selector_comparison.csv`
-
-This is a public-val ablation, not a frozen private result. The top-1-delta
-pairwise ranker reaches 0.8382 top-1 at k=16, which is +2.62 pp vs public-val
-clean and +1.92 pp vs the current learned top-k selector. It captures 35.9% of
-the public-val same-k oracle top-1 gap and remains 4.68 pp below oracle@k16.
-The NLL-gain variant is weaker on top-1 but better on NLL.
-
-| variant | target_mode | selection_metric | best_epoch | best_val_top1 | best_val_nll |
-| --- | --- | --- | --- | --- | --- |
-| pairwise_nll_gain | nll_gain | val_tta_nll | 5 | 0.8354 | 0.644983 |
-| pairwise_top1_delta | top1_delta | val_tta_top1 | 4 | 0.8382 | 0.661144 |
-
-## Pairwise Private Evaluation
-
-- Table: `tables/pairwise_private_metrics.csv`
-- Error analysis: `tables/pairwise_private_top1_delta_error_analysis.csv`
-
-This is the frozen private check for the public-val-trained pairwise rankers at
-k=16. The public-val-selected top-1-delta ranker reaches 0.82728 private top-1.
-Adding per-image softmax logit weighting improves the same k=16 checkpoint to
-0.82828 private top-1, which is +2.36 pp vs clean, captures 33.6% of the
-private same-k oracle top-1 gap, and remains 4.664 pp below oracle@k16.
-
-The previous best private policy point was k=8 with softmax-weighted selected
-logits: 0.82912 top-1 at 9 forwards/image. That is +2.444 pp vs clean and
-+0.184 pp vs the previous k=16 pairwise_top1_delta result while using roughly
-half the inference compute. The corresponding oracle@k8 is 0.89032, so the
-selector still captures only 28.5% of the same-k oracle gap. The NLL-gain ranker
-is slightly weaker on top-1 (0.82456) but stronger on NLL (0.69459 vs 0.72518).
-Two training variants with pretrained-feature projection plus listwise/hard
-example losses were tried, but did not beat the existing public-val top-1-delta
-checkpoint; keep them as implementation support, not as the selected model.
-
-The latest tuning pass keeps the same public-val-selected top-1-delta checkpoint
-and k=8 policy, but tunes the selected-logit softmax temperature on public-val.
-Temperature 0.25 is the best public-val setting and improves the frozen private
-result to 0.83128 top-1 at the same 9 forwards/image. That is +2.66 pp vs clean
-and 31.1% capture of the oracle@k8 top-1 gap. A calibrated confidence-bucket
-policy reduces compute to 6.93 forwards/image, but drops to 0.82760 top-1, so it
-is a compute-saving ablation rather than the primary result.
-
-- Temperature grid: `tables/pairwise_public_temperature_grid.csv`
-- Confidence policy calibration: `tables/pairwise_public_confidence_policy.csv`
-
-| strategy | top1 | top5 | nll | ece | forwards_per_image | top1_delta_pp_vs_clean | top1_gap_pp_to_oracle | top1_oracle_capture |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clean | 0.80468 | 0.94592 | 0.939441 | 0.0867522 | 1 | 0 | 7.024 | 0 |
-| pairwise_nll_gain | 0.82456 | 0.94404 | 0.69459 | 0.0283946 | 17 | 1.988 | 5.036 | 0.28303 |
-| pairwise_top1_delta | 0.82728 | 0.947 | 0.725177 | 0.033261 | 17 | 2.26 | 4.764 | 0.321754 |
-| pairwise_top1_delta_softmax_weighted | 0.82828 | 0.94696 | 0.72465 | 0.0324488 | 17 | 2.36 | 4.664 | 0.335991 |
-| pairwise_top1_delta_confidence_adaptive | 0.82732 | 0.94668 | 0.736047 | 0.0344373 | 11.0051 | 2.264 | 4.76 | 0.322323 |
-| pairwise_top1_delta_k8 | 0.828 | 0.94556 | 0.739722 | 0.0359456 | 9 | 2.332 | 6.232 | 0.272303 |
-| pairwise_top1_delta_k8_softmax_weighted | 0.82912 | 0.94564 | 0.739128 | 0.0343512 | 9 | 2.444 | 6.12 | 0.285381 |
-| pairwise_top1_delta_k8_t025_softmax_weighted | 0.83128 | 0.94552 | 0.737878 | 0.0329303 | 9 | 2.66 | 5.904 | 0.310603 |
-| pairwise_top1_delta_k8_confidence_adaptive | 0.82812 | 0.9448 | 0.75291 | 0.0364064 | 6.00256 | 2.344 | 6.22 | 0.273704 |
-| pairwise_top1_delta_k8_t025_confidence_policy | 0.8276 | 0.94532 | 0.75467 | 0.0371669 | 6.92936 | 2.292 | 6.272 | 0.267632 |
-| oracle_topk_uniform_k8 | 0.89032 | 0.96756 | 0.433547 | 0.00665417 | 9 | 8.564 | 0 | 1 |
-| oracle_topk_uniform | 0.87492 | 0.96312 | 0.489845 | 0.0135182 | 17 | 7.024 | 0 | 1 |
-
 ## Compute
 
 | split | strategy | forwards_per_image | relative_compute_vs_all |
@@ -171,6 +124,7 @@ is a compute-saving ablation rather than the primary result.
 | private | learned_adaptive_uniform | 17 | 0.17 |
 | private | global_weighted_tta | 100 | 1 |
 | private | class_weighted_tta | 100 | 1 |
+| private | ten_crop | 10 | 0.1 |
 
 ## Augmentation Impact
 
@@ -282,6 +236,68 @@ is a compute-saving ablation rather than the primary result.
 | pretrained_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | pretrained | nll_gain | mlp | 0.1 | 16 | 5 | 0.724327 | 0.749623 | 16 | 0.8154 | 0.9548 | 0.749623 | 0.0237352 | 0.172025 |
 | hybrid_mlp_gain_rank | 0.2 | False | 0.01 | 0 | hybrid | nll_gain | mlp | 0 | 1 | 5 | 0.2886 | 0.743726 | 16 | 0.8184 | 0.956 | 0.743726 | 0.0426846 | 0.181888 |
 | hybrid_mlp_gain_listwise | 0.2 | False | 0.01 | 0 | hybrid | nll_gain | mlp | 0.1 | 16 | 2 | 0.742844 | 0.749411 | 16 | 0.8156 | 0.955 | 0.749411 | 0.0262514 | 0.1631 |
+
+## Pairwise Selector Comparison
+
+- Table: `tables/pairwise_selector_comparison.csv`
+
+This is a public-val ablation, not a frozen private result. The top-1-delta
+pairwise ranker reaches 0.8382 top-1 at k=16, which is +2.62 pp vs public-val
+clean and +1.92 pp vs the current learned top-k selector. It captures 35.9% of
+the public-val same-k oracle top-1 gap and remains 4.68 pp below oracle@k16.
+The NLL-gain variant is weaker on top-1 but better on NLL.
+
+| variant | target_mode | selection_metric | best_epoch | best_val_top1 | best_val_nll |
+| --- | --- | --- | --- | --- | --- |
+| pairwise_nll_gain | nll_gain | val_tta_nll | 5 | 0.8354 | 0.644983 |
+| pairwise_top1_delta | top1_delta | val_tta_top1 | 4 | 0.8382 | 0.661144 |
+
+## Pairwise Private Evaluation
+
+- Table: `tables/pairwise_private_metrics.csv`
+- Error analysis: `tables/pairwise_private_top1_delta_error_analysis.csv`
+
+This is the frozen private check for the public-val-trained pairwise rankers at
+k=16. The public-val-selected top-1-delta ranker reaches 0.82728 private top-1.
+Adding per-image softmax logit weighting improves the same k=16 checkpoint to
+0.82828 private top-1, which is +2.36 pp vs clean, captures 33.6% of the
+private same-k oracle top-1 gap, and remains 4.664 pp below oracle@k16.
+
+The previous best private policy point was k=8 with softmax-weighted selected
+logits: 0.82912 top-1 at 9 forwards/image. That is +2.444 pp vs clean and
++0.184 pp vs the previous k=16 pairwise_top1_delta result while using roughly
+half the inference compute. The corresponding oracle@k8 is 0.89032, so the
+selector still captures only 28.5% of the same-k oracle gap. The NLL-gain ranker
+is slightly weaker on top-1 (0.82456) but stronger on NLL (0.69459 vs 0.72518).
+Two training variants with pretrained-feature projection plus listwise/hard
+example losses were tried, but did not beat the existing public-val top-1-delta
+checkpoint; keep them as implementation support, not as the selected model.
+
+The latest tuning pass keeps the same public-val-selected top-1-delta checkpoint
+and k=8 policy, but tunes the selected-logit softmax temperature on public-val.
+Temperature 0.25 is the best public-val setting and improves the frozen private
+result to 0.83128 top-1 at the same 9 forwards/image. That is +2.66 pp vs clean,
++1.68 pp vs 10-crop, and 31.1% capture of the oracle@k8 top-1 gap. A calibrated
+confidence-bucket policy reduces compute to 6.93 forwards/image, but drops to
+0.82760 top-1, so it is a compute-saving ablation rather than the primary result.
+
+- Temperature grid: `tables/pairwise_public_temperature_grid.csv`
+- Confidence policy calibration: `tables/pairwise_public_confidence_policy.csv`
+
+| strategy | top1 | top5 | nll | ece | forwards_per_image | top1_delta_pp_vs_clean | top1_gap_pp_to_oracle | top1_oracle_capture |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clean | 0.80468 | 0.94592 | 0.939441 | 0.0867522 | 1 | 0 | 7.024 | 0 |
+| pairwise_nll_gain | 0.82456 | 0.94404 | 0.69459 | 0.0283946 | 17 | 1.988 | 5.036 | 0.28303 |
+| pairwise_top1_delta | 0.82728 | 0.947 | 0.725177 | 0.033261 | 17 | 2.26 | 4.764 | 0.321754 |
+| pairwise_top1_delta_softmax_weighted | 0.82828 | 0.94696 | 0.72465 | 0.0324488 | 17 | 2.36 | 4.664 | 0.335991 |
+| pairwise_top1_delta_confidence_adaptive | 0.82732 | 0.94668 | 0.736047 | 0.0344373 | 11.0051 | 2.264 | 4.76 | 0.322323 |
+| pairwise_top1_delta_k8 | 0.828 | 0.94556 | 0.739722 | 0.0359456 | 9 | 2.332 | 6.232 | 0.272303 |
+| pairwise_top1_delta_k8_softmax_weighted | 0.82912 | 0.94564 | 0.739128 | 0.0343512 | 9 | 2.444 | 6.12 | 0.285381 |
+| pairwise_top1_delta_k8_t025_softmax_weighted | 0.83128 | 0.94552 | 0.737878 | 0.0329303 | 9 | 2.66 | 5.904 | 0.310603 |
+| pairwise_top1_delta_k8_confidence_adaptive | 0.82812 | 0.9448 | 0.75291 | 0.0364064 | 6.00256 | 2.344 | 6.22 | 0.273704 |
+| pairwise_top1_delta_k8_t025_confidence_policy | 0.8276 | 0.94532 | 0.75467 | 0.0371669 | 6.92936 | 2.292 | 6.272 | 0.267632 |
+| oracle_topk_uniform_k8 | 0.89032 | 0.96756 | 0.433547 | 0.00665417 | 9 | 8.564 | 0 | 1 |
+| oracle_topk_uniform | 0.87492 | 0.96312 | 0.489845 | 0.0135182 | 17 | 7.024 | 0 | 1 |
 
 ## Selector Prediction Diagnostics
 

@@ -1,0 +1,2 @@
+strategy,top1,top5,nll,ece,forwards_per_image,relative_compute_vs_all
+ten_crop,0.81448,0.95104,0.8242202997207642,0.046571627478599574,10.0,0.1

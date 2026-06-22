@@ -30,6 +30,26 @@ def average_probabilities(
     return np.mean(probabilities, axis=0).astype(np.float32)
 
 
+def average_per_image_probabilities(
+    logits_by_aug: dict[str, np.ndarray],
+    selected_aug_ids: list[list[str]],
+) -> np.ndarray:
+    """Average softmax probabilities for variable per-image augmentation selections."""
+
+    reference_shape = _validate_per_image_selection(logits_by_aug, selected_aug_ids)
+    totals = np.zeros(reference_shape, dtype=np.float32)
+    counts = np.zeros(reference_shape[0], dtype=np.float32)
+
+    image_indices_by_aug = _image_indices_by_aug(selected_aug_ids)
+    for aug_id, image_indices in image_indices_by_aug.items():
+        indices = np.asarray(image_indices, dtype=np.int64)
+        probabilities = _softmax(logits_by_aug[aug_id][indices])
+        np.add.at(totals, indices, probabilities)
+        np.add.at(counts, indices, 1.0)
+
+    return (totals / counts[:, None]).astype(np.float32)
+
+
 def weighted_average_probabilities(
     logits_by_aug: dict[str, np.ndarray],
     selected_aug_ids: list[list[str]],
@@ -47,22 +67,29 @@ def weighted_average_probabilities(
     if score_temperature <= 0.0:
         raise ValueError("score_temperature must be positive")
 
+    reference_shape = _validate_per_image_selection(logits_by_aug, selected_aug_ids)
     aug_index = {aug_id: index for index, aug_id in enumerate(aug_ids)}
-    rows = []
+    totals = np.zeros(reference_shape, dtype=np.float32)
+    image_indices_by_aug: dict[str, list[int]] = {}
+    weights_by_aug: dict[str, list[float]] = {}
     for image_index, image_aug_ids in enumerate(selected_aug_ids):
+        unknown_aug_ids = [aug_id for aug_id in image_aug_ids if aug_id not in aug_index]
+        if unknown_aug_ids:
+            raise ValueError(f"unknown augmentation id in aug_ids: {unknown_aug_ids[0]!r}")
         selection_indices = [aug_index[aug_id] for aug_id in image_aug_ids]
         weights = _softmax_vector(
             predicted_gain[image_index, selection_indices] / float(score_temperature)
         )
-        row_probabilities = np.stack(
-            [
-                _softmax(logits_by_aug[aug_id][image_index : image_index + 1])[0]
-                for aug_id in image_aug_ids
-            ],
-            axis=0,
-        )
-        rows.append(np.sum(row_probabilities * weights[:, None], axis=0))
-    return np.asarray(rows, dtype=np.float32)
+        for aug_id, weight in zip(image_aug_ids, weights, strict=True):
+            image_indices_by_aug.setdefault(aug_id, []).append(image_index)
+            weights_by_aug.setdefault(aug_id, []).append(float(weight))
+
+    for aug_id, image_indices in image_indices_by_aug.items():
+        indices = np.asarray(image_indices, dtype=np.int64)
+        weights = np.asarray(weights_by_aug[aug_id], dtype=np.float32)
+        probabilities = _softmax(logits_by_aug[aug_id][indices])
+        np.add.at(totals, indices, probabilities * weights[:, None])
+    return totals.astype(np.float32)
 
 
 def learned_topk_selection(
@@ -348,7 +375,7 @@ def evaluate_selected_tta(
         probabilities = average_probabilities(logits_by_aug, shared_aug_ids)
     else:
         per_image_aug_ids = cast(list[list[str]], selected_aug_ids)
-        probabilities = _average_per_image(logits_by_aug, per_image_aug_ids)
+        probabilities = average_per_image_probabilities(logits_by_aug, per_image_aug_ids)
 
     metrics = classification_metrics(probabilities, class_idxs, topk=(1, 5))
     metrics["ece"] = expected_calibration_error(probabilities, class_idxs)
@@ -696,14 +723,40 @@ def _average_per_image(
     logits_by_aug: dict[str, np.ndarray],
     selected_aug_ids: list[list[str]],
 ) -> np.ndarray:
-    rows = []
+    return average_per_image_probabilities(logits_by_aug, selected_aug_ids)
+
+
+def _validate_per_image_selection(
+    logits_by_aug: dict[str, np.ndarray],
+    selected_aug_ids: list[list[str]],
+) -> tuple[int, int]:
+    if not logits_by_aug:
+        raise ValueError("logits_by_aug must not be empty")
+    reference_logits = np.asarray(next(iter(logits_by_aug.values())), dtype=np.float32)
+    if reference_logits.ndim != 2:
+        raise ValueError("logits must have shape [images, classes]")
+    if len(selected_aug_ids) != reference_logits.shape[0]:
+        raise ValueError("selected_aug_ids must contain one selection per image")
+
+    for aug_id, logits in logits_by_aug.items():
+        if np.asarray(logits).shape != reference_logits.shape:
+            raise ValueError(f"logits for {aug_id!r} must match the reference shape")
+
+    for image_aug_ids in selected_aug_ids:
+        if not image_aug_ids:
+            raise ValueError("per-image augmentation selections must not be empty")
+        unknown_aug_ids = [aug_id for aug_id in image_aug_ids if aug_id not in logits_by_aug]
+        if unknown_aug_ids:
+            raise ValueError(f"unknown augmentation id: {unknown_aug_ids[0]!r}")
+    return reference_logits.shape
+
+
+def _image_indices_by_aug(selected_aug_ids: list[list[str]]) -> dict[str, list[int]]:
+    image_indices_by_aug: dict[str, list[int]] = {}
     for image_index, image_aug_ids in enumerate(selected_aug_ids):
-        row_probabilities = [
-            _softmax(logits_by_aug[aug_id][image_index : image_index + 1])[0]
-            for aug_id in image_aug_ids
-        ]
-        rows.append(np.mean(row_probabilities, axis=0))
-    return np.asarray(rows, dtype=np.float32)
+        for aug_id in image_aug_ids:
+            image_indices_by_aug.setdefault(aug_id, []).append(image_index)
+    return image_indices_by_aug
 
 
 def _mean_selection_size(selected_aug_ids: list[str] | list[list[str]]) -> float:

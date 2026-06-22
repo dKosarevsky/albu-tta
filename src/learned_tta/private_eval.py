@@ -31,6 +31,7 @@ from learned_tta.standard_baselines import (
 )
 from learned_tta.tta_eval import (
     adaptive_topk_selection,
+    average_per_image_probabilities,
     average_probabilities,
     class_weighted_probabilities,
     evaluate_all_100_uniform,
@@ -494,7 +495,7 @@ def _random_topk_correction_row(
             k=best_k,
             seed=seed,
         )
-        probabilities = _average_per_image_probabilities(logits_by_aug, selected_aug_ids)
+        probabilities = average_per_image_probabilities(logits_by_aug, selected_aug_ids)
         rows.append(
             build_correction_table(
                 clean_correct=clean_correct,
@@ -548,7 +549,7 @@ def _private_probabilities_by_strategy(
         identity_aug_id=identity_aug_id,
         k=best_k,
     )
-    probabilities["learned_topk_uniform"] = _average_per_image_probabilities(
+    probabilities["learned_topk_uniform"] = average_per_image_probabilities(
         logits_by_aug,
         selected_aug_ids,
     )
@@ -559,7 +560,7 @@ def _private_probabilities_by_strategy(
         predicted_gain=predicted_gain,
     )
     if useful_prob is not None and adaptive_threshold is not None and adaptive_max_k is not None:
-        probabilities["learned_adaptive_uniform"] = _average_per_image_probabilities(
+        probabilities["learned_adaptive_uniform"] = average_per_image_probabilities(
             logits_by_aug,
             adaptive_topk_selection(
                 aug_ids=aug_ids,
@@ -570,7 +571,7 @@ def _private_probabilities_by_strategy(
                 max_k=adaptive_max_k,
             ),
         )
-    probabilities["oracle_topk_uniform"] = _average_per_image_probabilities(
+    probabilities["oracle_topk_uniform"] = average_per_image_probabilities(
         logits_by_aug,
         oracle_topk_selection(
             logits_by_aug=logits_by_aug,
@@ -604,24 +605,6 @@ def _private_probabilities_by_strategy(
             raise ValueError("10-crop class_idxs do not match private cache order")
         probabilities["ten_crop"] = ten_crop_probabilities(artifact.crop_logits)
     return probabilities
-
-
-def _average_per_image_probabilities(
-    logits_by_aug: dict[str, np.ndarray],
-    selected_aug_ids: list[list[str]],
-) -> np.ndarray:
-    rows = []
-    for image_index, image_aug_ids in enumerate(selected_aug_ids):
-        rows.append(
-            average_probabilities(
-                {
-                    aug_id: logits_by_aug[aug_id][image_index : image_index + 1]
-                    for aug_id in image_aug_ids
-                },
-                selected_aug_ids=image_aug_ids,
-            )[0]
-        )
-    return np.asarray(rows, dtype=np.float32)
 
 
 def _load_tuning_payload(tuning_path: Path) -> dict[str, object]:

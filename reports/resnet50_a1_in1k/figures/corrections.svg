@@ -8,64 +8,69 @@
 <text x="82" y="56" font-family="Arial" font-size="11">clean wrong -&gt; TTA right</text>
 <rect x="254" y="46" width="12" height="12" fill="#b24a3b"/>
 <text x="272" y="56" font-family="Arial" font-size="11">clean right -&gt; TTA wrong</text>
-<rect x="64.00" y="316.00" width="20.83" height="0.00" fill="#247a4d"/>
-<text x="74.42" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
-<rect x="87.83" y="316.00" width="20.83" height="0.00" fill="#b24a3b"/>
-<text x="98.25" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
-<text x="86.33" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 86.33 332)">clean_center_crop</text>
-<rect x="120.67" y="275.78" width="20.83" height="40.22" fill="#247a4d"/>
-<text x="131.08" y="271.78" text-anchor="middle" font-family="Arial" font-size="9">324</text>
-<rect x="144.50" y="287.94" width="20.83" height="28.06" fill="#b24a3b"/>
-<text x="154.92" y="283.94" text-anchor="middle" font-family="Arial" font-size="9">226</text>
-<text x="143.00" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 143.00 332)">center_crop_hflip</text>
-<rect x="177.33" y="316.00" width="20.83" height="0.00" fill="#247a4d"/>
-<text x="187.75" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
-<rect x="201.17" y="316.00" width="20.83" height="0.00" fill="#b24a3b"/>
-<text x="211.58" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
-<text x="199.67" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 199.67 332)">clean</text>
-<rect x="234.00" y="240.15" width="20.83" height="75.85" fill="#247a4d"/>
-<text x="244.42" y="236.15" text-anchor="middle" font-family="Arial" font-size="9">611</text>
-<rect x="257.83" y="251.94" width="20.83" height="64.06" fill="#b24a3b"/>
-<text x="268.25" y="247.94" text-anchor="middle" font-family="Arial" font-size="9">516</text>
-<text x="256.33" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 256.33 332)">fixed_light_tta</text>
-<rect x="290.67" y="280.37" width="20.83" height="35.63" fill="#247a4d"/>
-<text x="301.08" y="276.37" text-anchor="middle" font-family="Arial" font-size="9">287</text>
-<rect x="314.50" y="297.50" width="20.83" height="18.50" fill="#b24a3b"/>
-<text x="324.92" y="293.50" text-anchor="middle" font-family="Arial" font-size="9">149</text>
-<text x="313.00" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 313.00 332)">all_100_uniform</text>
-<rect x="347.33" y="268.20" width="20.83" height="47.80" fill="#247a4d"/>
-<text x="357.75" y="264.20" text-anchor="middle" font-family="Arial" font-size="9">385</text>
-<rect x="371.17" y="284.96" width="20.83" height="31.04" fill="#b24a3b"/>
-<text x="381.58" y="280.96" text-anchor="middle" font-family="Arial" font-size="9">250</text>
-<text x="369.67" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 369.67 332)">learned_topk_uniform</text>
-<rect x="404.00" y="267.33" width="20.83" height="48.67" fill="#247a4d"/>
-<text x="414.42" y="263.33" text-anchor="middle" font-family="Arial" font-size="9">392</text>
-<rect x="427.83" y="284.84" width="20.83" height="31.16" fill="#b24a3b"/>
-<text x="438.25" y="280.84" text-anchor="middle" font-family="Arial" font-size="9">251</text>
-<text x="426.33" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 426.33 332)">learned_topk_softmax_weighted</text>
-<rect x="460.67" y="268.20" width="20.83" height="47.80" fill="#247a4d"/>
-<text x="471.08" y="264.20" text-anchor="middle" font-family="Arial" font-size="9">385</text>
-<rect x="484.50" y="284.84" width="20.83" height="31.16" fill="#b24a3b"/>
-<text x="494.92" y="280.84" text-anchor="middle" font-family="Arial" font-size="9">251</text>
-<text x="483.00" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 483.00 332)">learned_adaptive_uniform</text>
-<rect x="517.33" y="98.00" width="20.83" height="218.00" fill="#247a4d"/>
-<text x="527.75" y="94.00" text-anchor="middle" font-family="Arial" font-size="9">1756</text>
-<rect x="541.17" y="316.00" width="20.83" height="0.00" fill="#b24a3b"/>
-<text x="551.58" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
-<text x="539.67" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 539.67 332)">oracle_topk_uniform</text>
-<rect x="574.00" y="247.60" width="20.83" height="68.40" fill="#247a4d"/>
-<text x="584.42" y="243.60" text-anchor="middle" font-family="Arial" font-size="9">551</text>
-<rect x="597.83" y="279.25" width="20.83" height="36.75" fill="#b24a3b"/>
-<text x="608.25" y="275.25" text-anchor="middle" font-family="Arial" font-size="9">296</text>
-<text x="596.33" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 596.33 332)">global_weighted_tta</text>
-<rect x="630.67" y="251.57" width="20.83" height="64.43" fill="#247a4d"/>
-<text x="641.08" y="247.57" text-anchor="middle" font-family="Arial" font-size="9">519</text>
-<rect x="654.50" y="253.68" width="20.83" height="62.32" fill="#b24a3b"/>
-<text x="664.92" y="249.68" text-anchor="middle" font-family="Arial" font-size="9">502</text>
-<text x="653.00" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 653.00 332)">class_weighted_tta</text>
-<rect x="687.33" y="280.27" width="20.83" height="35.73" fill="#247a4d"/>
-<text x="697.75" y="276.27" text-anchor="middle" font-family="Arial" font-size="9">288</text>
-<rect x="711.17" y="293.31" width="20.83" height="22.69" fill="#b24a3b"/>
-<text x="721.58" y="289.31" text-anchor="middle" font-family="Arial" font-size="9">183</text>
-<text x="709.67" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 709.67 332)">random_topk</text>
+<rect x="64.00" y="316.00" width="18.65" height="0.00" fill="#247a4d"/>
+<text x="73.33" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="85.65" y="316.00" width="18.65" height="0.00" fill="#b24a3b"/>
+<text x="94.98" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<text x="84.15" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 84.15 332)">clean_center_crop</text>
+<rect x="116.31" y="316.00" width="18.65" height="0.00" fill="#247a4d"/>
+<text x="125.63" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<rect x="137.96" y="316.00" width="18.65" height="0.00" fill="#b24a3b"/>
+<text x="147.29" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<text x="136.46" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 136.46 332)">clean</text>
+<rect x="168.62" y="240.15" width="18.65" height="75.85" fill="#247a4d"/>
+<text x="177.94" y="236.15" text-anchor="middle" font-family="Arial" font-size="9">611</text>
+<rect x="190.27" y="251.94" width="18.65" height="64.06" fill="#b24a3b"/>
+<text x="199.60" y="247.94" text-anchor="middle" font-family="Arial" font-size="9">516</text>
+<text x="188.77" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 188.77 332)">fixed_light_tta</text>
+<rect x="220.92" y="280.37" width="18.65" height="35.63" fill="#247a4d"/>
+<text x="230.25" y="276.37" text-anchor="middle" font-family="Arial" font-size="9">287</text>
+<rect x="242.58" y="297.50" width="18.65" height="18.50" fill="#b24a3b"/>
+<text x="251.90" y="293.50" text-anchor="middle" font-family="Arial" font-size="9">149</text>
+<text x="241.08" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 241.08 332)">all_100_uniform</text>
+<rect x="273.23" y="275.78" width="18.65" height="40.22" fill="#247a4d"/>
+<text x="282.56" y="271.78" text-anchor="middle" font-family="Arial" font-size="9">324</text>
+<rect x="294.88" y="287.94" width="18.65" height="28.06" fill="#b24a3b"/>
+<text x="304.21" y="283.94" text-anchor="middle" font-family="Arial" font-size="9">226</text>
+<text x="293.38" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 293.38 332)">center_crop_hflip</text>
+<rect x="325.54" y="268.20" width="18.65" height="47.80" fill="#247a4d"/>
+<text x="334.87" y="264.20" text-anchor="middle" font-family="Arial" font-size="9">385</text>
+<rect x="347.19" y="284.96" width="18.65" height="31.04" fill="#b24a3b"/>
+<text x="356.52" y="280.96" text-anchor="middle" font-family="Arial" font-size="9">250</text>
+<text x="345.69" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 345.69 332)">learned_topk_uniform</text>
+<rect x="377.85" y="267.33" width="18.65" height="48.67" fill="#247a4d"/>
+<text x="387.17" y="263.33" text-anchor="middle" font-family="Arial" font-size="9">392</text>
+<rect x="399.50" y="284.84" width="18.65" height="31.16" fill="#b24a3b"/>
+<text x="408.83" y="280.84" text-anchor="middle" font-family="Arial" font-size="9">251</text>
+<text x="398.00" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 398.00 332)">learned_topk_softmax_weighted</text>
+<rect x="430.15" y="268.20" width="18.65" height="47.80" fill="#247a4d"/>
+<text x="439.48" y="264.20" text-anchor="middle" font-family="Arial" font-size="9">385</text>
+<rect x="451.81" y="284.84" width="18.65" height="31.16" fill="#b24a3b"/>
+<text x="461.13" y="280.84" text-anchor="middle" font-family="Arial" font-size="9">251</text>
+<text x="450.31" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 450.31 332)">learned_adaptive_uniform</text>
+<rect x="482.46" y="98.00" width="18.65" height="218.00" fill="#247a4d"/>
+<text x="491.79" y="94.00" text-anchor="middle" font-family="Arial" font-size="9">1756</text>
+<rect x="504.12" y="316.00" width="18.65" height="0.00" fill="#b24a3b"/>
+<text x="513.44" y="312.00" text-anchor="middle" font-family="Arial" font-size="9">0</text>
+<text x="502.62" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 502.62 332)">oracle_topk_uniform</text>
+<rect x="534.77" y="247.60" width="18.65" height="68.40" fill="#247a4d"/>
+<text x="544.10" y="243.60" text-anchor="middle" font-family="Arial" font-size="9">551</text>
+<rect x="556.42" y="279.25" width="18.65" height="36.75" fill="#b24a3b"/>
+<text x="565.75" y="275.25" text-anchor="middle" font-family="Arial" font-size="9">296</text>
+<text x="554.92" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 554.92 332)">global_weighted_tta</text>
+<rect x="587.08" y="251.57" width="18.65" height="64.43" fill="#247a4d"/>
+<text x="596.40" y="247.57" text-anchor="middle" font-family="Arial" font-size="9">519</text>
+<rect x="608.73" y="253.68" width="18.65" height="62.32" fill="#b24a3b"/>
+<text x="618.06" y="249.68" text-anchor="middle" font-family="Arial" font-size="9">502</text>
+<text x="607.23" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 607.23 332)">class_weighted_tta</text>
+<rect x="639.38" y="240.15" width="18.65" height="75.85" fill="#247a4d"/>
+<text x="648.71" y="236.15" text-anchor="middle" font-family="Arial" font-size="9">611</text>
+<rect x="661.04" y="270.56" width="18.65" height="45.44" fill="#b24a3b"/>
+<text x="670.37" y="266.56" text-anchor="middle" font-family="Arial" font-size="9">366</text>
+<text x="659.54" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 659.54 332)">ten_crop</text>
+<rect x="691.69" y="280.27" width="18.65" height="35.73" fill="#247a4d"/>
+<text x="701.02" y="276.27" text-anchor="middle" font-family="Arial" font-size="9">288</text>
+<rect x="713.35" y="293.31" width="18.65" height="22.69" fill="#b24a3b"/>
+<text x="722.67" y="289.31" text-anchor="middle" font-family="Arial" font-size="9">183</text>
+<text x="711.85" y="332" text-anchor="end" font-family="Arial" font-size="10" transform="rotate(-30 711.85 332)">random_topk</text>
 </svg>

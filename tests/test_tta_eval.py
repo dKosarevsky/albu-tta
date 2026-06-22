@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from learned_tta.tta_eval import (
+    _average_per_image,
     _mean_selection_size,
     adaptive_topk_selection,
     average_probabilities,
@@ -438,6 +439,52 @@ def test_evaluate_selected_tta_supports_per_image_selection(
 
     assert metrics["top1"] == pytest.approx(1.0)
     assert metrics["nll"] > 0.0
+
+
+def test_average_per_image_matches_manual_probability_average(
+    logits_by_aug: dict[str, np.ndarray],
+) -> None:
+    selected = [["aug_000", "aug_002"], ["aug_000", "aug_001", "aug_003"]]
+
+    averaged = _average_per_image(logits_by_aug, selected)
+    manual = np.stack(
+        [
+            average_probabilities(
+                {
+                    "aug_000": logits_by_aug["aug_000"][0:1],
+                    "aug_002": logits_by_aug["aug_002"][0:1],
+                },
+                selected_aug_ids=["aug_000", "aug_002"],
+            )[0],
+            average_probabilities(
+                {
+                    "aug_000": logits_by_aug["aug_000"][1:2],
+                    "aug_001": logits_by_aug["aug_001"][1:2],
+                    "aug_003": logits_by_aug["aug_003"][1:2],
+                },
+                selected_aug_ids=["aug_000", "aug_001", "aug_003"],
+            )[0],
+        ],
+        axis=0,
+    )
+
+    np.testing.assert_allclose(averaged, manual, rtol=1e-6, atol=1e-7)
+
+
+@pytest.mark.parametrize(
+    ("selected", "match"),
+    [
+        ([["aug_000"]], "one selection per image"),
+        ([["aug_000"], []], "must not be empty"),
+    ],
+)
+def test_average_per_image_validates_selection_shape(
+    logits_by_aug: dict[str, np.ndarray],
+    selected: list[list[str]],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        _average_per_image(logits_by_aug, selected)
 
 
 @pytest.mark.parametrize(

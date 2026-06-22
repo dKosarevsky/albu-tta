@@ -14,3 +14,4 @@ private,oracle_topk_uniform,17.0,0.17
 private,learned_adaptive_uniform,17.0,0.17
 private,global_weighted_tta,100.0,1.0
 private,class_weighted_tta,100.0,1.0
+private,ten_crop,10.0,0.1
